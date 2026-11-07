@@ -2,7 +2,18 @@
 
 A local-first Markdown notes app starter built with Electron, Vite, and CodeMirror 6.
 
-## Run it
+## Install the npm package
+
+Stillnote is published as an npm package on GitHub Packages. Configure npm to use GitHub Packages for the `@Infekted11` scope and authenticate with a GitHub token that has `read:packages` access. The token can be supplied through the `NODE_AUTH_TOKEN` environment variable.
+
+```sh
+npm config set @Infekted11:registry https://npm.pkg.github.com
+npm install @Infekted11/stillnote@1.0.0
+```
+
+## Run from source
+
+To run or develop the app from a checkout, install the repository dependencies and start Electron:
 
 ```sh
 npm install
