@@ -4,17 +4,19 @@ A local-first Markdown notes app starter built with Electron, Vite, and CodeMirr
 
 ## Install the npm package
 
-Stillnote is published as an npm package on GitHub Packages. Configure npm to use GitHub Packages for the `@Infekted11` scope and authenticate with a GitHub token that has `read:packages` access. The token can be supplied through the `NODE_AUTH_TOKEN` environment variable.
+Stillnote is published on GitHub Packages as `@infekted11/stillnote`. To install it in a Node.js project, authenticate npm with a GitHub personal access token (classic) that has the `read:packages` scope. The GitHub account used by the token must also have access to the package.
 
 ```sh
-npm config set @Infekted11:registry https://npm.pkg.github.com
-npm install @Infekted11/stillnote@1.0.0
+npm login --scope=@infekted11 --auth-type=legacy --registry=https://npm.pkg.github.com
+npm install @infekted11/stillnote@1.0.0
 ```
+
+When prompted, enter your GitHub username, paste the token as the password, and enter your email address. Run the commands from the directory of the Node.js project where you want to add Stillnote. npm saves the login in your user config so you can install future versions without logging in again.
 
 To update a package-managed installation to the latest published version, run this in the project where you installed Stillnote:
 
 ```sh
-npm install @Infekted11/stillnote@latest
+npm install @infekted11/stillnote@latest
 ```
 
 ## Run from source
