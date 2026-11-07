@@ -1,0 +1,8 @@
+Dictionary: English (United States), ESDB/SCOWL release 2026.02.25
+Source word list: https://github.com/en-wl/wordlist-diff/blob/rel-2026.02.25/en_US.txt
+Project: https://wordlist.aspell.net/
+License and attribution: english-words-LICENSE.txt
+
+This is a maintained spellchecker wordlist, not a claim to enumerate every
+English word. It includes inflected forms such as plurals, verb tenses, and
+contractions as dictionary entries.

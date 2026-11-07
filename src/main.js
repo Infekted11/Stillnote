@@ -1,0 +1,3065 @@
+import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { markdown, markdownKeymap } from '@codemirror/lang-markdown';
+import { javascript } from '@codemirror/lang-javascript';
+import { python } from '@codemirror/lang-python';
+import { html } from '@codemirror/lang-html';
+import { css } from '@codemirror/lang-css';
+import { json } from '@codemirror/lang-json';
+import { Strikethrough, TaskList } from '@lezer/markdown';
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { syntaxHighlighting, defaultHighlightStyle, syntaxTree, bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language';
+import { animate } from 'animejs';
+import * as THREE from 'three';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import './style.css';
+
+const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
+
+const spellingDecorationsEffect = StateEffect.define();
+const spellingDecorationsField = StateField.define({
+  create: () => Decoration.none,
+  update(decorations, transaction) {
+    decorations = decorations.map(transaction.changes);
+    for (const effect of transaction.effects) if (effect.is(spellingDecorationsEffect)) decorations = effect.value;
+    return decorations;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+let dictionaryPromise = null;
+let dictionary = null;
+let customDictionary = new Set();
+let customDictionarySavePromise = Promise.resolve();
+let spellingTimer = null;
+let spellingRequest = 0;
+async function getSpellDictionary() {
+  if (!dictionaryPromise) dictionaryPromise = window.stillnote.loadSpellcheckDictionary().then((text) => {
+    dictionary = new Set(text.split(/\r?\n/).map((word) => word.trim().toLocaleLowerCase()).filter(Boolean));
+    for (const word of dictionary) {
+      if (!dictionaryByFirst.has(word[0])) dictionaryByFirst.set(word[0], []);
+      if (!dictionaryByLast.has(word.at(-1))) dictionaryByLast.set(word.at(-1), []);
+      dictionaryByFirst.get(word[0]).push(word); dictionaryByLast.get(word.at(-1)).push(word);
+    }
+    return dictionary;
+  });
+  return dictionaryPromise;
+}
+function scheduleSpellcheck(view) {
+  const request = ++spellingRequest;
+  clearTimeout(spellingTimer);
+  spellingTimer = setTimeout(async () => {
+    try {
+      const words = await getSpellDictionary();
+      if (request !== spellingRequest || view !== state.view) return;
+      const text = view.state.doc.toString();
+      const ignored = [];
+      syntaxTree(view.state).iterate({ enter(node) { if (['FencedCode', 'InlineCode', 'LinkDestination'].includes(node.type.name)) ignored.push([node.from, node.to]); } });
+      const marks = [];
+      const matcher = /[\p{L}]+(?:['’][\p{L}]+)?/gu;
+      let match;
+      while ((match = matcher.exec(text))) {
+        const word = match[0].toLocaleLowerCase();
+        if (word.length < 3 || ignored.some(([from, to]) => match.index >= from && match.index < to)) continue;
+        if (!isKnownWord(word)) {
+          marks.push(Decoration.mark({ class: 'spellcheck-misspelled', attributes: { title: 'Possible spelling mistake' } }).range(match.index, match.index + match[0].length));
+        }
+      }
+      if (request === spellingRequest && view === state.view) view.dispatch({ effects: spellingDecorationsEffect.of(Decoration.set(marks, true)) });
+    } catch (error) { console.error('Spellcheck dictionary could not be loaded:', error); }
+  }, 180);
+}
+function spellingSuggestions(word) {
+  if (!dictionary || word.length < 3) return [];
+  const normalized = word.toLocaleLowerCase();
+  const candidates = new Set([...(dictionaryByFirst.get(normalized[0]) || []), ...(dictionaryByLast.get(normalized.at(-1)) || [])]);
+  const ranked = [];
+  for (const candidate of candidates) {
+    if (Math.abs(candidate.length - normalized.length) > 2) continue;
+    const distance = editDistanceAtMostTwo(normalized, candidate);
+    if (distance <= 2) ranked.push({ candidate, distance });
+  }
+  return ranked.sort((a, b) => a.distance - b.distance || a.candidate.localeCompare(b.candidate)).slice(0, 5).map(({ candidate }) => candidate);
+}
+function normalizeCustomDictionary(words) {
+  return new Set((Array.isArray(words) ? words : []).filter((word) => typeof word === 'string').map((word) => word.trim().toLocaleLowerCase()).filter((word) => /^[\p{L}][\p{L}'’\-]{0,63}$/u.test(word)));
+}
+async function loadCustomDictionaryForVault() {
+  const saved = await window.stillnote.loadCustomDictionary();
+  let words = saved.words;
+  if (!saved.exists) {
+    try {
+      const legacyWords = normalizeCustomDictionary(JSON.parse(localStorage.getItem('stillnote-custom-dictionary') || '[]'));
+      if (legacyWords.size) {
+        words = [...legacyWords];
+        await window.stillnote.saveCustomDictionary(words);
+      }
+      localStorage.removeItem('stillnote-custom-dictionary');
+    } catch (error) {
+      console.warn('Could not migrate the personal dictionary into this vault:', error.message);
+    }
+  } else {
+    localStorage.removeItem('stillnote-custom-dictionary');
+  }
+  customDictionary = normalizeCustomDictionary(words);
+  renderCustomDictionary();
+  if (state.view) scheduleSpellcheck(state.view);
+}
+function persistCustomDictionary() {
+  if (!state.vault) return Promise.reject(new Error('Open a vault before saving personal words.'));
+  const words = [...customDictionary].sort((a, b) => a.localeCompare(b));
+  customDictionarySavePromise = customDictionarySavePromise.catch(() => {}).then(() => window.stillnote.saveCustomDictionary(words));
+  return customDictionarySavePromise.catch((error) => {
+    showToast(error.message || 'Could not save the personal dictionary.');
+    throw error;
+  });
+}
+function addCustomWord(value) {
+  if (!state.vault) { showToast('Open a vault before adding personal words.'); return false; }
+  const word = String(value || '').trim().toLocaleLowerCase();
+  if (!/^[\p{L}][\p{L}'’\-]{0,63}$/u.test(word)) { showToast('Enter a single word using letters, apostrophes, or hyphens.'); return false; }
+  if (isKnownWord(word)) { showToast(`“${word}” is already in the dictionary.`); return false; }
+  customDictionary.add(word); void persistCustomDictionary().catch(() => {}); renderCustomDictionary();
+  if (state.view) scheduleSpellcheck(state.view);
+  return true;
+}
+function renderCustomDictionary() {
+  const list = $('#custom-dictionary-list');
+  if (!list) return;
+  list.replaceChildren();
+  const words = [...customDictionary].sort((a, b) => a.localeCompare(b));
+  if (!words.length) { const empty = document.createElement('p'); empty.className = 'dictionary-empty'; empty.textContent = 'No personal words yet.'; list.append(empty); return; }
+  for (const word of words) {
+    const row = document.createElement('div'); row.className = 'dictionary-word-row';
+    const label = document.createElement('span'); label.textContent = word;
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'icon-button dictionary-remove'; remove.setAttribute('aria-label', `Remove ${word} from dictionary`); remove.title = 'Remove word'; remove.innerHTML = icons.close;
+    remove.addEventListener('click', () => { customDictionary.delete(word); void persistCustomDictionary().catch(() => {}); renderCustomDictionary(); if (state.view) scheduleSpellcheck(state.view); });
+    row.append(label, remove); list.append(row);
+  }
+}
+function editDistanceAtMostTwo(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index), beforePrevious = null;
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i]; let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      let value = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (beforePrevious && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) value = Math.min(value, beforePrevious[j - 2] + 1);
+      current[j] = value; rowMin = Math.min(rowMin, value);
+    }
+    if (rowMin > 2) return 3;
+    beforePrevious = previous; previous = current;
+  }
+  return previous[b.length];
+}
+const dictionaryByFirst = new Map();
+const dictionaryByLast = new Map();
+
+const svgIcon = (paths, className = '') => `<svg class="app-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+const icons = {
+  panel: svgIcon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/>'),
+  home: svgIcon('<path d="m3.5 10 8.5-7 8.5 7v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/>'),
+  search: svgIcon('<circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/>'),
+  file: svgIcon('<path d="M6 3.8h8l4 4v12.4H6z"/><path d="M14 3.8v4h4M9 12h6M9 15.5h6"/>'),
+  filePlus: svgIcon('<path d="M6 3.8h8l4 4v12.4H6z"/><path d="M14 3.8v4h4M12 11v6M9 14h6"/>'),
+  formatBold: svgIcon('<path d="M7 5h6a4 4 0 0 1 0 8H7zM7 13h7a3 3 0 0 1 0 6H7z"/>'),
+  formatItalic: svgIcon('<path d="M10 5h9M5 19h9M14 5 10 19"/>'),
+  formatCode: svgIcon('<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>'),
+  formatStrike: svgIcon('<path d="M5 8a4 4 0 0 1 4-3h6a4 4 0 0 1 3 1.4M4 12h16M19 16a4 4 0 0 1-4 3H9a4 4 0 0 1-3-1.4"/>'),
+  formatH1: svgIcon('<path d="M4 5v14M4 12h8M12 5v14M17 8l2-2v12M16 18h6"/>'),
+  formatH2: svgIcon('<path d="M3 5v14M3 12h8M11 5v14M15 9a3 3 0 0 1 6 0c0 3-6 4-6 9h7"/>'),
+  formatBullet: svgIcon('<circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/><path d="M10 6h10M10 12h10M10 18h10"/>'),
+  formatOrdered: svgIcon('<path d="M9 6h11M9 12h11M9 18h11M4 5h1v3M4 11h2l-2 2h2M4 17h2l-2 2h2"/>'),
+  formatCheck: svgIcon('<rect x="3.5" y="4" width="6" height="6" rx="1"/><path d="m5 7 1.4 1.4L8.5 6M13 7h7M3.5 14h6v6h-6zM13 17h7"/>'),
+  tasks: svgIcon('<path d="m4 7 1.5 1.5L8 5.8M11 7h9M4 16l1.5 1.5L8 14.8M11 16h9"/>'),
+  formatHighlight: svgIcon('<path d="m8 14 7-7 4 4-7 7H8zM6 20h13M13 9l4 4M5 5h3M6.5 3.5v3M18 17l2 2M19 18l2-2"/>'),
+  canvas: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="m7 16 3-4 2 2 3-5 2 7"/>'),
+  cursor: svgIcon('<path d="m5 3 14 10-7 1-3 7z"/>'),
+  draw: svgIcon('<path d="m4 16 9-9 4 4-9 9H4zM12 8l4 4M14 6l2-2 4 4-2 2"/>'),
+  rectangle: svgIcon('<rect x="4" y="5" width="16" height="14" rx="1"/>'),
+  shape: svgIcon('<rect x="3.5" y="4" width="7" height="7" rx="1"/><circle cx="17" cy="7.5" r="3.5"/><path d="m5 20 4-6 4 6z"/>'),
+  triangle: svgIcon('<path d="m12 3 9 17H3z"/>'),
+  speech: svgIcon('<path d="M4 4h16v12H10l-5 4z"/>'),
+  markerArrow: svgIcon('<path d="M3 8h11V4l7 8-7 8v-4H3z"/>'),
+  markerCircle: svgIcon('<circle cx="12" cy="12" r="7"/>'),
+  markerSquare: svgIcon('<rect x="5" y="5" width="14" height="14" rx="1"/>'),
+  markerDiamond: svgIcon('<path d="m12 3 9 9-9 9-9-9z"/>'),
+  markerNone: svgIcon('<path d="M5 5l14 14M19 5 5 19"/>'),
+  ellipse: svgIcon('<ellipse cx="12" cy="12" rx="8" ry="6"/>'),
+  rotate: svgIcon('<rect x="8" y="8" width="9" height="9" rx="1"/><path d="M5 8a8 8 0 0 1 12-4M17 1v4h-4"/>'),
+  text: svgIcon('<path d="M4 6V4h16v2M12 4v16M9 20h6"/>'),
+  line: svgIcon('<path d="M4 18 20 6"/>'),
+  eraser: svgIcon('<path d="m7 16-3-3a2 2 0 0 1 0-3l6-6a2 2 0 0 1 3 0l6 6-8 8H7zM13 18h7"/>'),
+  trash: svgIcon('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
+  star: svgIcon('<path d="m12 3 2.75 5.57 6.15.89-4.45 4.33 1.05 6.12L12 17.02l-5.5 2.89 1.05-6.12L3.1 9.46l6.15-.89L12 3z"/>'),
+  undo: svgIcon('<path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/>'),
+  redo: svgIcon('<path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/>'),
+  spreadsheet: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16M10 9v11M15 9v11"/>'),
+  graph: svgIcon('<path d="M4 20V4M4 20h16"/><path d="M7 16c2-1 2-7 5-7s3 5 6 1"/>'),
+  folder: svgIcon('<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
+  folderOpen: svgIcon('<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v1"/><path d="m3.5 12 1.2-1.5h15.8l-2.2 7a2 2 0 0 1-1.9 1.5H5.2a2 2 0 0 1-1.9-2.5z"/>'),
+  folderPlus: svgIcon('<path d="M3 8a2 2 0 0 1 2-2h4.5l2 2H18a2 2 0 0 1 2 2v2"/><path d="M3 12h11M8.5 9.5v5M3 12l1.7 6.3A2 2 0 0 0 6.6 20h7"/>'),
+  expandAll: svgIcon('<path d="M8 4H5a1 1 0 0 0-1 1v3M16 4h3a1 1 0 0 1 1 1v3M8 20H5a1 1 0 0 1-1-1v-3M16 20h3a1 1 0 0 0 1-1v-3"/><path d="M12 7v10M7 12h10"/>'),
+  collapseAll: svgIcon('<path d="M8 4H5a1 1 0 0 0-1 1v3M16 4h3a1 1 0 0 1 1 1v3M8 20H5a1 1 0 0 1-1-1v-3M16 20h3a1 1 0 0 0 1-1v-3"/><path d="M7 12h10"/>'),
+  menu: svgIcon('<path d="M4 6h16M4 12h16M4 18h16"/>'),
+  chevron: svgIcon('<path d="m9 18 6-6-6-6"/>'),
+  down: svgIcon('<path d="m6 9 6 6 6-6"/>'),
+  refresh: svgIcon('<path d="M17.7 5.3A8 8 0 1 0 20 11"/><path d="M20 3v5h-5"/>'),
+  external: svgIcon('<path d="M14 5h5v5M19 5l-8 8"/><path d="M17 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h5"/>'),
+  gear: svgIcon('<path d="M4 6h7m4 0h5M4 12h3m4 0h9M4 18h9m4 0h3"/><circle cx="13" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="18" r="2"/>'),
+  assistant: svgIcon('<path d="m12 3 1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
+  send: svgIcon('<path d="m21 3-7.2 18-3.2-7.6L3 10.2z"/><path d="M10.6 13.4 21 3"/>'),
+  mic: svgIcon('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-4 0h8"/>'),
+  shift: svgIcon('<path d="m5 12 7-7 7 7h-4v7H9v-7z"/>', 'shortcut-shift-icon'),
+  close: svgIcon('<path d="m6 6 12 12M18 6 6 18"/>'),
+  statusCheck: svgIcon('<path d="m5 12.5 4.5 4.5L19 7"/>'),
+  statusX: svgIcon('<path d="m6 6 12 12M18 6 6 18"/>'),
+  book: svgIcon('<path d="M5 4.5h11a3 3 0 0 1 3 3v12H8a3 3 0 0 1-3-3z"/><path d="M5 16.5a3 3 0 0 1 3-3h11M9 8h6"/>', 'brand-mark-icon'),
+  command: svgIcon('<path d="M9 9h6v6H9z"/><path d="M9 9V6a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v12a2 2 0 1 0-2-2H7a2 2 0 1 0 2 2z"/>'),
+};
+
+const app = document.querySelector('#app');
+app.innerHTML = `
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="traffic-space"></div>
+      <button class="icon-button sidebar-toggle" aria-label="Toggle sidebar">${icons.panel}</button>
+      <div class="topbar-location"><span class="location-vault">No vault</span><span class="location-divider">/</span><span class="location-note">Welcome</span></div>
+      <div class="topbar-actions"><button class="icon-button home-trigger" id="home-button" title="Home" aria-label="Home">${icons.home}</button><div class="topbar-search" id="topbar-search"><button class="icon-button search-trigger" title="Search notes (⌘K)" aria-label="Search notes" aria-expanded="false">${icons.search}</button><input class="topbar-search-input" id="search-input" placeholder="Search notes…" autocomplete="off" aria-label="Search notes"><div class="topbar-search-results" id="search-results"></div></div><button class="icon-button assistant-trigger" id="assistant-toggle" title="Open assistant">${icons.assistant}</button></div>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="explorer-toolbar"><button class="explorer-action" id="new-folder" title="New folder">${icons.folderPlus}<span>Folder</span></button><button class="explorer-action" id="new-file" title="Create a file">${icons.filePlus}<span>File ▾</span></button><button class="explorer-tree-action" id="expand-folders" title="Expand all folders" aria-label="Expand all folders">${icons.expandAll}</button><button class="explorer-tree-action" id="collapse-folders" title="Collapse all folders" aria-label="Collapse all folders">${icons.collapseAll}</button><button class="explorer-refresh" id="refresh-notes" title="Refresh explorer">${icons.refresh}</button></div>
+        <div class="note-list" id="note-list"></div>
+        <div class="sidebar-bottom"><div class="explorer-heading"><button class="vault-switcher"><span class="vault-mark">S</span><span class="vault-name">Choose a folder</span></button></div><button class="icon-button small settings" id="settings-button" title="Settings" aria-label="Settings" aria-haspopup="true" aria-expanded="false">${icons.gear}</button></div>
+      </aside>
+      <div class="panel-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" aria-valuemin="190" aria-valuemax="440" tabindex="0"></div>
+      <main class="main-area">
+        <div class="editor-wrap" id="editor-wrap">
+          <div class="welcome" id="welcome">
+            <div class="welcome-mark">${icons.book}</div>
+            <div class="eyebrow">A SPACE TO THINK</div>
+            <h1>Your thoughts,<br><em>in good order.</em></h1>
+            <p>A quiet place for notes, ideas, and everything in between.<br>Everything stays in a folder on your computer.</p>
+            <button class="primary-button" id="open-vault">Open a folder ${icons.external}</button>
+            <div class="welcome-foot"><span>MARKDOWN, ALWAYS</span><span>·</span><span>YOUR FILES, YOURS</span></div>
+          </div>
+          <div class="note-editor" id="note-editor" hidden>
+            <div class="note-meta"><div class="breadcrumbs" id="breadcrumbs"></div><span class="save-state" id="save-state">Saved</span></div>
+            <nav class="note-indexes" id="note-indexes" aria-label="Note indexes" hidden></nav>
+            <div class="editor-content" id="editor-content"></div>
+            <nav class="note-format-toolbar" id="note-format-toolbar" aria-label="Note formatting" hidden>
+              <button type="button" data-format="bold" title="Bold" aria-label="Bold">${icons.formatBold}</button>
+              <button type="button" data-format="italic" title="Italic" aria-label="Italic">${icons.formatItalic}</button>
+              <button type="button" data-format="code" title="Inline code" aria-label="Inline code">${icons.formatCode}</button>
+              <button type="button" data-format="strike" title="Strikethrough" aria-label="Strikethrough">${icons.formatStrike}</button>
+              <span class="format-toolbar-divider"></span>
+              <button type="button" data-format="heading1" title="Heading 1" aria-label="Heading 1">${icons.formatH1}</button>
+              <button type="button" data-format="heading2" title="Heading 2" aria-label="Heading 2">${icons.formatH2}</button>
+              <button type="button" data-format="bullet" title="Bullet list" aria-label="Bullet list">${icons.formatBullet}</button>
+              <button type="button" data-format="ordered" title="Ordered list" aria-label="Ordered list">${icons.formatOrdered}</button>
+              <button type="button" data-format="checklist" title="Checklist" aria-label="Checklist">${icons.formatCheck}</button>
+              <button type="button" data-format="highlight" title="Highlight selection" aria-label="Highlight selection">${icons.formatHighlight}</button>
+            </nav>
+            <div class="editor-footer" id="editor-footer"><span>MARKDOWN</span><span id="word-count">0 words</span><span>LOCAL FILE</span></div>
+            <button type="button" class="meeting-notes-trigger" id="meeting-notes-trigger" title="Click to start recording" aria-label="Start meeting recording" aria-pressed="false">${icons.mic}<span class="meeting-duration" hidden>00:00</span></button>
+          </div>
+        </div>
+        <footer class="statusbar"><div class="status-left"><span class="status-dot"></span><span id="status-vault">No vault open</span></div><div class="status-right"><span>Markdown</span><span class="status-divider"></span><span>UTF-8</span><span class="status-divider"></span><span>⌘ K Search</span></div></footer>
+      </main>
+      <div class="panel-resizer assistant-resizer" id="assistant-resizer" role="separator" aria-orientation="vertical" aria-label="Resize assistant panel" aria-valuemin="280" aria-valuemax="560" tabindex="0"></div>
+      <aside class="assistant-drawer" id="assistant-drawer" aria-label="AI assistant">
+        <div class="assistant-panel">
+          <div class="assistant-messages" id="assistant-messages"><div class="assistant-welcome"><div class="assistant-welcome-icon">${icons.assistant}</div><strong>What would you like to do?</strong><p>Ask a question about this note, or ask me to edit it.</p></div></div>
+          <form class="assistant-composer" id="assistant-form"><div class="assistant-modes"><button type="button" class="assistant-mode active" data-mode="ask">Ask</button><button type="button" class="assistant-mode" data-mode="edit">Edit note</button></div><div class="assistant-input-wrap"><textarea id="assistant-input" rows="3" placeholder="Ask about this note…"></textarea><button type="submit" class="send-button" id="assistant-send" aria-label="Send question">${icons.send}</button></div><div class="assistant-footnote">The open file is sent to Ollama Cloud with your request.</div></form>
+        </div>
+      </aside>
+    </div>
+    <div class="settings-overlay" id="settings-overlay" hidden>
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="settings-modal-header"><div><div class="eyebrow">PREFERENCES</div><h2 id="settings-title">Settings</h2></div><button class="icon-button" id="settings-close" aria-label="Close settings">${icons.close}</button></header>
+        <div class="settings-modal-body">
+          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>How to</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
+          <div class="settings-content">
+            <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
+            <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files and PDFs. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
+            <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p></section>
+            <section class="settings-section" data-section="tasks" hidden><div class="settings-section-heading"><span class="eyebrow">GOOGLE TASKS</span><h3>Sync task sheets</h3><p>Task sheets read from and write to Google Tasks lists. Your OAuth credentials and account token are encrypted in this vault.</p></div><label class="field-label" for="google-tasks-client-id">OAuth Desktop app client ID</label><input class="settings-input" id="google-tasks-client-id" type="text" autocomplete="off" placeholder="123456789.apps.googleusercontent.com"><label class="field-label" for="google-tasks-client-secret">OAuth client secret</label><input class="settings-input" id="google-tasks-client-secret" type="password" autocomplete="new-password" placeholder="Paste the secret from the same Desktop app client"><div class="key-actions"><button class="primary-button" id="save-google-tasks-client">Save credentials</button><button class="secondary-button" id="connect-google-tasks">Connect Google account</button><button class="secondary-button" id="disconnect-google-tasks">Disconnect</button><span class="key-status" id="google-tasks-status">Checking connection…</span></div><p class="settings-note">Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”. Copy the Client ID and Client Secret, you will need these and won't be able to view them again. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.</p></section>
+
+            <section class="settings-section" data-section="desmos" hidden><div class="settings-section-heading"><span class="eyebrow">DESMOS GRAPHING CALCULATOR</span><h3>Connect Desmos</h3><p>Graphs use the Desmos Graphing Calculator API and save their state inside the Markdown file.</p></div><label class="field-label" for="desmos-api-key">Desmos API key</label><input class="settings-input" id="desmos-api-key" type="password" autocomplete="off" placeholder="Enter your Desmos API key"><div class="key-actions"><button class="primary-button" id="save-desmos-key">Save key</button><button class="secondary-button" id="remove-desmos-key">Remove key</button></div><p class="settings-note">Get an API key at desmos.com/my-api. The calculator loads from Desmos and requires an internet connection.</p></section>
+
+            <section class="settings-section" data-section="dictionary" hidden><div class="settings-section-heading"><span class="eyebrow">SPELL CHECK</span><h3>Personal dictionary</h3><p>Words here are treated as correctly spelled in your notes. This dictionary is encrypted in a separate file in the selected vault.</p></div><form class="dictionary-add-form" id="custom-dictionary-form"><input class="settings-input" id="custom-dictionary-input" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Add a word"><button class="secondary-button" type="submit">Add word</button></form><div class="custom-dictionary-list" id="custom-dictionary-list" aria-live="polite"></div></section>
+
+            <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
+
+            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">MATH IN NOTES</span><h3>How to write equations</h3><p>Wrap math in dollar signs. The equation renders when you move the cursor off its line.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Examples</h4><div class="shortcut-row"><span>Power and subscript</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral with bounds</span><kbd>$\\int_0^1 x^2 dx$</kbd></div></div><div class="shortcut-group"><h4>Greek letters</h4><div class="shortcut-row"><span>Lowercase delta</span><kbd>$/delta$</kbd></div><div class="shortcut-row"><span>Uppercase Delta</span><kbd>$/Delta$</kbd></div><div class="shortcut-row"><span>Other letters</span><kbd>/alpha, /theta, /Omega</kbd></div></div><div class="shortcut-group"><h4>Edit and preview</h4><div class="shortcut-row"><span>Click an equation</span><kbd>Return to source</kbd></div><div class="shortcut-row"><span>Right-click an equation</span><kbd>Desmos preview</kbd></div></div></div></section>
+            <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="explorer-context-menu" id="explorer-context-menu" role="menu" hidden></div>
+    <div class="explorer-context-menu editor-context-menu" id="editor-context-menu" role="menu" aria-label="Editor options" hidden></div>
+    <div class="explorer-context-menu new-file-menu" id="new-file-menu" role="menu" hidden></div>
+    <div class="rename-overlay" id="rename-overlay" hidden>
+      <form class="rename-dialog" id="rename-form" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+        <label id="rename-title" for="rename-input">Rename item</label>
+        <input id="rename-input" autocomplete="off" spellcheck="false">
+        <div class="rename-actions"><button type="button" class="secondary-button" id="rename-cancel">Cancel</button><button type="submit" class="primary-button">Rename</button></div>
+      </form>
+    </div>
+    <div class="rename-overlay delete-overlay" id="delete-overlay" hidden><section class="rename-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">Delete item?</h2><p id="delete-description"></p><div class="rename-actions"><button type="button" class="secondary-button" id="delete-cancel">Cancel</button><button type="button" class="primary-button delete-confirm" id="delete-confirm">Delete</button></div></section></div>
+    <div class="toast" id="toast" hidden></div>
+  </div>`;
+
+const state = { vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null };
+function loadToolbarPositions() {
+  const notePosition = localStorage.getItem('stillnote-notes-toolbar-position');
+  const canvasPosition = localStorage.getItem('stillnote-canvas-toolbar-position');
+  return { notes: ['left', 'right', 'bottom', 'hidden'].includes(notePosition) ? notePosition : 'right', canvas: ['left', 'right', 'bottom'].includes(canvasPosition) ? canvasPosition : 'right' };
+}
+function loadHomeChats() { try { const saved = JSON.parse(localStorage.getItem('stillnote-home-chats') || '[]'); return Array.isArray(saved) ? saved.slice(0, 3) : []; } catch { return []; } }
+function persistHomeChat() { if (!state.homeSession) return; state.homeSession.updatedAt = Date.now(); state.homeChats = [state.homeSession, ...state.homeChats.filter((chat) => chat.id !== state.homeSession.id)].slice(0, 3); localStorage.setItem('stillnote-home-chats', JSON.stringify(state.homeChats)); }
+let resolveRenameDialog = null;
+let resolveDeleteDialog = null;
+const $ = (selector) => document.querySelector(selector);
+const list = $('#note-list');
+setupPanelResizers();
+
+const markdownMarkers = new Set(['HeaderMark', 'EmphasisMark', 'CodeMark', 'LinkMark', 'LinkDestination', 'LinkTitle', 'StrikethroughMark', 'ListMark', 'QuoteMark', 'TaskMarker']);
+class TextWidget extends WidgetType {
+  constructor(text, className) { super(); this.text = text; this.className = className; }
+  toDOM() {
+    const element = document.createElement('span');
+    element.className = this.className;
+    element.textContent = this.text;
+    return element;
+  }
+  eq(other) { return other.text === this.text && other.className === this.className; }
+}
+class HorizontalRuleWidget extends WidgetType {
+  toDOM() { const element = document.createElement('hr'); element.className = 'cm-md-horizontal-rule-widget'; return element; }
+}
+class TaskCheckboxWidget extends WidgetType {
+  constructor(checked, from, to) { super(); this.checked = checked; this.from = from; this.to = to; }
+  toDOM(view) {
+    const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'cm-md-task-checkbox'; input.checked = this.checked; input.setAttribute('aria-label', this.checked ? 'Mark task incomplete' : 'Mark task complete');
+    input.addEventListener('mousedown', (event) => event.preventDefault());
+    input.addEventListener('change', () => view.dispatch({ changes: { from: this.from, to: this.to, insert: input.checked ? '[x]' : '[ ]' } }));
+    return input;
+  }
+  eq(other) { return this.checked === other.checked && this.from === other.from && this.to === other.to; }
+}
+const mathNS = 'http://www.w3.org/1998/Math/MathML';
+const greekLetters = { alpha:'α', beta:'β', gamma:'γ', delta:'δ', epsilon:'ε', theta:'θ', lambda:'λ', mu:'μ', pi:'π', rho:'ρ', sigma:'σ', tau:'τ', phi:'φ', chi:'χ', psi:'ψ', omega:'ω', Gamma:'Γ', Delta:'Δ', Theta:'Θ', Lambda:'Λ', Pi:'Π', Sigma:'Σ', Phi:'Φ', Psi:'Ψ', Omega:'Ω' };
+function mathNode(tag, text) { const node = document.createElementNS(mathNS, tag); if (text != null) node.textContent = text; return node; }
+function parseMath(source) {
+  let index = 0;
+  function sequence(stop = '') {
+    const row = mathNode('mrow');
+    while (index < source.length && source[index] !== stop) {
+      let atom;
+      const char = source[index++];
+      if (/\s/.test(char)) continue;
+      if (char === '{') { atom = sequence('}'); index++; }
+      else if (char === '\\' || char === '/') {
+        const command = (source.slice(index).match(/^[A-Za-z]+/) || [''])[0]; index += command.length;
+        if (char === '/' && !greekLetters[command] && !['int','infty','sum','prod','frac','sqrt','cdot','times','le','ge','neq','pm'].includes(command)) { index -= command.length; atom = mathNode('mo', '/'); row.append(atom); continue; }
+        if (command === 'frac' || command === 'dfrac' || command === 'tfrac') { const numerator = group(), denominator = group(); atom = mathNode('mfrac'); atom.append(numerator, denominator); }
+        else if (command === 'sqrt') { atom = mathNode('msqrt'); atom.append(group()); }
+        else if (command === 'int' || command === 'infty' || command === 'sum' || command === 'prod') atom = mathNode('mo', ({ int:'∫', infty:'∞', sum:'∑', prod:'∏' })[command]);
+        else if (greekLetters[command]) atom = mathNode('mi', greekLetters[command]);
+        else if (command === 'cdot' || command === 'times' || command === 'le' || command === 'ge' || command === 'neq' || command === 'pm') atom = mathNode('mo', ({ cdot:'·', times:'×', le:'≤', ge:'≥', neq:'≠', pm:'±' })[command]);
+        else if (command === 'left' || command === 'right') { const delim = source[index++]; atom = mathNode('mo', delim || ''); }
+        else atom = mathNode('mi', command || source[index - 1]);
+      } else if (char === '^' || char === '_') {
+        const script = group();
+        if (!row.lastChild) row.append(mathNode('mi', ' '));
+        const base = row.lastChild; row.removeChild(base);
+        const combined = mathNode(char === '^' ? 'msup' : 'msub'); combined.append(base, script); row.append(combined); continue;
+      } else if ('+-=<>(),[]|'.includes(char)) atom = mathNode('mo', char);
+      else if (/\d/.test(char)) atom = mathNode('mn', char);
+      else atom = mathNode('mi', char);
+      if (atom) row.append(atom);
+    }
+    return row;
+  }
+  function group() { while (source[index] === ' ') index++; if (source[index] === '{') { index++; const result = sequence('}'); index++; return result; } return sequenceAtom(); }
+  function sequenceAtom() {
+    while (source[index] === ' ') index++;
+    if (index >= source.length) return mathNode('mrow');
+    let token = source[index++];
+    if (token === '\\' || token === '/') { const command = (source.slice(index).match(/^[A-Za-z]+/) || [''])[0]; index += command.length; token = greekLetters[command] || ({ int:'∫', infty:'∞', sum:'∑', prod:'∏', cdot:'·', times:'×', le:'≤', ge:'≥', neq:'≠', pm:'±' })[command] || command || token; }
+    const result = mathNode(/^\d/.test(token) ? 'mn' : 'mi', token); return result;
+  }
+  return sequence();
+}
+class EquationWidget extends WidgetType {
+  constructor(source, from, to) { super(); this.source = source; this.from = from; this.to = to; }
+  toDOM(view) {
+    const math = mathNode('math'); math.setAttribute('display', 'inline'); math.classList.add('cm-md-equation'); math.append(parseMath(this.source)); math.dataset.equation = this.source; math.title = 'Click to edit · right-click for Desmos preview';
+    math.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const bounds = math.getBoundingClientRect(), fraction = bounds.width ? Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)) : 0;
+      const offset = Math.round(fraction * this.source.length);
+      view.dispatch({ selection: { anchor: this.from + 1 + offset }, scrollIntoView: true });
+      view.focus();
+    });
+    return math;
+  }
+  eq(other) { return other.source === this.source && other.from === this.from && other.to === this.to; }
+}
+class WikiMediaWidget extends WidgetType {
+  constructor(file, from, to) { super(); this.file = file; this.from = from; this.to = to; }
+  toDOM(view) {
+    const extension = `.${fileExtension(this.file)}`;
+    const is3d = ['.obj', '.stl', '.step', '.stp'].includes(extension);
+    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${is3d ? ' is-3d' : ' is-image'}`; preview.title = `${this.file} · place the caret in the link to edit it`;
+    const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'cm-wiki-media-edit'; edit.textContent = 'Edit link'; edit.title = 'Show and edit the link';
+    edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
+    edit.addEventListener('click', (event) => {
+      event.preventDefault(); event.stopPropagation();
+      view.dispatch({ selection: { anchor: this.from + 2 }, scrollIntoView: true }); view.focus();
+    });
+    preview.append(edit);
+    const loading = document.createElement('span'); loading.className = 'cm-wiki-media-loading'; loading.textContent = 'Loading preview…'; preview.append(loading);
+    window.stillnote.readAsset(this.file).then((asset) => {
+      if (!preview.isConnected) return;
+      preview.replaceChildren(edit);
+      if (asset.mime.startsWith('image/')) {
+        const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.src = asset.data; image.alt = this.file; image.loading = 'lazy'; preview.append(image);
+      } else if (['.obj', '.stl', '.step', '.stp'].includes(extension)) {
+        const viewport = document.createElement('span'); viewport.className = 'cm-wiki-3d-preview'; preview.append(viewport);
+        void mountInlineModelPreview(viewport, this.file, asset, preview);
+      }
+    }).catch(() => {
+      if (!preview.isConnected) return;
+      preview.classList.add('is-error');
+      const error = document.createElement('span'); error.textContent = `Preview unavailable · ${this.file}`; preview.replaceChildren(edit, error);
+    });
+    preview.addEventListener('pointerdown', (event) => event.stopPropagation());
+    preview.addEventListener('mousedown', (event) => event.stopPropagation());
+    return preview;
+  }
+  destroy(dom) { dom.__disposePreview?.(); }
+  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to; }
+}
+function showDesmosPreview(source, x, y) {
+  document.querySelector('.equation-preview')?._dismiss?.();
+  const popup = document.createElement('section'); popup.className = 'equation-preview'; popup.setAttribute('role', 'dialog'); popup.setAttribute('aria-label', 'Desmos equation preview');
+  popup.style.left = `${Math.min(x, innerWidth - 440)}px`; popup.style.top = `${Math.min(y, innerHeight - 330)}px`;
+  popup.innerHTML = '<div class="equation-preview-graph"></div>';
+  const dismiss = (event) => { if (event && popup.contains(event.target)) return; document.removeEventListener('pointerdown', dismiss); popup._calculator?.destroy?.(); popup.remove(); };
+  popup._dismiss = () => dismiss();
+  document.body.append(popup); document.addEventListener('pointerdown', dismiss);
+  const mount = () => { if (!popup.isConnected) return; if (!window.Desmos) { popup.querySelector('.equation-preview-graph').textContent = 'Desmos could not be loaded. Check your internet connection.'; return; } const calculator = window.Desmos.GraphingCalculator(popup.querySelector('.equation-preview-graph'), { expressions: false, settingsMenu: false, zoomButtons: true }); const latex = source.replace(/\/(alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|rho|sigma|tau|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Pi|Sigma|Phi|Psi|Omega|int|infty|sum|prod|frac|sqrt|cdot|times|le|ge|neq|pm)\b/g, (_match, command) => `\\${command}`); calculator.setExpression({ id: 'equation', latex }); popup._calculator = calculator; };
+  if (window.Desmos) mount(); else { let script = document.querySelector('#desmos-api'); if (!script) { script = document.createElement('script'); script.id = 'desmos-api'; script.src = 'https://www.desmos.com/api/v1.11/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6'; script.onload = mount; script.onerror = () => { if (popup.isConnected) popup.querySelector('.equation-preview-graph').textContent = 'Desmos could not be loaded. Check your internet connection.'; }; document.head.append(script); } else script.addEventListener('load', mount, { once: true }); }
+}
+function makeLiveMarkdownDecorations(view) {
+  const decorations = [];
+  const activeLines = new Set(view.state.selection.ranges.map((range) => view.state.doc.lineAt(range.head).number));
+  const listLines = new Set();
+  const fencedCodeRanges = [];
+  syntaxTree(view.state).iterate({ enter(node) { if (node.type.name === 'FencedCode') fencedCodeRanges.push([node.from, node.to]); } });
+  const equationRanges = [];
+  for (let number = 1; number <= view.state.doc.lines; number++) {
+    const line = view.state.doc.line(number);
+    if (fencedCodeRanges.some(([from, to]) => line.from >= from && line.to <= to)) continue;
+    const matcher = /(?<!\$)\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?!\$)/g; let match;
+    while ((match = matcher.exec(line.text))) {
+      const from = line.from + match.index, to = from + match[0].length;
+      if (!syntaxTree(view.state).resolveInner(from + 1).type.is('InlineCode')) equationRanges.push({ from, to, source: match[1], line: number });
+    }
+  }
+  const emphasisRanges = [];
+  syntaxTree(view.state).iterate({
+    enter(node) {
+      const name = node.type.name;
+      const line = view.state.doc.lineAt(node.from);
+      if (name !== 'FencedCode' && equationRanges.some(({ from, to }) => node.from < to && node.to > from)) return;
+      if ((name === 'Emphasis' || name === 'StrongEmphasis') && node.to > node.from) emphasisRanges.push([node.from, node.to]);
+      if (name === 'TaskMarker' && node.to > node.from) {
+        const marker = view.state.doc.sliceString(node.from, node.to);
+        decorations.push(Decoration.replace({ widget: new TaskCheckboxWidget(/\[[xX]\]/.test(marker), node.from, node.to) }).range(node.from, node.to));
+        return;
+      }
+      if (name === 'ListMark' && node.to > node.from) {
+        const marker = view.state.doc.sliceString(node.from, node.to);
+        if (/^[*+-]$/.test(marker.trim())) {
+          const isTaskListLine = /^\s*[-*+]\s+\[[ xX]\](?:\s|$)/.test(line.text);
+          decorations.push(isTaskListLine ? Decoration.replace({}).range(node.from, node.to) : Decoration.replace({ widget: new TextWidget('•', 'cm-md-bullet') }).range(node.from, node.to));
+          if (!listLines.has(line.from)) {
+            decorations.push(Decoration.line({ class: 'cm-md-list-line' }).range(line.from));
+            listLines.add(line.from);
+          }
+        } else {
+          decorations.push(Decoration.replace({ widget: new TextWidget(marker.trim(), 'cm-md-ordered-marker') }).range(node.from, node.to));
+        }
+        return;
+      }
+      const heading = name.match(/^(?:ATX|Setext)Heading([1-6])$/);
+      if (heading && node.to > node.from) decorations.push(Decoration.mark({ class: `cm-md-heading cm-md-h${heading[1]}` }).range(node.from, node.to));
+      const marks = {
+        Emphasis: 'cm-md-emphasis', StrongEmphasis: 'cm-md-strong', Strikethrough: 'cm-md-strikethrough',
+        InlineCode: 'cm-md-inline-code', Link: 'cm-md-link', Image: 'cm-md-image', FencedCode: 'cm-md-code-block',
+      };
+      if (marks[name] && node.to > node.from) decorations.push(Decoration.mark({ class: marks[name] }).range(node.from, node.to));
+      if (markdownMarkers.has(name) && node.to > node.from) {
+        const caretInEmphasis = name === 'EmphasisMark' && emphasisRanges.some(([from, to]) =>
+          node.from >= from && node.to <= to && view.state.selection.ranges.some((range) => range.head >= from && range.head <= to));
+        if (name === 'EmphasisMark' ? !caretInEmphasis : !activeLines.has(line.number)) decorations.push(Decoration.replace({}).range(node.from, node.to));
+      }
+    },
+  });
+  for (let number = 1; number <= view.state.doc.lines; number++) {
+    const line = view.state.doc.line(number);
+    const isInsideCode = fencedCodeRanges.some(([from, to]) => line.from >= from && line.to <= to);
+    if (!isInsideCode) {
+      const wikiMatcher = /(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])/g; let wikiMatch;
+      while ((wikiMatch = wikiMatcher.exec(line.text))) {
+        const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
+        if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
+        const target = (wikiMatch[1] || wikiMatch[2]).split('|')[0].split('#')[0].trim();
+        const linkedFile = resolveVaultFileTarget(target);
+        const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
+        const media = ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp'].includes(extension);
+        const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
+        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to) }).range(from, to));
+        else decorations.push(Decoration.mark({ class: 'cm-md-wiki-link' }).range(from, to));
+      }
+      for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
+      const highlightMatcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
+      let highlight;
+      while ((highlight = highlightMatcher.exec(line.text))) {
+        const start = line.from + highlight.index + highlight[1].length;
+        const contentStart = start + 1, contentEnd = start + highlight[0].length - highlight[1].length - 1;
+        if (contentEnd <= contentStart) continue;
+        decorations.push(Decoration.mark({ class: 'cm-md-highlight' }).range(contentStart, contentEnd));
+        if (!activeLines.has(number)) {
+          decorations.push(Decoration.replace({}).range(start, start + 1));
+          decorations.push(Decoration.replace({}).range(contentEnd, contentEnd + 1));
+        }
+      }
+    }
+    if (line.text.trim() === '---' && !isInsideCode) {
+      decorations.push(Decoration.line({ class: 'cm-md-horizontal-rule-line' }).range(line.from));
+      decorations.push(Decoration.replace({ widget: new HorizontalRuleWidget() }).range(line.from, line.to));
+    }
+  }
+  return Decoration.set(decorations, true);
+}
+function getNoteIndexTargets(view) {
+  const headings = [], highlights = [];
+  const doc = view.state.doc, codeLines = new Set();
+  let activeFence = null;
+  const cleanHeadingPrefix = (text) => text.replace(/^\s{0,3}(?:>\s?)+/, '');
+  for (let number = 1; number <= doc.lines; number++) {
+    const line = doc.line(number), text = cleanHeadingPrefix(line.text);
+    const fence = text.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (activeFence) {
+      codeLines.add(number);
+      if (fence && fence[1][0] === activeFence.char && fence[1].length >= activeFence.length && !text.slice(fence[0].length).trim()) activeFence = null;
+      continue;
+    }
+    if (fence) { activeFence = { char: fence[1][0], length: fence[1].length }; codeLines.add(number); continue; }
+    const atx = text.match(/^ {0,3}(#{1,2})(?:[ \t]+|$)(.*?)\s*#*\s*$/);
+    if (atx) { headings.push({ from: line.from, label: atx[2].trim() || 'Heading' }); continue; }
+    if (number < doc.lines && text.trim()) {
+      const next = cleanHeadingPrefix(doc.line(number + 1).text);
+      const setext = next.match(/^ {0,3}(=+|-+)\s*$/);
+      if (setext && !codeLines.has(number + 1)) headings.push({ from: line.from, label: text.trim() || 'Heading' });
+    }
+  }
+  // For setext headings, retain only H1/H2 underlines; the pattern above
+  // intentionally maps both underline styles to the two supported levels.
+  const text = view.state.doc.toString(), code = [];
+  syntaxTree(view.state).iterate({ enter(node) { if (node.type.name === 'FencedCode') code.push([node.from, node.to]); } });
+  const matcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
+  let match;
+  while ((match = matcher.exec(text))) {
+    const from = match.index + match[1].length;
+    if (code.some(([start, end]) => from >= start && from < end)) continue;
+    highlights.push({ from, label: match[2].trim() || 'Highlight' });
+  }
+  return { headings, highlights };
+}
+function renderNoteIndexes(view) {
+  const nav = $('#note-indexes');
+  if (!nav || view !== state.view) return;
+  const groups = getNoteIndexTargets(view);
+  const entries = [...groups.headings.map((entry) => ({ ...entry, kind: 'heading' })), ...groups.highlights.map((entry) => ({ ...entry, kind: 'highlight' }))].sort((a, b) => a.from - b.from);
+  nav.replaceChildren();
+  entries.forEach((entry) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = `note-index-entry note-index-${entry.kind}`;
+    const label = Array.from(entry.label); button.textContent = label.length > 10 ? `${label.slice(0, 10).join('')}...` : entry.label;
+    button.title = entry.label; button.setAttribute('aria-label', `${entry.kind === 'heading' ? 'Heading' : 'Highlight'}: ${entry.label}`);
+    button.addEventListener('click', () => jumpToNoteIndex(view, entry.from)); nav.append(button);
+  });
+  nav.hidden = !nav.childElementCount;
+  positionNoteIndexes();
+  updateNoteIndexCurrent(view);
+}
+function positionNoteIndexes() {
+  const nav = $('#note-indexes'), editor = $('#note-editor');
+  if (!nav || !editor || nav.hidden) return;
+  const rect = editor.getBoundingClientRect();
+  nav.style.setProperty('--note-index-top', `${rect.top + rect.height / 2}px`);
+  nav.style.setProperty('--note-index-left', `${rect.left + ($('#note-editor').dataset.toolbarPosition === 'left' ? 58 : 12)}px`);
+}
+window.addEventListener('resize', positionNoteIndexes);
+new ResizeObserver(positionNoteIndexes).observe($('#note-editor'));
+window.addEventListener('mousemove', (event) => {
+  const nav = $('#note-indexes'), editor = $('#note-editor');
+  if (!nav || nav.hidden || editor.hidden) return;
+  const left = Number.parseFloat(nav.style.getPropertyValue('--note-index-left')) || 0;
+  const centerY = Number.parseFloat(nav.style.getPropertyValue('--note-index-top')) || window.innerHeight / 2;
+  const halfHeight = nav.offsetHeight / 2;
+  const visible = nav.classList.contains('is-visible');
+  const near = event.clientX >= left - (visible ? 96 : 80)
+    && event.clientX <= left + (visible ? Math.max(nav.offsetWidth + 36, 170) : 145)
+    && event.clientY >= centerY - halfHeight - 36 && event.clientY <= centerY + halfHeight + 36;
+  nav.classList.toggle('is-visible', near);
+});
+window.addEventListener('blur', () => $('#note-indexes')?.classList.remove('is-visible'));
+function updateNoteIndexCurrent(view) {
+  const nav = $('#note-indexes');
+  if (!nav || view !== state.view) return;
+  const groups = getNoteIndexTargets(view), scroller = view.scrollDOM;
+  const entries = [...groups.headings.map((entry) => ({ ...entry, kind: 'heading' })), ...groups.highlights.map((entry) => ({ ...entry, kind: 'highlight' }))].sort((a, b) => a.from - b.from);
+  const scrollTop = scroller.getBoundingClientRect().top + 64;
+  let nearest = -1, nearestDistance = Infinity;
+  entries.forEach((entry, index) => { const coords = view.coordsAtPos(entry.from); if (!coords) return; const distance = Math.abs(coords.top - scrollTop); if (distance < nearestDistance) { nearest = index; nearestDistance = distance; } });
+  nav.querySelectorAll('.note-index-entry').forEach((button, index) => { const active = index === nearest; button.classList.toggle('is-current', active); button.setAttribute('aria-current', active ? 'location' : 'false'); });
+}
+function jumpToNoteIndex(view, position) {
+  view.dispatch({ selection: { anchor: position } });
+  view.focus();
+  const scroller = view.scrollDOM;
+  const block = view.lineBlockAt(position);
+  const targetCenter = view.documentTop + block.top + block.height / 2;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const visibleCenter = scrollerRect.top + scroller.clientTop + scroller.clientHeight / 2;
+  const previousBehavior = scroller.style.scrollBehavior;
+  scroller.style.scrollBehavior = 'auto';
+  scroller.scrollTop += targetCenter - visibleCenter;
+  scroller.style.scrollBehavior = previousBehavior;
+}
+const liveMarkdown = ViewPlugin.fromClass(class {
+  constructor(view) { this.decorations = makeLiveMarkdownDecorations(view); }
+  update(update) {
+    if (update.docChanged || update.selectionSet || update.viewportChanged) this.decorations = makeLiveMarkdownDecorations(update.view);
+  }
+}, { decorations: (plugin) => plugin.decorations });
+
+function wrapEditorSelection(view, marker) {
+  const selection = view.state.selection.main;
+  const selected = view.state.sliceDoc(selection.from, selection.to);
+  const insert = `${marker}${selected}${marker}`;
+  const anchor = selection.empty ? selection.from + marker.length : selection.from + marker.length;
+  const head = selection.empty ? anchor : anchor + selected.length;
+  view.dispatch({ changes: { from: selection.from, to: selection.to, insert }, selection: { anchor, head }, scrollIntoView: true });
+  return true;
+}
+function setEditorLinePrefix(view, prefix, kind) {
+  const selection = view.state.selection.main;
+  const first = view.state.doc.lineAt(selection.from);
+  const last = view.state.doc.lineAt(selection.to);
+  const lines = [];
+  for (let number = first.number; number <= last.number; number++) lines.push(view.state.doc.line(number));
+  const original = lines.map((line) => line.text);
+  const next = original.map((text) => {
+    if (kind === 'heading') return /^#{1,6}\s/.test(text) ? text.replace(/^#{1,6}\s+/, prefix ? `${prefix} ` : '') : `${prefix} ${text}`;
+    if (kind === 'task') {
+      if (/^(\s*)[-*+]\s+\[[ xX]\]\s+/.test(text)) return text.replace(/^(\s*)[-*+]\s+\[[ xX]\]\s+/, '$1');
+      if (/^(\s*)[-*+]\s+/.test(text)) return text.replace(/^(\s*)[-*+]\s+/, `$1${prefix}`);
+      return `${prefix}${text}`;
+    }
+    if (kind === 'ordered' && /^\s*\d+\.\s+/.test(text)) return text.replace(/^\s*\d+\.\s+/, '');
+    if (kind === 'bullet' && /^\s*[-*+]\s+/.test(text)) return text.replace(/^\s*[-*+]\s+/, '');
+    return `${prefix}${text}`;
+  });
+  view.dispatch({ changes: { from: first.from, to: last.to, insert: next.join('\n') }, scrollIntoView: true });
+  view.focus();
+}
+function openWikiLinkAt(view, event) {
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (position == null) return false;
+  const line = view.state.doc.lineAt(position);
+  const offset = position - line.from;
+  const matcher = /(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])/g;
+  let match;
+  while ((match = matcher.exec(line.text))) {
+    if (offset < match.index || offset > match.index + match[0].length) continue;
+    if (syntaxTree(view.state).resolveInner(line.from + match.index + 2).type.is('InlineCode')) return false;
+    const target = (match[1] || match[2]).split('|')[0].trim();
+    event.preventDefault();
+    void navigateWikiTarget(target);
+    return true;
+  }
+  return false;
+}
+function wordRangeAt(view, position) {
+  const line = view.state.doc.lineAt(position), matcher = /[\p{L}]+(?:['’][\p{L}]+)?/gu;
+  let match;
+  while ((match = matcher.exec(line.text))) {
+    const from = line.from + match.index, to = from + match[0].length;
+    if (position >= from && position <= to) return { from, to, word: match[0] };
+  }
+  return null;
+}
+function closeEditorContextMenu() { $('#editor-context-menu').hidden = true; }
+function showEditorContextMenu(view, event, position, wordRange) {
+  const menu = $('#editor-context-menu'); menu.replaceChildren();
+  const addAction = (label, action, disabled = false) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'context-action'; button.textContent = label; button.disabled = disabled;
+    button.addEventListener('click', () => { closeEditorContextMenu(); action(); view.focus(); }); menu.append(button);
+  };
+  if (wordRange && dictionary && !isKnownWord(wordRange.word)) {
+    const suggestions = spellingSuggestions(wordRange.word);
+    if (suggestions.length) {
+      for (const suggestion of suggestions) {
+        const replacement = wordRange.word === wordRange.word.toLocaleUpperCase() ? suggestion.toLocaleUpperCase() : /^[A-Z]/.test(wordRange.word) ? suggestion[0].toLocaleUpperCase() + suggestion.slice(1) : suggestion;
+        addAction(`Correct to “${replacement}”`, () => view.dispatch({ changes: { from: wordRange.from, to: wordRange.to, insert: replacement }, selection: { anchor: wordRange.from + replacement.length }, scrollIntoView: true }));
+      }
+    } else addAction(`No suggestions for “${wordRange.word}”`, () => {}, true);
+    const normalized = wordRange.word.toLocaleLowerCase();
+    addAction(`Add “${wordRange.word}” to dictionary`, () => { addCustomWord(normalized); });
+  }
+  menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - 230))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
+}
+async function handleEditorContextMenu(view, event) {
+  if (state.active?.toLocaleLowerCase().endsWith('.md') && openWikiLinkAt(view, event)) return;
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (position == null) return;
+  const wordRange = wordRangeAt(view, position);
+  if (!wordRange) return;
+  event.preventDefault();
+  try { await getSpellDictionary(); } catch {}
+  if (view !== state.view) return;
+  if (isKnownWord(wordRange.word)) return;
+  view.dispatch({ selection: { anchor: wordRange.from, head: wordRange.to } });
+  closeEditorContextMenu();
+  showEditorContextMenu(view, event, position, wordRange);
+}
+function isKnownWord(word) {
+  const normalized = word.toLocaleLowerCase().replace(/’/g, "'");
+  return customDictionary.has(normalized) || Boolean(dictionary?.has(normalized));
+}
+
+function showToast(message) {
+  const toast = $('#toast'); toast.textContent = message; toast.hidden = false;
+  clearTimeout(showToast.timer); showToast.timer = setTimeout(() => { toast.hidden = true; }, 2400);
+}
+function prettyName(path) { return path.split('/').at(-1).replace(/\.md$/i, ''); }
+const codeFileTypes = [
+  ['JavaScript', '.js'], ['CommonJS JavaScript', '.cjs'], ['ES module JavaScript', '.mjs'], ['TypeScript', '.ts'], ['React JSX', '.jsx'], ['React TypeScript', '.tsx'],
+  ['Python', '.py'], ['HTML', '.html'], ['CSS', '.css'], ['JSON', '.json'], ['Java', '.java'], ['C', '.c'], ['C header', '.h'], ['C++', '.cpp'], ['C++ header', '.hpp'],
+  ['Rust', '.rs'], ['Go', '.go'], ['SQL', '.sql'], ['Shell script', '.sh'], ['XML', '.xml'], ['YAML', '.yaml'], ['YAML', '.yml'], ['TOML', '.toml'], ['Swift', '.swift'], ['Kotlin', '.kt'], ['Ruby', '.rb'], ['PHP', '.php'],
+];
+const editableAssetExtensions = new Set(codeFileTypes.map(([, extension]) => extension).concat('.jar'));
+function fileExtension(file) { return file.split('/').at(-1).split('.').at(-1).toLowerCase(); }
+function isEditableAsset(file) { return editableAssetExtensions.has(`.${fileExtension(file)}`); }
+function codeLanguage(file) {
+  const extension = `.${fileExtension(file)}`;
+  if (['.js', '.cjs', '.mjs', '.jsx', '.ts', '.tsx'].includes(extension)) return javascript({ typescript: ['.ts', '.tsx'].includes(extension), jsx: ['.jsx', '.tsx'].includes(extension) });
+  if (extension === '.py') return python();
+  if (['.html', '.xml'].includes(extension)) return html();
+  if (extension === '.css') return css();
+  if (extension === '.json') return json();
+  return [];
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+function inlineMarkdownForPdf(value) {
+  let text = escapeHtml(value);
+  const code = [];
+  text = text.replace(/`([^`]+)`/g, (_match, content) => { const token = `@@CODE${code.length}@@`; code.push(`<code>${content}</code>`); return token; });
+  text = text.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/(?:&lt;\[([^\]|]+)(?:\|([^\]]+))?\]&gt;|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/g, (_all, newTarget, newLabel, oldTarget, oldLabel) => `<span class="wiki-link">${newLabel || newTarget || oldLabel || oldTarget}</span>`)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>').replace(/_(.+?)_/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<del>$1</del>');
+  return text.replace(/@@CODE(\d+)@@/g, (_match, index) => code[Number(index)]);
+}
+function renderMarkdownForPdf(markdownText, title) {
+  const source = String(markdownText).split(/\r?\n/);
+  if (source.length && source[0].trim().replace(/^#{1,6}\s+/, '').toLocaleLowerCase() === title.toLocaleLowerCase()) source.shift();
+  const blocks = []; let listType = null; let inCode = false; let codeLines = [];
+  const closeList = () => { if (listType) { blocks.push(`</${listType}>`); listType = null; } };
+  const isBlockStart = (line) => /^\s*(```|#{1,6}\s|>|-{3,}\s*$|(?:[-*+]\s+|\d+\.\s+))/.test(line);
+  for (let index = 0; index < source.length; index++) {
+    const line = source[index];
+    if (/^\s*```/.test(line)) {
+      closeList();
+      if (inCode) { blocks.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`); codeLines = []; inCode = false; }
+      else inCode = true;
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+    if (!line.trim()) { closeList(); continue; }
+    const heading = line.match(/^\s*(#{1,6})\s+(.*)$/);
+    if (heading) { closeList(); const level = heading[1].length; blocks.push(`<h${level}>${inlineMarkdownForPdf(heading[2])}</h${level}>`); continue; }
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { closeList(); blocks.push('<hr>'); continue; }
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) { closeList(); blocks.push(`<blockquote>${inlineMarkdownForPdf(quote[1])}</blockquote>`); continue; }
+    const item = line.match(/^\s*(?:([-*+])|(\d+)\.)\s+(.*)$/);
+    if (item) {
+      const task = item[1] && item[3].match(/^\[([ xX])\]\s+(.*)$/);
+      const type = item[2] ? 'ol' : 'ul';
+      if (listType !== type) { closeList(); blocks.push(`<${type}>`); listType = type; }
+      if (task) blocks.push(`<li class="task ${task[1].trim() ? 'checked' : ''}">${task[1].trim() ? '☑' : '☐'} ${inlineMarkdownForPdf(task[2])}</li>`);
+      else blocks.push(`<li>${inlineMarkdownForPdf(item[3])}</li>`);
+      continue;
+    }
+    closeList();
+    const paragraph = [line];
+    while (index + 1 < source.length && source[index + 1].trim() && !isBlockStart(source[index + 1])) paragraph.push(source[++index]);
+    blocks.push(`<p>${paragraph.map(inlineMarkdownForPdf).join('<br>')}</p>`);
+  }
+  if (inCode) blocks.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+  closeList();
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+    *{box-sizing:border-box}body{margin:0;color:#292a27;font:12pt/1.65 Georgia,'Times New Roman',serif}h1{margin:0 0 28pt;font:26pt/1.15 Georgia,'Times New Roman',serif;letter-spacing:-.03em}h2{margin:24pt 0 9pt;font-size:18pt}h3{margin:20pt 0 8pt;font-size:14pt}h4,h5,h6{margin:16pt 0 6pt}p{margin:0 0 12pt}ul,ol{margin:0 0 14pt;padding-left:24pt}li{padding-left:3pt;margin:3pt 0}li.task{list-style:none;margin-left:-17pt}blockquote{margin:12pt 0;padding:2pt 0 2pt 12pt;border-left:2px solid #b8a18b;color:#5d5b54}hr{margin:20pt 0;border:0;border-top:1px solid #c9c5bb}pre{margin:12pt 0;padding:10pt;background:#f2f1ed;border-radius:4pt;white-space:pre-wrap;overflow-wrap:anywhere;font:9pt/1.5 Menlo,monospace}code{padding:1pt 3pt;background:#f0eee9;border-radius:2pt;font:9pt Menlo,monospace}a,.wiki-link{color:#725b49;text-decoration:underline}strong{font-weight:bold}em{font-style:italic}
+    </style></head><body><main><h1>${escapeHtml(title)}</h1>${blocks.join('\n')}</main></body></html>`;
+}
+async function exportPdf(notePath = state.active) {
+  if (!state.vault || !notePath) { showToast('Open a note before exporting a PDF.'); return; }
+  try {
+    let markdownText;
+    if (notePath === state.active && state.view) { await saveActive(); markdownText = state.view.state.doc.toString(); }
+    else markdownText = await window.stillnote.readNote(notePath);
+    const title = prettyName(notePath);
+    const result = await window.stillnote.exportPdf(notePath, renderMarkdownForPdf(markdownText, title));
+    if (result) showToast('PDF exported');
+  } catch (error) { showToast(error.message || 'Could not export PDF.'); }
+}
+function renderFiles() {
+  list.innerHTML = '';
+  if (!state.files.length) {
+    if (!state.tree.length) list.innerHTML = `<div class="empty-files"><span class="empty-file-icon">${icons.folder}</span><span>Folder is empty</span></div>`;
+  }
+  const addNodes = (nodes, parent, depth = 0) => {
+    for (const node of nodes) {
+      if (node.type === 'folder') {
+        const isCollapsed = state.collapsed.has(node.path);
+        const row = document.createElement('button');
+        row.className = 'folder-row'; row.style.setProperty('--depth', depth);
+        row.setAttribute('aria-expanded', String(!isCollapsed));
+        row.innerHTML = `<span class="folder-chevron${isCollapsed ? ' is-collapsed' : ''}">${icons.down}</span>${isCollapsed ? icons.folder : icons.folderOpen}<span>${escapeHtml(node.name)}</span>`;
+        row.title = node.path; row.addEventListener('click', () => { isCollapsed ? state.collapsed.delete(node.path) : state.collapsed.add(node.path); renderFiles(); });
+        row.addEventListener('contextmenu', (event) => showExplorerContextMenu(event, node));
+        wireExplorerDrag(row, node);
+        parent.append(row);
+        if (!isCollapsed) addNodes(node.children, parent, depth + 1);
+      } else {
+        const row = document.createElement('button');
+        row.className = `note-row${node.path === state.active ? ' selected' : ''}`;
+        row.style.setProperty('--depth', depth);
+        row.innerHTML = `${icons[node.format] || icons.file}<span>${escapeHtml(prettyName(node.name))}</span>`;
+        row.title = node.path; row.addEventListener('click', () => openNote(node.path));
+        row.addEventListener('contextmenu', (event) => showExplorerContextMenu(event, node)); wireExplorerDrag(row, node); parent.append(row);
+      }
+    }
+  };
+  addNodes(state.tree, list);
+}
+function explorerFilePaths(nodes = state.tree, paths = []) {
+  for (const node of nodes) node.type === 'folder' ? explorerFilePaths(node.children || [], paths) : paths.push(node.path);
+  return paths;
+}
+function setExplorerFoldersExpanded(expanded) {
+  const visit = (nodes) => {
+    for (const node of nodes) if (node.type === 'folder') {
+      if (expanded) state.collapsed.delete(node.path); else state.collapsed.add(node.path);
+      visit(node.children || []);
+    }
+  };
+  visit(state.tree); renderFiles();
+}
+async function setVault(vault) {
+  if (state.vault?.path && state.vault.path !== vault.path) { state.view?.destroy(); state.view = null; state.active = null; $('#editor-content').replaceChildren(); }
+  state.vault = vault; state.files = vault.files; state.tree = vault.tree; state.collapsed.clear();
+  $('.vault-name').textContent = vault.name; $('.vault-mark').textContent = vault.name.charAt(0).toUpperCase();
+  $('.location-vault').textContent = vault.name; $('#status-vault').textContent = vault.name;
+  setSettingsHealth('directory', true, 'Folder open');
+  renderFiles();
+  await loadCustomDictionaryForVault().catch((error) => {
+    customDictionary = new Set(); renderCustomDictionary();
+    console.warn('Could not load the personal dictionary for this vault:', error.message);
+  });
+  const legacyDesmosKey = localStorage.getItem('stillnote-desmos-api-key');
+  if (legacyDesmosKey) {
+    try {
+      const status = await window.stillnote.desmosKeyStatus();
+      if (!status.configured) await window.stillnote.saveDesmosKey(legacyDesmosKey);
+      localStorage.removeItem('stillnote-desmos-api-key');
+    }
+    catch (error) { console.warn('Could not migrate the saved Desmos key into the vault:', error.message); }
+  }
+  await updateDesmosKeyStatus();
+}
+function showEmptyVault() {
+  $('#welcome').hidden = false;
+  $('#welcome .eyebrow').textContent = 'VAULT READY';
+  $('#welcome h1').innerHTML = 'A fresh page<br><em>is waiting.</em>';
+  $('#welcome p').innerHTML = 'Create a note and start collecting your thoughts.';
+  $('#open-vault').innerHTML = `Create your first note ${icons.external}`;
+  $('#note-editor').hidden = true;
+}
+async function chooseVault() {
+  try {
+    await saveActive();
+    const vault = await window.stillnote.chooseVault(); if (!vault) return;
+    await setVault(vault);
+    if (explorerFilePaths().length) await openNote(explorerFilePaths()[0]);
+    else showEmptyVault();
+  } catch (error) { showToast(error.message || 'Could not open that folder.'); }
+}
+function renderHomeTranscript() {
+  const transcript = $('#home-transcript'); if (!transcript || !state.homeSession) return;
+  transcript.replaceChildren();
+  if (!state.homeSession.messages.length) {
+    const empty = document.createElement('section'); empty.className = 'home-empty-state';
+    empty.innerHTML = `<div class="home-empty-mark">${icons.assistant}</div><div class="eyebrow">A THOUGHTFUL START</div><h2>What can I help you untangle?</h2><p>Ask a question, explore an idea, or find something across your notes.</p><div class="home-prompt-suggestions"><button type="button" data-home-prompt="Summarize the ideas I’ve been collecting lately">Summarize my recent ideas</button><button type="button" data-home-prompt="Help me find a note about ">Find a note about…</button><button type="button" data-home-prompt="Explain this concept in a simple way: ">Explain a concept</button></div>`;
+    transcript.append(empty);
+  }
+  for (const message of state.homeSession.messages) {
+    const bubble = document.createElement('div'); bubble.className = `home-bubble ${message.role}`;
+    const text = String(message.content || '');
+    const parts = text.split(/((?:<\[[^\]]+\]>|\[\[[^\]]+\]\]))/g);
+    for (const part of parts) {
+      const match = part.match(/^(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])$/);
+      if (!match) { bubble.append(document.createTextNode(part)); continue; }
+      const ref = (match[1] || match[2]).trim();
+      const found = resolveVaultFileTarget(ref.split('#')[0]);
+      if (!found) { bubble.append(document.createTextNode(ref)); continue; }
+      const link = document.createElement('button'); link.type = 'button'; link.className = 'home-file-link'; link.textContent = prettyName(found); link.title = `Open ${found}`;
+      link.addEventListener('click', async () => {
+        const followupHistory = state.homeSession.messages.slice(-8).map(({ role, content }) => ({ role, content }));
+        await navigateWikiTarget(ref); setAssistantOpen(true);
+        $('#assistant-messages').replaceChildren();
+        state.chatHistory = followupHistory;
+        followupHistory.forEach(({ role, content }) => appendChatBubble(role, content));
+      });
+      bubble.append(link);
+    }
+    transcript.append(bubble);
+  }
+  transcript.scrollTop = transcript.scrollHeight;
+}
+function startHomeSession(session = null) {
+  state.homeSession = session ? JSON.parse(JSON.stringify(session)) : { id: crypto.randomUUID(), title: 'New conversation', updatedAt: Date.now(), messages: [] };
+  renderHomeTranscript(); renderHomeHistory();
+}
+function renderHomeHistory() {
+  const history = $('#home-history'); if (!history) return;
+  history.replaceChildren();
+  if (!state.homeChats.length) { const empty = document.createElement('p'); empty.className = 'home-history-empty'; empty.textContent = 'Your conversations will appear here.'; history.append(empty); return; }
+  for (const chat of state.homeChats) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = `home-history-item${state.homeSession?.id === chat.id ? ' active' : ''}`;
+    button.textContent = chat.title || chat.messages?.find((item) => item.role === 'user')?.content?.slice(0, 48) || 'Conversation';
+    button.addEventListener('click', () => startHomeSession(chat)); history.append(button);
+  }
+}
+async function openHome() {
+  cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
+  $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
+  try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
+  if (state.view) { state.view.destroy(); state.view = null; }
+  state.structured?.desmos?.destroy?.();
+  state.structured = null; updateAssistantModeCopy(); state.active = null; state.home = true; state.dirty = false;
+  state.assistantOpen = false; $('.workspace').classList.remove('assistant-open');
+  $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><div class="home-footnote">Relevant notes are selected on this device before they’re sent with your request.</div></div></div></section>`;
+  $('#note-editor').hidden = false; $('#welcome').hidden = true;
+  $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault?.name || 'Workspace')}</span><span class="crumb-slash">/</span><strong>Home</strong>`;
+  $('.location-note').textContent = 'Home'; $('#save-state').textContent = '';
+  $('#word-count').textContent = ''; $('#assistant-toggle').disabled = true; $('#assistant-toggle').setAttribute('aria-disabled', 'true'); $('#assistant-toggle').setAttribute('aria-pressed', 'false');
+  await window.stillnote.rememberNote(null).catch(() => {}); renderFiles();
+  startHomeSession();
+  $('#home-form').addEventListener('submit', submitHomeMessage);
+  $('#home-new-chat').addEventListener('click', () => { startHomeSession(); $('#home-input').focus(); });
+  $('#home-history-toggle').addEventListener('click', (event) => {
+    const button = event.currentTarget, view = $('.home-view'), history = $('.home-history');
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', String(expanded)); button.setAttribute('aria-label', expanded ? 'Hide recent chats' : 'Show recent chats');
+    if (expanded) {
+      view.classList.add('has-home-history');
+      animate(history, { opacity: [0, 1], translateX: [-7, 0], duration: motionDuration(130), ease: 'outQuad' });
+    } else {
+      animate(history, { opacity: [1, 0], translateX: [0, -5], duration: motionDuration(100), ease: 'inQuad', onComplete: () => {
+        if (button.getAttribute('aria-expanded') !== 'true') view.classList.remove('has-home-history');
+        history.style.opacity = ''; history.style.transform = '';
+      } });
+    }
+  });
+  $('#home-transcript').addEventListener('click', (event) => { const suggestion = event.target.closest('[data-home-prompt]'); if (!suggestion) return; const input = $('#home-input'); input.value = suggestion.dataset.homePrompt; input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+}
+async function submitHomeMessage(event) {
+  event.preventDefault();
+  const input = $('#home-input'), prompt = input.value.trim(); if (!prompt) return;
+  let keyStatus;
+  try { keyStatus = await window.stillnote.aiKeyStatus(); } catch (error) { showToast(error.message || 'Could not check Ollama key status.'); return; }
+  if (!keyStatus.configured) { openSettings('ai'); return; }
+  const matches = await window.stillnote.findRelevantNotes(prompt);
+  const sources = matches.map(({ path, title, excerpt }) => `FILE: ${path}\nTITLE: ${title}\nCONTENT:\n${excerpt}`).join('\n\n---\n\n');
+  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  state.homeSession.messages.push({ role: 'user', content: prompt });
+  if (state.homeSession.messages.filter((item) => item.role === 'user').length === 1) state.homeSession.title = prompt.slice(0, 58);
+  input.value = ''; const send = $('#home-send'); send.disabled = true;
+  renderHomeTranscript(); const loading = document.createElement('div'); loading.className = 'home-bubble assistant loading'; loading.textContent = 'Thinking…'; $('#home-transcript').append(loading);
+  try {
+    const history = state.homeSession.messages.slice(0, -1).slice(-8);
+    const result = await window.stillnote.askAi({ mode: 'ask', model, noteName: state.vault?.name || 'Workspace', documentType: 'vault', document: sources, prompt, history });
+    loading.remove(); state.homeSession.messages.push({ role: 'assistant', content: result.text }); persistHomeChat(); renderHomeTranscript(); renderHomeHistory();
+  } catch (error) { loading.remove(); const fail = document.createElement('div'); fail.className = 'home-bubble assistant error'; fail.textContent = error.message || 'The assistant could not respond.'; $('#home-transcript').append(fail); }
+  finally { if ($('#home-send')) $('#home-send').disabled = false; }
+}
+function bytesFromDataUrl(dataUrl) {
+  const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+function renderAssetTextEditor(file, contents, navigationId) {
+  const theme = EditorView.theme({ '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '13px', height: '100%' }, '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '1.65', overflow: 'auto' }, '.cm-content': { maxWidth: 'none', padding: '28px 28px 90px', caretColor: '#a7795d' }, '.cm-gutters': { backgroundColor: '#f5f4f0', borderRight: '1px solid #e6e4dd', color: '#9a9a91' }, '.cm-activeLineGutter': { backgroundColor: '#ebe8e1', color: '#55564f' }, '.cm-activeLine': { backgroundColor: '#f8f7f3' }, '.cm-foldGutter .cm-gutterElement': { cursor: 'pointer' }, '&.cm-focused': { outline: 'none' }, '.cm-selectionBackground, ::selection': { backgroundColor: '#e7ded4 !important' }, '.cm-cursor': { borderLeftColor: '#a7795d' } }, { dark: false });
+  state.active = file;
+  state.view = new EditorView({ state: EditorState.create({ doc: contents, extensions: [lineNumbers(), highlightActiveLineGutter(), foldGutter(), highlightActiveLine(), drawSelection(), dropCursor(), rectangularSelection(), history(), bracketMatching(), indentOnInput(), indentUnit.of('  '), codeLanguage(file), syntaxHighlighting(defaultHighlightStyle), EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off' }), keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged && navigationId === state.navigationId) onEdit(); })] }), parent: $('#editor-content') });
+}
+let occtPromise = null;
+let pdfjsPromise = null;
+async function getPdfJs() {
+  if (!pdfjsPromise) pdfjsPromise = Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'), import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')]).then(([pdfjs, worker]) => { pdfjs.GlobalWorkerOptions.workerSrc = worker.default; return pdfjs; }).catch((error) => { pdfjsPromise = null; throw error; });
+  return pdfjsPromise;
+}
+async function extractActivePdfText(file) {
+  if (state.assetPath !== file || !state.assetBytes) throw new Error('The PDF is no longer open.');
+  if (!state.pdfTextPromise) state.pdfTextPromise = (async () => {
+    const bytes = state.assetBytes.slice();
+    const { getDocument } = await getPdfJs();
+    const pdf = await getDocument({ data: bytes, isEvalSupported: false, useSystemFonts: true }).promise;
+    const pages = []; let total = 0; const limit = 135000;
+    for (let pageNumber = 1; pageNumber <= pdf.numPages && total < limit; pageNumber++) {
+      const page = await pdf.getPage(pageNumber), content = await page.getTextContent();
+      const line = content.items.map((item) => item.str || '').filter(Boolean).join(' ');
+      if (line) { const chunk = `Page ${pageNumber}\n${line}`; pages.push(chunk.slice(0, limit - total)); total += chunk.length; }
+    }
+    pdf.destroy();
+    if (!pages.length) throw new Error('No selectable text was found in this PDF. Scanned PDFs need OCR before the assistant can read them.');
+    return `${pages.join('\n\n')}${total >= limit ? '\n\n[PDF text truncated to fit the assistant context.]' : ''}`;
+  })();
+  return state.pdfTextPromise.then((text) => { if (state.active !== file || state.assetPath !== file) throw new Error('The PDF changed while its text was being read.'); state.pdfText = text; return text; });
+}
+function loadOcctImporter() {
+  if (!occtPromise) occtPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script'); script.id = 'occt-import-js'; script.src = new URL('./vendor/occt-import-js.js', document.baseURI).href;
+    script.onload = () => { window.stillnote.loadOcctWasm().then((wasm) => window.occtimportjs({ wasmBinary: new Uint8Array(wasm) })).then(resolve, reject); };
+    script.onerror = () => reject(new Error('The STEP geometry engine could not be loaded.'));
+    document.head.append(script);
+  }).catch((error) => { occtPromise = null; throw error; });
+  return occtPromise;
+}
+async function createThreeModel(file, asset) {
+  const extension = `.${fileExtension(file)}`, bytes = bytesFromDataUrl(asset.data), group = new THREE.Group();
+  if (extension === '.obj') {
+    const object = new OBJLoader().parse(new TextDecoder().decode(bytes));
+    const material = new THREE.MeshStandardMaterial({ color: 0xb7aa95, roughness: .68, metalness: .08, side: THREE.DoubleSide });
+    object.traverse((part) => { if (part.isMesh) { part.material = material; if (!part.geometry.attributes.normal) part.geometry.computeVertexNormals(); } }); group.add(object);
+  } else if (extension === '.stl') {
+    const geometry = new STLLoader().parse(bytes.buffer);
+    if (!geometry.attributes.position?.count) throw new Error('No triangles were found in this STL file.');
+    group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xb7aa95, roughness: .68, metalness: .08, side: THREE.DoubleSide })));
+  } else {
+    const occt = await loadOcctImporter(), result = occt.ReadStepFile(bytes, { linearUnit: 'millimeter', linearDeflectionType: 'bounding_box_ratio', linearDeflection: .001, angularDeflection: .5 });
+    if (!result?.success || !result.meshes?.length) throw new Error('No renderable STEP geometry was found.');
+    for (const source of result.meshes) {
+      const positions = source.attributes?.position?.array || [];
+      if (!positions.length) continue;
+      const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      if (source.index?.array?.length) geometry.setIndex(source.index.array);
+      if (source.attributes?.normal?.array?.length) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(source.attributes.normal.array, 3)); else geometry.computeVertexNormals();
+      const rgb = source.color || [.72, .68, .59], channel = (index, fallback) => Number.isFinite(Number(rgb[index])) ? Number(rgb[index]) : fallback, color = new THREE.Color().setRGB(channel(0, .72), channel(1, .68), channel(2, .59));
+      group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .68, metalness: .08, side: THREE.DoubleSide })));
+    }
+    if (!group.children.length) throw new Error('No renderable STEP faces were found.');
+  }
+  const bounds = new THREE.Box3().setFromObject(group);
+  if (bounds.isEmpty()) throw new Error('This model has no visible geometry.');
+  const center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
+  group.position.sub(center); group.rotation.x = extension === '.obj' ? 0 : -Math.PI / 2;
+  return { group, size };
+}
+async function mountInlineModelPreview(stage, file, asset, owner) {
+  let alive = true, frame = 0, renderer = null, controls = null, resize = null, group = null;
+  const dispose = () => {
+    alive = false; cancelAnimationFrame(frame); resize?.disconnect(); controls?.dispose();
+    if (group) group.traverse((part) => { if (part.geometry) part.geometry.dispose(); if (part.material) for (const material of Array.isArray(part.material) ? part.material : [part.material]) material.dispose(); });
+    renderer?.dispose(); renderer?.domElement.remove();
+  };
+  owner.__disposePreview = dispose;
+  try {
+    ({ group } = await createThreeModel(file, asset));
+    if (!alive || !stage.isConnected) { dispose(); return; }
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(state.theme === 'dark' ? '#20211e' : state.theme === 'sepia' ? '#f1ecdf' : '#f4f4f1'); scene.add(group);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x77736a, 2.2));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.7); keyLight.position.set(4, 7, 8); scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 1.1); fillLight.position.set(-6, 2, -5); scene.add(fillLight);
+    const bounds = new THREE.Box3().setFromObject(group), center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z, .001), radius = maxDimension * .5;
+    const camera = new THREE.PerspectiveCamera(42, 1, Math.max(maxDimension / 10000, .00001), maxDimension * 1000);
+    camera.position.set(radius * 3.2, radius * 2.5, radius * 3.2); camera.lookAt(center);
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; stage.append(renderer.domElement);
+    controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(center); controls.enableDamping = true; controls.dampingFactor = .075; controls.minDistance = radius * .15; controls.maxDistance = radius * 80;
+    const draw = () => { if (!alive) return; frame = requestAnimationFrame(draw); controls.update(); renderer.render(scene, camera); };
+    resize = new ResizeObserver(() => { const width = stage.clientWidth, height = stage.clientHeight; if (!width || !height) return; renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix(); });
+    resize.observe(stage);
+    if (stage.clientWidth && stage.clientHeight) { renderer.setSize(stage.clientWidth, stage.clientHeight, false); camera.aspect = stage.clientWidth / stage.clientHeight; camera.updateProjectionMatrix(); }
+    draw();
+  } catch (error) {
+    if (!alive || !stage.isConnected) return;
+    stage.textContent = error.message || '3D preview unavailable'; stage.classList.add('is-error');
+    dispose();
+  }
+}
+async function mountThreeViewer(stage, file, asset, navigationId) {
+  const viewport = document.createElement('div'); viewport.className = 'asset-model-viewport'; stage.append(viewport);
+  const status = document.createElement('div'); status.className = 'asset-model-hint'; status.textContent = 'Drag to rotate · scroll to zoom'; viewport.append(status);
+  try {
+    const { group } = await createThreeModel(file, asset);
+    if (navigationId !== state.navigationId || !viewport.isConnected) return;
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(state.theme === 'dark' ? '#20211e' : state.theme === 'sepia' ? '#f1ecdf' : '#f4f4f1'); scene.add(group);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x77736a, 2.2));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.7); keyLight.position.set(4, 7, 8); scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 1.1); fillLight.position.set(-6, 2, -5); scene.add(fillLight);
+    const bounds = new THREE.Box3().setFromObject(group), center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z, .001), radius = maxDimension * .5;
+    const camera = new THREE.PerspectiveCamera(42, 1, Math.max(maxDimension / 10000, .00001), maxDimension * 1000); camera.position.set(radius * 3.2, radius * 2.5, radius * 3.2); camera.lookAt(center);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; viewport.append(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(center); controls.enableDamping = true; controls.dampingFactor = .075; controls.minDistance = radius * .15; controls.maxDistance = radius * 80;
+    let frame = 0, alive = true;
+    const render = () => { if (!alive) return; frame = requestAnimationFrame(render); controls.update(); renderer.render(scene, camera); };
+    const resize = new ResizeObserver(() => { const width = viewport.clientWidth, height = viewport.clientHeight; if (!width || !height) return; renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix(); });
+    resize.observe(viewport); const width = viewport.clientWidth, height = viewport.clientHeight; renderer.setSize(width, height, false); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix();
+    status.remove(); render();
+    state.assetViewer = { destroy() { alive = false; cancelAnimationFrame(frame); resize.disconnect(); controls.dispose(); scene.traverse((part) => { if (part.geometry) part.geometry.dispose(); if (part.material) for (const material of Array.isArray(part.material) ? part.material : [part.material]) material.dispose(); }); renderer.dispose(); renderer.domElement.remove(); } };
+  } catch (error) {
+    if (navigationId !== state.navigationId || !viewport.isConnected) return;
+    status.textContent = error.message || 'This model could not be rendered.'; status.classList.add('is-error');
+  }
+}
+async function renderAssetPreview(file, navigationId) {
+  const asset = await window.stillnote.readAsset(file);
+  if (navigationId !== state.navigationId) return;
+  const host = $('#editor-content'), stage = document.createElement('section'); stage.className = 'asset-preview-stage'; host.replaceChildren(stage);
+  const ext = `.${fileExtension(file)}`;
+  state.assetPath = file; state.assetBytes = ext === '.pdf' ? bytesFromDataUrl(asset.data) : null; state.pdfText = null; state.pdfTextPromise = null;
+  if (asset.mime.startsWith('image/')) { const image = document.createElement('img'); image.className = 'asset-preview-image'; image.src = asset.data; image.alt = prettyName(file); image.addEventListener('error', () => { const message = document.createElement('p'); message.className = 'asset-preview-error'; message.textContent = 'This image format cannot be decoded by the built-in preview.'; stage.replaceChildren(message); }); stage.append(image); }
+  else if (asset.mime === 'application/pdf') { const shell = document.createElement('div'); shell.className = 'asset-pdf-shell'; const frame = document.createElement('iframe'); frame.className = 'asset-preview-frame'; frame.title = prettyName(file); frame.src = asset.data; shell.append(frame); stage.append(shell); }
+  else if (['.obj', '.stl', '.step', '.stp'].includes(ext)) { void mountThreeViewer(stage, file, asset, navigationId); }
+  else {
+    const pre = document.createElement('pre'); pre.className = 'asset-preview-text';
+    try {
+      pre.textContent = new TextDecoder().decode(bytesFromDataUrl(asset.data));
+    } catch (error) { pre.textContent = error.message || 'This file could not be previewed.'; }
+    if (navigationId !== state.navigationId) return;
+    stage.append(pre);
+  }
+}
+async function openNote(file) {
+  $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
+  state.home = false; $('#assistant-toggle').disabled = false; $('#assistant-toggle').removeAttribute('aria-disabled'); $('#home-button').setAttribute('aria-pressed', 'false');
+  const navigationId=state.navigationId=(state.navigationId||0)+1;
+  try {
+    const requestedActive=state.active;
+    if(state.pendingStructuredRename)await state.pendingStructuredRename;
+    if(file===requestedActive&&state.active!==requestedActive)file=state.active;
+    const activeBeforeSave = state.active;
+    await saveActive();
+    if(navigationId!==state.navigationId)return;
+    if (file === activeBeforeSave && state.active !== activeBeforeSave) file = state.active;
+    state.assetViewer?.destroy?.(); state.assetViewer = null;
+    state.assetPath = null; state.assetBytes = null; state.pdfText = null; state.pdfTextPromise = null;
+    if (!file.toLowerCase().endsWith('.md') && !isEditableAsset(file)) {
+      const changedFile = state.active !== file;
+      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null; state.dirty = false; state.active = file;
+      if (changedFile) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
+      $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
+      updateAssistantModeCopy();
+      $('#note-editor').hidden = false; $('#welcome').hidden = true; $('#save-state').textContent = 'Preview'; $('#editor-footer').querySelector('span').textContent = 'PREVIEW'; $('#editor-footer').lastElementChild.textContent = 'LOCAL FILE';
+      updateStructuredLocation(file); renderFiles();
+      await renderAssetPreview(file, navigationId); if (navigationId !== state.navigationId) return;
+      void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
+      return;
+    }
+    let contents = await window.stillnote.readNote(file);
+    if(navigationId!==state.navigationId)return;
+    if (!file.toLowerCase().endsWith('.md')) {
+      const changedFile = state.active !== file;
+      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null;
+      if (changedFile) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
+      $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
+      renderAssetTextEditor(file, contents, navigationId); state.dirty = false; $('#save-state').textContent = 'Saved'; $('#note-editor').hidden = false; $('#welcome').hidden = true; $('#editor-footer').querySelector('span').textContent = fileExtension(file).toUpperCase();
+      updateAssistantModeCopy(); updateWordCount(contents); updateStructuredLocation(file); renderFiles();
+      void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
+      return;
+    }
+    const lineEnding = contents.includes('\r\n') ? '\r\n' : '\n';
+    const lines = contents.split(/\r?\n/);
+    const titleLine = prettyName(file);
+    const firstLineTitle = lines[0].trim().replace(/^#{1,6}\s+/, '').replace(/\.md$/i, '').trim().toLocaleLowerCase();
+    const fileTitle = titleLine.replace(/\.md$/i, '').trim().toLocaleLowerCase();
+    if (/^#\s+/.test(lines[0]) || (firstLineTitle && firstLineTitle === fileTitle)) lines[0] = titleLine;
+    else lines.unshift(titleLine);
+    const normalizedContents = lines.join(lineEnding);
+    if (normalizedContents !== contents) {
+      await window.stillnote.writeNote(file, normalizedContents);
+      contents = normalizedContents;
+    }
+    const structuredFile = decodeStructured(contents);
+    if (state.view) { state.view.destroy(); state.view = null; }
+    state.structured?.desmos?.destroy?.();
+    state.structured = null;
+    updateAssistantModeCopy();
+    // Structured editors are plain DOM rather than CodeMirror views, so destroy
+    // the previous canvas or spreadsheet surface before mounting a Markdown note.
+    $('#editor-content').replaceChildren();
+    $('#note-indexes').hidden = true;
+    if (structuredFile) {
+      cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
+      const changedNote = state.active !== file;
+      state.active = file;
+      renderStructured(structuredFile.type, structuredFile.data, file, titleLine);
+      updateAssistantModeCopy();
+      state.dirty = false; $('#save-state').textContent = 'Saved'; updateWordCount(contents);
+      void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active note:', error));
+      if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
+      $('#welcome').hidden = true; $('#note-editor').hidden = false; updateStructuredLocation(file); renderFiles(); return;
+    }
+    const theme = EditorView.theme({
+      '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '16px', height: '100%' },
+      '.cm-scroller': { fontFamily: '"Iowan Old Style", "Palatino Linotype", Georgia, serif', lineHeight: '1.9', overflow: 'auto' },
+      '.cm-content': { maxWidth: '720px', margin: '0 auto', padding: '42px 28px 90px', caretColor: '#a7795d' },
+      '.cm-line': { padding: '0 0' }, '.cm-gutters': { display: 'none' },
+      '&.cm-focused': { outline: 'none' }, '.cm-activeLine': { backgroundColor: 'transparent' },
+      '.cm-selectionBackground, ::selection': { backgroundColor: '#e7ded4 !important' },
+      '.cm-cursor': { borderLeftColor: '#a7795d' },
+      '.cm-line:first-child': { fontSize: '30px', fontWeight: '600', letterSpacing: '-.04em', color: '#292a27' },
+    }, { dark: false });
+    if (state.view) { state.view.destroy(); state.view = null; }
+    state.view = new EditorView({
+      state: EditorState.create({ doc: contents, extensions: [spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
+      parent: $('#editor-content'),
+    });
+    state.view.scrollDOM.addEventListener('scroll', () => updateNoteIndexCurrent(state.view), { passive: true });
+    $('#note-editor').dataset.toolbarPosition = state.toolbarPositions.notes;
+    $('#meeting-notes-trigger').hidden = false;
+    $('#note-format-toolbar').hidden = state.toolbarPositions.notes === 'hidden';
+    $('#note-editor').classList.toggle('has-markdown-editor', state.toolbarPositions.notes !== 'hidden');
+    scheduleSpellcheck(state.view);
+    updateWordCount(contents); $('#save-state').textContent = 'Saved'; state.dirty = false;
+    const changedNote = state.active !== file;
+    state.active = file; void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active note:', error));
+    updateAssistantModeCopy();
+    if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
+    $('#welcome').hidden = true; $('#note-editor').hidden = false;
+    renderNoteIndexes(state.view);
+    $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(file.split('/').map(prettyName).join(' / '))}</strong>`;
+    $('.location-note').textContent = prettyName(file); renderFiles();
+  } catch (error) { showToast(error.message || 'Could not open note.'); }
+}
+$('#editor-content').addEventListener('contextmenu', (event) => {
+  if (!event.target.closest('.cm-editor') || !state.view) return;
+  if (event.target.closest('.cm-wiki-media-preview')) { event.preventDefault(); return; }
+  const equation = event.target.closest('math[data-equation]');
+  if (equation) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(equation.dataset.equation, event.clientX, event.clientY); return; }
+  const position = state.view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (position != null) {
+    const line = state.view.state.doc.lineAt(position), matcher = /\$([^$\n]+)\$/g; let match;
+    while ((match = matcher.exec(line.text))) if (position >= line.from + match.index && position <= line.from + match.index + match[0].length) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(match[1], event.clientX, event.clientY); return; }
+  }
+  void handleEditorContextMenu(state.view, event);
+});
+$('#editor-content').addEventListener('click', (event) => {
+  if (!event.target.closest('.cm-editor') || event.target.closest('.cm-wiki-media-preview') || !state.view || !state.active?.toLocaleLowerCase().endsWith('.md')) return;
+  openWikiLinkAt(state.view, event);
+});
+$('#note-format-toolbar').addEventListener('mousedown', (event) => event.preventDefault());
+$('#note-format-toolbar').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-format]');
+  if (!button || !state.view) return;
+  const view = state.view;
+  const actions = {
+    bold: () => wrapEditorSelection(view, '**'), italic: () => wrapEditorSelection(view, '*'),
+    code: () => wrapEditorSelection(view, '`'), strike: () => wrapEditorSelection(view, '~~'),
+    heading1: () => setEditorLinePrefix(view, '#', 'heading'), heading2: () => setEditorLinePrefix(view, '##', 'heading'),
+    bullet: () => setEditorLinePrefix(view, '- ', 'bullet'), ordered: () => setEditorLinePrefix(view, '1. ', 'ordered'),
+    checklist: () => setEditorLinePrefix(view, '- [ ] ', 'task'), highlight: () => wrapEditorSelection(view, '='),
+  };
+  actions[button.dataset.format]?.(); view.focus();
+});
+function onEdit() {
+  state.dirty = true; $('#save-state').textContent = 'Unsaved changes';
+  const documentText = state.view.state.doc.toString();
+  updateWordCount(documentText);
+  if (!state.active?.toLowerCase().endsWith('.md')) { clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 650); return; }
+  const title = state.view.state.doc.line(1).text;
+  const invalidCharacter = /[<>:"/\\|?*\u0000-\u001f]/.test(title);
+  const titleError = invalidCharacter ? noteTitleError(title.replace(/\.md$/i, '').trim()) : null;
+  if (titleError && titleError !== state.lastTitleValidationMessage) showToast(titleError);
+  state.lastTitleValidationMessage = titleError;
+  clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 650);
+}
+function noteTitleCharacterError(character) {
+  if (character === '/' || character === '\\') return 'A note title cannot contain / or \\; those characters separate folders.';
+  if (character === ':') return 'A note title cannot contain a colon (:).';
+  if (/[<>|?*"]/u.test(character)) return `A note title cannot contain ${character}; that character is reserved in file names.`;
+  return 'A note title cannot contain control characters.';
+}
+function noteTitleError(title) {
+  const trimmed = title.trim();
+  if (!trimmed) return 'A note title cannot be empty.';
+  const invalidCharacter = trimmed.match(/[<>:"/\\|?*\u0000-\u001f]/);
+  if (invalidCharacter) return noteTitleCharacterError(invalidCharacter[0]);
+  if (trimmed === '.' || trimmed === '..') return 'A note title cannot be “.” or “..”.';
+  if (trimmed.endsWith('.')) return 'A note title cannot end with a period.';
+  return null;
+}
+function updateWordCount(text) {
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  $('#word-count').textContent = `${words} ${words === 1 ? 'word' : 'words'}`;
+}
+function encodeStructured(type, title, data) {
+  return `${title}\n<!-- stillnote:type=${type} -->\n\n\`\`\`stillnote-${type}\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`;
+}
+function decodeStructured(contents) {
+  const match = contents.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks)\s*-->[\s\S]*?```stillnote-\1\s*\n([\s\S]*?)\n```/);
+  if (!match) return null;
+  try { return { type: match[1], data: JSON.parse(match[2]) }; } catch { return { type: match[1], data: null }; }
+}
+function canvasDefaults() { return { version: 1, width: 1200, height: 760, elements: [] }; }
+function sheetDefaults() { return { version: 1, columns: 8, rows: 20, cells: {} }; }
+function graphDefaults() { return { version: 1, state: null }; }
+function taskSheetDefaults(listId) { return { version: 1, listId, tasks: [] }; }
+let desmosApiLoad = null;
+let desmosApiLoadedKey = null;
+function loadDesmosApi(apiKey) {
+  if (!apiKey) return Promise.reject(new Error('Add a Desmos API key in Settings → Graphing to open this graph.'));
+  if (window.Desmos?.GraphingCalculator && desmosApiLoadedKey === apiKey) return Promise.resolve(window.Desmos);
+  if (desmosApiLoad?.key === apiKey) return desmosApiLoad.promise;
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://www.desmos.com/api/v1.11/calculator.js?apiKey=${encodeURIComponent(apiKey)}`;
+    script.async = true;
+    script.onload = () => {
+      if (!window.Desmos?.GraphingCalculator) { reject(new Error('Desmos loaded without its Graphing Calculator API.')); return; }
+      desmosApiLoadedKey = apiKey; resolve(window.Desmos);
+    };
+    script.onerror = () => reject(new Error('Could not load Desmos. Check your internet connection and API key.'));
+    document.head.append(script);
+  });
+  desmosApiLoad = { key: apiKey, promise };
+  return promise;
+}
+function structuredLink(target) {
+  void navigateWikiTarget(String(target || '').split('|')[0].trim());
+}
+async function navigateWikiTarget(target) {
+  const clean = String(target || '').trim();
+  const hashIndex = clean.indexOf('#');
+  const fileTarget = hashIndex < 0 ? clean : clean.slice(0, hashIndex).trim();
+  const fragment = hashIndex < 0 ? '' : clean.slice(hashIndex + 1).trim();
+  const file = fileTarget ? resolveVaultFileTarget(fileTarget) : state.active;
+  if (!file) { showToast(`No file found for “${fileTarget || clean}”.`); return; }
+  // Keep the existing editor instance for in-note anchors. Reopening the same
+  // document destroys and remounts CodeMirror, which can reset its scroll state.
+  if (file !== state.active || !state.view) await openNote(file);
+  if (fragment && state.view && state.active === file) {
+    const position = findNoteAnchor(state.view, fragment);
+    if (position == null) showToast(`No heading or tag “${fragment}” found in ${prettyName(file)}.`);
+    else jumpToNoteIndex(state.view, position);
+  }
+}
+function slugForHeading(value) {
+  return String(value || '').toLocaleLowerCase().replace(/<[^>]*>/g, '').replace(/[`*_~]/g, '').trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-').replace(/-+/g, '-');
+}
+function findNoteAnchor(view, fragment) {
+  let decoded = fragment;
+  try { decoded = decodeURIComponent(fragment.replace(/\+/g, ' ')); } catch {}
+  const wanted = slugForHeading(decoded);
+  const doc = view.state.doc;
+  let inFence = false, fenceChar = '', fenceLength = 0, slugCounts = new Map();
+  for (let number = 1; number <= doc.lines; number++) {
+    const line = doc.line(number), text = line.text;
+    const fence = text.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      if (!inFence) { inFence = true; fenceChar = fence[1][0]; fenceLength = fence[1].length; }
+      else if (fence[1][0] === fenceChar && fence[1].length >= fenceLength) inFence = false;
+      continue;
+    }
+    if (inFence) continue;
+    const heading = text.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      const base = slugForHeading(heading[1]);
+      const count = slugCounts.get(base) || 0; slugCounts.set(base, count + 1);
+      const slug = count ? `${base}-${count}` : base;
+      if (slug === wanted || base === wanted) return line.from;
+    }
+    if (/^\s*#/.test(text) && slugForHeading(text.replace(/^\s*#+\s*/, '')) === wanted) return line.from;
+    if (number < doc.lines && text.trim() && /^\s*(?:=+|-+)\s*$/.test(doc.line(number + 1).text)) {
+      const base = slugForHeading(text.trim()), count = slugCounts.get(base) || 0; slugCounts.set(base, count + 1);
+      if (base === wanted || (count && `${base}-${count}` === wanted)) return line.from;
+    }
+  }
+  // A fragment that names a hashtag jumps to its first occurrence.
+  const tag = `#${decoded.replace(/^#/, '')}`;
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}(?=$|[^\\p{L}\\p{N}_])`, 'iu').exec(doc.toString());
+  return match ? match.index + match[1].length : null;
+}
+function resolveVaultFileTarget(target) {
+  const clean = String(target || '').trim().replace(/\\/g, '/').replace(/^\.\//, '').toLocaleLowerCase();
+  if (!clean) return null;
+  const files = explorerFilePaths();
+  const exact = files.find((file) => file.toLocaleLowerCase() === clean);
+  if (exact) return exact;
+  const withoutExtension = (value) => value.replace(/\.[^./]+$/, '');
+  if (!/\.[^/]+$/.test(clean)) {
+    const markdownMatch = files.find((file) => file.toLocaleLowerCase() === `${clean}.md`);
+    if (markdownMatch) return markdownMatch;
+  }
+  const pathMatches = files.filter((file) => withoutExtension(file.toLocaleLowerCase()) === withoutExtension(clean));
+  if (pathMatches.length === 1) return pathMatches[0];
+  if (pathMatches.length > 1) return pathMatches.find((file) => file.toLocaleLowerCase().endsWith('.md')) || null;
+  if (clean.includes('/')) return null;
+  const baseMatches = files.filter((file) => {
+    const basename = file.split('/').at(-1).toLocaleLowerCase();
+    return basename === clean || withoutExtension(basename) === withoutExtension(clean);
+  });
+  if (baseMatches.length === 1) return baseMatches[0];
+  if (baseMatches.length > 1) return baseMatches.find((file) => file.toLocaleLowerCase().endsWith('.md')) || null;
+  return null;
+}
+function setStructuredDirty() {
+  const structured=state.structured;
+  if(structured && structured.type !== 'tasks'){
+    const snapshot=JSON.stringify({title:structured.title||prettyName(state.active),data:structured.data});
+    if(snapshot!==structured.historySnapshot){
+      if(!structured.historyPending){structured.undoStack.push(structured.historySnapshot);if(structured.undoStack.length>100)structured.undoStack.shift();structured.redoStack=[];structured.historyPending=true;}
+      structured.historySnapshot=snapshot;
+      clearTimeout(structured.historyTimer);structured.historyTimer=setTimeout(()=>{structured.historyPending=false;},600);
+    }
+    updateStructuredHistoryButtons();
+  }
+  state.dirty = true; $('#save-state').textContent = 'Unsaved changes';
+  clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 450);
+}
+function updateStructuredHistoryButtons(){
+  const structured=state.structured;if(!structured)return;
+  document.querySelectorAll('[data-history="undo"]').forEach(button=>button.disabled=!structured.undoStack.length);
+  document.querySelectorAll('[data-history="redo"]').forEach(button=>button.disabled=!structured.redoStack.length);
+}
+async function applyStructuredHistory(direction){
+  const structured=state.structured;if(!structured)return;
+  const from=direction==='undo'?structured.undoStack:structured.redoStack,to=direction==='undo'?structured.redoStack:structured.undoStack;
+  if(!from.length)return;
+  clearTimeout(structured.historyTimer);structured.historyPending=false;
+  to.push(JSON.stringify({title:structured.title||prettyName(state.active),data:structured.data}));
+  const snapshot=from.pop();const restored=JSON.parse(snapshot);const type=structured.type,history={undoStack:structured.undoStack,redoStack:structured.redoStack};
+  structured.data=restored.data;structured.title=restored.title;structured.historySnapshot=snapshot;
+  let active=state.active;
+  if(restored.title&&restored.title!==prettyName(active)){
+    try{active=await window.stillnote.renameEntry(active,restored.title);state.active=active;[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();updateStructuredLocation(active);void window.stillnote.rememberNote(active).catch(()=>{});}
+    catch(error){showToast(`Could not restore the file name: ${error.message}`);}
+  }
+  renderStructured(type,restored.data,active,restored.title||prettyName(active));
+  Object.assign(state.structured,history,{historySnapshot:snapshot,historyPending:false});
+  state.dirty=true;$('#save-state').textContent='Unsaved changes';clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveActive,250);updateStructuredHistoryButtons();
+}
+function renderStructured(type, rawData, file, title) {
+  cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
+  state.structured?.cleanup?.();
+  const data = rawData && typeof rawData === 'object' ? rawData : type === 'canvas' ? canvasDefaults() : type === 'graph' ? graphDefaults() : type === 'tasks' ? taskSheetDefaults('') : sheetDefaults();
+  state.structured?.desmos?.destroy?.();
+  state.structured = { type, data, title, file, undoStack:[], redoStack:[], historySnapshot:JSON.stringify({title,data}), historyPending:false };
+  updateAssistantModeCopy();
+  const host = $('#editor-content'); host.replaceChildren();
+  const root = document.createElement('section'); root.className = `structured-editor ${type}-editor`;
+  if (type === 'canvas') root.dataset.toolbarPosition = state.toolbarPositions.canvas;
+  root.innerHTML = `<div class="structured-title" contenteditable="true" role="textbox" aria-label="File title" spellcheck="false"></div><div class="structured-toolbar"></div><div class="structured-surface"></div>`;
+  const titleEl = root.querySelector('.structured-title'); titleEl.textContent = title;
+  titleEl.addEventListener('input', () => { state.structured.title = titleEl.textContent.trim(); setStructuredDirty(); });
+  titleEl.addEventListener('blur', () => {
+    const next = titleEl.textContent.trim(); const error = noteTitleError(next);
+    if (error) { showToast(error); titleEl.textContent = prettyName(state.active); return; }
+    const old = state.active, owner=state.structured; if (next && next !== prettyName(old)) {
+      const renameTask=(async()=>{
+        try {
+          if(state.active!==old||state.structured!==owner)return;
+          if(owner.type==='tasks') await window.stillnote.renameGoogleTaskList(owner.data.listId,next);
+          if(state.active!==old||state.structured!==owner)return;
+          const moved = await window.stillnote.renameEntry(old, next);
+          if(state.active!==old||state.structured!==owner)return;
+          state.active = moved; [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+          if(state.active!==moved||state.structured!==owner)return;
+          renderFiles(); updateStructuredLocation(moved); setStructuredDirty();
+        } catch (e) {
+          if(state.structured===owner){
+            showToast(`Could not rename file: ${e.message}`);
+            titleEl.textContent = prettyName(old);
+            if(owner.type==='tasks'){
+              owner.title=prettyName(old);
+              await window.stillnote.renameGoogleTaskList(owner.data.listId,prettyName(old)).catch(()=>{});
+              setStructuredDirty();
+            }
+          }
+        }
+      })();
+      state.pendingStructuredRename=renameTask;
+      void renameTask.finally(()=>{if(state.pendingStructuredRename===renameTask)state.pendingStructuredRename=null;});
+      return renameTask;
+    }
+  });
+  host.append(root);
+  if (type === 'canvas') renderCanvas(root, data);
+  else if (type === 'graph') void renderGraph(root, data);
+  else if (type === 'tasks') void renderTaskSheet(root, data);
+  else renderSpreadsheet(root, data);
+  updateStructuredHistoryButtons();
+  return root;
+}
+function updateStructuredLocation(file) {
+  $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(file.split('/').map(prettyName).join(' / '))}</strong>`;
+  $('.location-note').textContent = prettyName(file);
+}
+function renderCanvas(root, data) {
+  const toolbar = root.querySelector('.structured-toolbar');
+  const colors=[['red','#d94d48'],['yellow','#d9ae23'],['green','#348562'],['blue','#397dc2'],['black','#20211e']];
+  toolbar.innerHTML = `<div class="canvas-tool-group" role="toolbar" aria-label="Canvas tools">${[['select','Select and move',icons.cursor],['draw','Pen tool',icons.draw],['shape','Shape tool',icons.shape],['line','Line tool',icons.line],['text','Insert text',icons.text]].map(([tool,label,icon])=>`<button class="canvas-tool${tool==='select'?' active':''}" data-tool="${tool}" title="${label}" aria-label="${label}" aria-pressed="${tool==='select'}">${icon}</button>`).join('')}<span class="canvas-tool-divider"></span><button class="canvas-tool" data-action="rotate" title="Rotate selected 15° clockwise" aria-label="Rotate selected 15 degrees clockwise">${icons.rotate}</button><button class="canvas-tool canvas-delete" data-tool="delete" title="Delete selected" aria-label="Delete selected">${icons.trash}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button class="canvas-tool" data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button></div>`;
+  const surface = root.querySelector('.structured-surface');
+  surface.innerHTML = `<svg class="canvas-svg" viewBox="0 0 ${data.width || 1200} ${data.height || 760}" style="width:${data.width || 1200}px;height:${data.height || 760}px;max-width:none" role="img" aria-label="Drawing canvas" xmlns="http://www.w3.org/2000/svg"></svg>`;
+  const svg = surface.querySelector('svg');
+  const palette=document.createElement('div');palette.className='canvas-color-palette';palette.setAttribute('role','group');palette.setAttribute('aria-label','Selected item colors');
+  palette.innerHTML=colors.map(([name,color])=>`<button class="canvas-color-swatch" data-color="${color}" style="--swatch:${color}" title="${name[0].toUpperCase()+name.slice(1)}" aria-label="${name[0].toUpperCase()+name.slice(1)} color" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg></button>`).join('');surface.append(palette);
+  const shapeMenu=document.createElement('div');shapeMenu.className='canvas-shape-menu';shapeMenu.setAttribute('role','group');shapeMenu.setAttribute('aria-label','Shape options');
+  shapeMenu.innerHTML=`<div class="canvas-shape-options">${[['rectangle','Rectangle',icons.rectangle],['ellipse','Ellipse',icons.ellipse],['triangle','Triangle',icons.triangle],['star','Star',icons.star],['speech','Speech bubble',icons.speech]].map(([shape,label,icon])=>`<button type="button" data-shape="${shape}" title="${label}" aria-label="${label}" aria-pressed="false">${icon}</button>`).join('')}</div><label class="canvas-star-points" hidden>Points <select aria-label="Star points">${Array.from({length:9},(_,i)=>`<option value="${i+4}"${i===1?' selected':''}>${i+4}</option>`).join('')}</select></label>`;surface.append(shapeMenu);
+  const lineMenu=document.createElement('div');lineMenu.className='canvas-line-menu';lineMenu.setAttribute('role','group');lineMenu.setAttribute('aria-label','Line endpoint styles');
+  lineMenu.innerHTML=`${[['start','Start'],['end','End']].map(([endpoint,label])=>`<div class="canvas-endpoint-menu" data-endpoint-menu="${endpoint}" role="group" aria-label="${label} endpoint style">${[['none','None',icons.markerNone],['arrow','Arrow',icons.markerArrow],['circle','Circle',icons.markerCircle],['square','Square',icons.markerSquare],['diamond','Diamond',icons.markerDiamond]].map(([style,title,icon])=>`<button type="button" data-endpoint="${endpoint}" data-style="${style}" title="${label}: ${title}" aria-label="${label}: ${title}" aria-pressed="false">${icon}</button>`).join('')}</div>`).join('')}`;surface.append(lineMenu);
+  const toolHelp=document.createElement('div');toolHelp.className='canvas-tool-help';toolHelp.setAttribute('aria-live','polite');root.append(toolHelp);
+  let tool = 'select'; let selected = new Set(); let draft = null; let interaction = null; let selectionBox = null; let selectedColor='#20211e';
+  const displayColor=color=>{const value=String(color||selectedColor).toLowerCase();return state.theme==='dark'&&['#20211e','#353630','#373832','#000','#000000'].includes(value)?'#ffffff':(color||selectedColor);};
+  const bounds = (el) => {
+    if(el.type==='stroke') { const xs=el.points.map(p=>p.x),ys=el.points.map(p=>p.y);const x=Math.min(...xs),y=Math.min(...ys);return {x,y,w:Math.max(1,Math.max(...xs)-x),h:Math.max(1,Math.max(...ys)-y)}; }
+    if(el.type==='line') return {x:Math.min(el.x1,el.x2),y:Math.min(el.y1,el.y2),w:Math.max(1,Math.abs(el.x2-el.x1)),h:Math.max(1,Math.abs(el.y2-el.y1))};
+    if(el.type==='text') return {x:el.x,y:el.y,w:Math.max(40,el.w||220),h:Math.max(30,el.h||60)};
+    return {x:Math.min(el.x,el.x+el.w),y:Math.min(el.y,el.y+el.h),w:Math.max(1,Math.abs(el.w)),h:Math.max(1,Math.abs(el.h))};
+  };
+  const selectionBounds = (indices) => {const boxes=[...indices].map(i=>bounds(data.elements[i])).filter(Boolean);if(!boxes.length)return null;const x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y)),right=Math.max(...boxes.map(b=>b.x+b.w)),bottom=Math.max(...boxes.map(b=>b.y+b.h));return {x,y,w:right-x,h:bottom-y};};
+  const rotatedPoint=(x,y,center,angle)=>({x:center.x+(x-center.x)*Math.cos(angle)-(y-center.y)*Math.sin(angle),y:center.y+(x-center.x)*Math.sin(angle)+(y-center.y)*Math.cos(angle)});
+  const rotateSelectionBy=(degrees)=>{
+    const group=selectionBounds(selected);if(!group)return;const center={x:group.x+group.w/2,y:group.y+group.h/2},angle=degrees*Math.PI/180;
+    for(const i of selected){const el=data.elements[i];if(el.type==='stroke')el.points=el.points.map(p=>rotatedPoint(p.x,p.y,center,angle));else if(el.type==='line'){const a=rotatedPoint(el.x1,el.y1,center,angle),b=rotatedPoint(el.x2,el.y2,center,angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(el),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,center,angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((el.rotation||0)+degrees)%360;}}
+    paint();setStructuredDirty();
+  };
+  const paint = () => {
+    svg.replaceChildren();
+    data.elements.forEach((el, i) => {
+      let node;
+      if (el.type === 'stroke') { node = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); node.setAttribute('points', el.points.map(p => `${p.x},${p.y}`).join(' ')); node.setAttribute('fill','none'); node.setAttribute('stroke',displayColor(el.color)); node.setAttribute('stroke-width','3'); node.setAttribute('stroke-linecap','round'); node.setAttribute('stroke-linejoin','round'); }
+      else if(el.type==='line'){
+        node=document.createElementNS('http://www.w3.org/2000/svg','g');const line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('x1',el.x1);line.setAttribute('y1',el.y1);line.setAttribute('x2',el.x2);line.setAttribute('y2',el.y2);line.setAttribute('stroke',displayColor(el.color));line.setAttribute('stroke-width','3');line.setAttribute('stroke-linecap','round');node.append(line);
+        const dx=el.x2-el.x1,dy=el.y2-el.y1,length=Math.hypot(dx,dy)||1;
+        for(const [which,x,y,style,sign] of [['start',el.x1,el.y1,el.startMarker||'none',-1],['end',el.x2,el.y2,el.endMarker||'arrow',1]]){if(style==='none')continue;const ux=dx/length*sign,uy=dy/length*sign;if(style==='circle'){const mark=document.createElementNS('http://www.w3.org/2000/svg','circle');mark.setAttribute('cx',x);mark.setAttribute('cy',y);mark.setAttribute('r',5);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else if(style==='square'){const mark=document.createElementNS('http://www.w3.org/2000/svg','rect');mark.setAttribute('x',x-4);mark.setAttribute('y',y-4);mark.setAttribute('width',8);mark.setAttribute('height',8);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else if(style==='diamond'){const mark=document.createElementNS('http://www.w3.org/2000/svg','polygon');mark.setAttribute('points',`${x},${y-5} ${x+5},${y} ${x},${y+5} ${x-5},${y}`);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else{const bx=x-ux*12,by=y-uy*12,px=-uy*5,py=ux*5,mark=document.createElementNS('http://www.w3.org/2000/svg','polygon');mark.setAttribute('points',`${x},${y} ${bx+px},${by+py} ${bx-px},${by-py}`);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}}
+      }
+      else if(el.type==='shape'){
+        const x=el.x,y=el.y,w=el.w,h=el.h;node=document.createElementNS('http://www.w3.org/2000/svg',el.shape==='rectangle'?'rect':el.shape==='ellipse'?'ellipse':'polygon');
+        if(el.shape==='rectangle'){node.setAttribute('x',x);node.setAttribute('y',y);node.setAttribute('width',w);node.setAttribute('height',h);}
+        else if(el.shape==='ellipse'){node.setAttribute('cx',x+w/2);node.setAttribute('cy',y+h/2);node.setAttribute('rx',w/2);node.setAttribute('ry',h/2);}
+        else if(el.shape==='triangle'){const vertices=el.vertices||[[.5,0],[1,1],[0,1]];node.setAttribute('points',vertices.map(([vx,vy])=>`${x+vx*w},${y+vy*h}`).join(' '));}
+        else if(el.shape==='star'){const count=Math.max(4,Math.min(12,el.points||5)),cx=x+w/2,cy=y+h/2,outer=Math.min(w,h)/2,inner=outer*.46,vertices=[];for(let j=0;j<count*2;j++){const radius=j%2?inner:outer,angle=-Math.PI/2+j*Math.PI/count;vertices.push(`${cx+Math.cos(angle)*radius},${cy+Math.sin(angle)*radius}`);}node.setAttribute('points',vertices.join(' '));}
+        else {node=document.createElementNS('http://www.w3.org/2000/svg','path');node.setAttribute('d',`M ${x+w*.12} ${y+h*.12} H ${x+w*.88} V ${y+h*.7} H ${x+w*.4} L ${x+w*.22} ${y+h*.92} V ${y+h*.7} H ${x+w*.12} Z`);}
+        node.setAttribute('fill','none');node.setAttribute('stroke',displayColor(el.color));node.setAttribute('stroke-width','3');node.setAttribute('stroke-linejoin','round');
+        node.setAttribute('pointer-events','all');
+      }
+      else if (el.type === 'rect' || el.type === 'ellipse') { node = document.createElementNS('http://www.w3.org/2000/svg', el.type === 'rect' ? 'rect' : 'ellipse'); if (el.type === 'rect') { node.setAttribute('x',el.x); node.setAttribute('y',el.y); node.setAttribute('width',el.w); node.setAttribute('height',el.h); } else { node.setAttribute('cx',el.x+el.w/2); node.setAttribute('cy',el.y+el.h/2); node.setAttribute('rx',Math.abs(el.w/2)); node.setAttribute('ry',Math.abs(el.h/2)); } node.setAttribute('fill','none'); node.setAttribute('stroke',displayColor(el.color)); node.setAttribute('stroke-width','3');node.setAttribute('pointer-events','all'); }
+      else {
+        node = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+        node.setAttribute('x',el.x); node.setAttribute('y',el.y); node.setAttribute('width',Math.max(40,el.w||220)); node.setAttribute('height',Math.max(30,el.h||60));
+        node.innerHTML=`<div xmlns="http://www.w3.org/1999/xhtml" class="canvas-text-edit" contenteditable="true" spellcheck="false">${sheetCellHtml(el.text||'')}</div>`;
+        const editor=node.querySelector('.canvas-text-edit');
+        editor.addEventListener('focus',()=>{editor.textContent=el.text||'';});
+        editor.addEventListener('input',()=>{el.text=editor.innerText;setStructuredDirty();});
+        editor.style.color=displayColor(el.color);
+        editor.addEventListener('blur',()=>{el.text=serializeLinkedText(editor);editor.innerHTML=sheetCellHtml(el.text);});
+      }
+      const elementBounds=bounds(el);
+      if(el.type!=='stroke'&&el.rotation) node.setAttribute('transform',`rotate(${el.rotation} ${elementBounds.x+elementBounds.w/2} ${elementBounds.y+elementBounds.h/2})`);
+      node.dataset.index = i; if (selected.has(i)) node.classList.add('is-selected'); svg.append(node);
+    });
+    const linesOnly=selected.size>0&&[...selected].every(i=>data.elements[i].type==='line');
+    if(selected.size) {
+      const boxes=[...selected].map(i=>bounds(data.elements[i])).filter(Boolean);const left=Math.min(...boxes.map(b=>b.x)),top=Math.min(...boxes.map(b=>b.y)),right=Math.max(...boxes.map(b=>b.x+b.w)),bottom=Math.max(...boxes.map(b=>b.y+b.h));const b={x:left,y:top,w:right-left,h:bottom-top};
+      if(!linesOnly){
+      const outline=document.createElementNS('http://www.w3.org/2000/svg','rect');outline.setAttribute('x',b.x-4);outline.setAttribute('y',b.y-4);outline.setAttribute('width',b.w+8);outline.setAttribute('height',b.h+8);outline.setAttribute('fill','none');outline.setAttribute('stroke','#9a765a');outline.setAttribute('stroke-dasharray','5 4');outline.setAttribute('pointer-events','none');svg.append(outline);
+      for(const [name,x,y] of [['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]]) {const h=document.createElementNS('http://www.w3.org/2000/svg','rect');h.setAttribute('x',x-5);h.setAttribute('y',y-5);h.setAttribute('width',10);h.setAttribute('height',10);h.setAttribute('rx',2);h.setAttribute('fill','#fff');h.setAttribute('stroke','#9a765a');h.setAttribute('stroke-width',2);h.dataset.handle=name;h.classList.add('canvas-resize-handle');svg.append(h);}
+      const rotateX=b.x+b.w/2,rotateY=Math.max(14,b.y-24);
+      const stem=document.createElementNS('http://www.w3.org/2000/svg','line');stem.setAttribute('x1',rotateX);stem.setAttribute('x2',rotateX);stem.setAttribute('y1',b.y-4);stem.setAttribute('y2',rotateY+6);stem.setAttribute('stroke','#9a765a');stem.setAttribute('pointer-events','none');svg.append(stem);
+      const rotate=document.createElementNS('http://www.w3.org/2000/svg','circle');rotate.setAttribute('cx',rotateX);rotate.setAttribute('cy',rotateY);rotate.setAttribute('r',6);rotate.setAttribute('fill','#fff');rotate.setAttribute('stroke','#9a765a');rotate.setAttribute('stroke-width',2);rotate.dataset.handle='rotate';rotate.classList.add('canvas-rotate-handle');svg.append(rotate);
+      }
+      for(const i of selected){const el=data.elements[i];if(el.type==='shape'&&el.shape==='triangle'){const center={x:el.x+el.w/2,y:el.y+el.h/2};(el.vertices||[[.5,0],[1,1],[0,1]]).forEach(([vx,vy],pointIndex)=>{const p=rotatedPoint(el.x+vx*el.w,el.y+vy*el.h,center,(el.rotation||0)*Math.PI/180),handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',p.x);handle.setAttribute('cy',p.y);handle.setAttribute('r',5);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2);handle.dataset.pointHandle=String(pointIndex);handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');svg.append(handle);});}else if(el.type==='line'){for(const [which,x,y] of [['start',el.x1,el.y1],['end',el.x2,el.y2]]){const handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',x);handle.setAttribute('cy',y);handle.setAttribute('r',8);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2.5);handle.setAttribute('pointer-events','all');handle.dataset.pointHandle=which;handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');svg.append(handle);}}}
+    }
+    if(selectionBox){const box=document.createElementNS('http://www.w3.org/2000/svg','rect');box.setAttribute('x',Math.min(selectionBox.start.x,selectionBox.current.x));box.setAttribute('y',Math.min(selectionBox.start.y,selectionBox.current.y));box.setAttribute('width',Math.abs(selectionBox.current.x-selectionBox.start.x));box.setAttribute('height',Math.abs(selectionBox.current.y-selectionBox.start.y));box.setAttribute('class','canvas-marquee');box.setAttribute('pointer-events','none');svg.append(box);}
+    const box=selected.size?selectionBounds(selected):null;
+    palette.hidden=!box;
+    const one=selected.size===1?data.elements[[...selected][0]]:null,shapeTarget=one?.type==='shape'||one?.type==='rect'||one?.type==='ellipse'?one:null,lineTarget=one?.type==='line'?one:null;
+    shapeMenu.hidden=!shapeTarget;lineMenu.hidden=!lineTarget;
+    if(shapeTarget){const shapeName=shapeTarget.shape||(shapeTarget.type==='rect'?'rectangle':shapeTarget.type==='ellipse'?'ellipse':'');shapeMenu.querySelectorAll('[data-shape]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.shape===shapeName)));shapeMenu.querySelector('.canvas-star-points').hidden=shapeName!=='star';shapeMenu.querySelector('select').value=String(shapeTarget.points||5);}
+    if(lineTarget){for(const endpoint of ['start','end']){const style=lineTarget[`${endpoint}Marker`]||(endpoint==='end'?'arrow':'none');lineMenu.querySelectorAll(`[data-endpoint="${endpoint}"][data-style]`).forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.style===style)));}}
+    if(box){const scale=svg.clientWidth/Math.max(1,data.width||1200);const right=(box.x+box.w)*scale+10;const left=right+palette.offsetWidth<=svg.clientWidth?right:Math.max(4,box.x*scale-palette.offsetWidth-10);palette.style.left=`${left}px`;palette.style.top=`${Math.max(8,box.y*scale)}px`;const menuLeft=Math.min(Math.max(4,left),Math.max(4,svg.clientWidth-190));shapeMenu.style.left=`${menuLeft}px`;const menuTop=Math.max(8,box.y*scale+palette.offsetHeight+8);shapeMenu.style.top=`${menuTop}px`;}
+    if(lineTarget){const scale=svg.clientWidth/Math.max(1,data.width||1200);for(const [endpoint,x,y] of [['start',lineTarget.x1,lineTarget.y1],['end',lineTarget.x2,lineTarget.y2]]){const menu=lineMenu.querySelector(`[data-endpoint-menu="${endpoint}"]`),left=x*scale-menu.offsetWidth-9;menu.style.left=`${left>=2?left:x*scale+10}px`;menu.style.top=`${Math.max(2,y*scale-menu.offsetHeight/2)}px`;}}
+    palette.querySelectorAll('[data-color]').forEach(swatch=>{const active=swatch.dataset.color.toLowerCase()===selectedColor.toLowerCase();swatch.classList.toggle('active',active);swatch.setAttribute('aria-pressed',String(active));});
+  };
+  svg.dataset.tool=tool;
+  const deleteSelected=()=>{if(!selected.size)return;for(const i of [...selected].sort((a,b)=>b-a))data.elements.splice(i,1);selected.clear();paint();setStructuredDirty();};
+  state.structured.deleteCanvasSelection=deleteSelected;
+  toolbar.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => { if (button.dataset.tool === 'delete') { deleteSelected(); return; } tool = button.dataset.tool; svg.dataset.tool=tool; toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(b => {const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});updateToolHelp(); }));
+  toolbar.querySelector('[data-action="rotate"]').addEventListener('click',()=>rotateSelectionBy(15));
+  palette.querySelectorAll('[data-color]').forEach(button=>button.addEventListener('click',()=>{selectedColor=button.dataset.color;for(const i of selected)data.elements[i].color=selectedColor;if(selected.size){paint();setStructuredDirty();}}));
+  shapeMenu.querySelectorAll('[data-shape]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(!['shape','rect','ellipse'].includes(target?.type))return;target.type='shape';target.shape=button.dataset.shape;if(target.shape==='triangle')target.vertices||=[[.5,0],[1,1],[0,1]];if(target.shape==='star')target.points||=5;paint();setStructuredDirty();}));
+  shapeMenu.querySelector('select').addEventListener('change',event=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='shape'&&target.shape==='star'){target.points=Number(event.target.value);paint();setStructuredDirty();}});
+  lineMenu.querySelectorAll('button[data-endpoint][data-style]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='line'){target[`${button.dataset.endpoint}Marker`]=button.dataset.style;paint();setStructuredDirty();}}));
+  toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
+  const point = e => { const p = svg.createSVGPoint(); p.x=e.clientX;p.y=e.clientY; const q=p.matrixTransform(svg.getScreenCTM().inverse()); return {x:q.x,y:q.y}; };
+  const updateToolHelp=()=>{const help={select:'Drag selected items to move them. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=help[tool]||'';toolHelp.hidden=!help[tool];};
+  updateToolHelp();
+  svg.addEventListener('pointerdown', e => {const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();structuredLink(link.dataset.target);return;}const textEditor=e.target.closest('.canvas-text-edit');if(textEditor&&tool==='select'&&e.detail>=2)return; const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
+    if(tool==='select') {
+      const endpointHandle=e.target.closest('[data-point-handle]');
+      if(endpointHandle&&Number.isInteger(ix)){interaction={kind:'point',index:ix,handle:endpointHandle.dataset.pointHandle,original:structuredClone(data.elements[ix])};svg.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();return;}
+      if(e.target.dataset.handle==='rotate'&&selected.size){const group=selectionBounds(selected),center={x:group.x+group.w/2,y:group.y+group.h/2},angle=Math.atan2(p.y-center.y,p.x-center.x);interaction={kind:'rotate',start:p,center,lastAngle:angle,angle:0,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])]))};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
+      if(e.target.dataset.handle && selected.size) {interaction={kind:'resize',handle:e.target.dataset.handle,start:p,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])])),group:selectionBounds(selected)};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
+      if(Number.isInteger(ix)) {if(e.shiftKey||e.metaKey||e.ctrlKey){selected.has(ix)?selected.delete(ix):selected.add(ix);}else if(!selected.has(ix))selected=new Set([ix]);if(selected.has(ix)){selectedColor=data.elements[[...selected][0]]?.color||selectedColor;interaction={kind:'move',start:p,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])]))};svg.setPointerCapture(e.pointerId);}paint();e.preventDefault();return;}
+      if(!e.shiftKey&&!e.metaKey&&!e.ctrlKey)selected.clear();selectionBox={start:p,current:p,additive:e.shiftKey||e.metaKey||e.ctrlKey};svg.setPointerCapture(e.pointerId);paint();return;
+    }
+    if(tool==='erase' && Number.isInteger(ix)){data.elements.splice(ix,1);selected.clear();paint();setStructuredDirty();return;}
+    if((tool==='draw'||tool==='shape'||tool==='line') && Number.isInteger(ix)) return;
+    svg.setPointerCapture(e.pointerId); if(tool==='draw')draft={type:'stroke',points:[p],color:selectedColor}; else if(tool==='shape')draft={type:'shape',shape:'rectangle',x:p.x,y:p.y,w:0,h:0,color:selectedColor}; else if(tool==='line')draft={type:'line',x1:p.x,y1:p.y,x2:p.x,y2:p.y,startMarker:'none',endMarker:'arrow',color:selectedColor}; else if(tool==='text')draft={type:'text',x:p.x,y:p.y,w:0,h:0,text:'',color:selectedColor};
+    if(draft){data.elements.push(draft);selected=new Set([data.elements.length-1]);setStructuredDirty();}
+  });
+  svg.addEventListener('pointermove',e=>{
+    const p=point(e);
+    if(draft||interaction){clearTimeout(state.structured.historyTimer);state.structured.historyTimer=setTimeout(()=>{state.structured.historyPending=false;},600);}
+    if(selectionBox){selectionBox.current=p;paint();return;}
+    if(interaction){
+      const dx=p.x-interaction.start.x,dy=p.y-interaction.start.y;
+      if(interaction.kind==='move'){
+        for(const [i,original] of interaction.originals){
+          const el=data.elements[i];
+          if(el.type==='stroke')el.points=original.points.map(point=>({x:point.x+dx,y:point.y+dy}));
+          else if(el.type==='line'){el.x1=original.x1+dx;el.y1=original.y1+dy;el.x2=original.x2+dx;el.y2=original.y2+dy;}
+          else{el.x=original.x+dx;el.y=original.y+dy;}
+        }
+      } else if(interaction.kind==='point'){
+        const el=data.elements[interaction.index],original=interaction.original;
+        if(el.type==='line'){if(interaction.handle==='start'){el.x1=p.x;el.y1=p.y;}else{el.x2=p.x;el.y2=p.y;}}
+        else if(el.type==='shape'&&el.shape==='triangle'){const center={x:original.x+original.w/2,y:original.y+original.h/2},local=rotatedPoint(p.x,p.y,center,-(original.rotation||0)*Math.PI/180);el.vertices=(original.vertices||[[.5,0],[1,1],[0,1]]).map(([x,y],index)=>index===Number(interaction.handle)?[Math.max(0,Math.min(1,(local.x-original.x)/original.w)),Math.max(0,Math.min(1,(local.y-original.y)/original.h))]:[x,y]);}
+      } else if(interaction.kind==='rotate'){
+        const nextAngle=Math.atan2(p.y-interaction.center.y,p.x-interaction.center.x);let step=nextAngle-interaction.lastAngle;while(step>Math.PI)step-=2*Math.PI;while(step<-Math.PI)step+=2*Math.PI;interaction.angle+=step;interaction.lastAngle=nextAngle;
+        for(const [i,original] of interaction.originals){const el=data.elements[i];if(el.type==='stroke')el.points=original.points.map(point=>rotatedPoint(point.x,point.y,interaction.center,interaction.angle));else if(el.type==='line'){const a=rotatedPoint(original.x1,original.y1,interaction.center,interaction.angle),b=rotatedPoint(original.x2,original.y2,interaction.center,interaction.angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(original),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,interaction.center,interaction.angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((original.rotation||0)+interaction.angle*180/Math.PI)%360;}}
+      } else {
+        const b=interaction.group,handle=interaction.handle;
+        const right=handle.includes('e'),bottom=handle.includes('s'),left=handle.includes('w'),top=handle.includes('n');
+        const nx=left?Math.min(b.x+b.w-4,p.x):b.x,ny=top?Math.min(b.y+b.h-4,p.y):b.y;
+        const nr=right?Math.max(b.x+4,p.x):b.x+b.w,nb=bottom?Math.max(b.y+4,p.y):b.y+b.h;
+        const sx=(nr-nx)/Math.max(1,b.w),sy=(nb-ny)/Math.max(1,b.h);
+        for(const [i,original] of interaction.originals){
+          const el=data.elements[i];
+          if(el.type==='stroke')el.points=original.points.map(point=>({x:nx+(point.x-b.x)*sx,y:ny+(point.y-b.y)*sy}));
+          else if(el.type==='line'){el.x1=nx+(original.x1-b.x)*sx;el.y1=ny+(original.y1-b.y)*sy;el.x2=nx+(original.x2-b.x)*sx;el.y2=ny+(original.y2-b.y)*sy;}
+          else{const ob=bounds(original);el.x=nx+(ob.x-b.x)*sx;el.y=ny+(ob.y-b.y)*sy;el.w=ob.w*sx;el.h=ob.h*sy;}
+        }
+      }
+      paint();return;
+    }
+    if(!draft)return;
+    if(draft.type==='stroke')draft.points.push(p);else if(draft.type==='line'){draft.x2=p.x;draft.y2=p.y;}else{draft.w=p.x-draft.x;draft.h=p.y-draft.y;}
+    paint();
+  });
+  const finishPointer=()=>{
+    if(selectionBox){
+      const box={x:Math.min(selectionBox.start.x,selectionBox.current.x),y:Math.min(selectionBox.start.y,selectionBox.current.y),w:Math.abs(selectionBox.current.x-selectionBox.start.x),h:Math.abs(selectionBox.current.y-selectionBox.start.y)};
+      if(box.w>3||box.h>3){
+        const hits=data.elements.map((el,i)=>({i,b:bounds(el)})).filter(({b})=>b.x<=box.x+box.w&&b.x+b.w>=box.x&&b.y<=box.y+box.h&&b.y+b.h>=box.y).map(({i})=>i);
+        selected=selectionBox.additive?new Set([...selected,...hits]):new Set(hits);
+      }
+      selectionBox=null;paint();return;
+    }
+    if(interaction){interaction=null;setStructuredDirty();}
+    if(draft){
+      const draftedType=draft.type;
+      const focusText=draft.type==='text'&&Math.max(Math.abs(draft.w),Math.abs(draft.h))>=12;
+      if(draft.type==='text'&&!focusText){data.elements.pop();selected.clear();}
+      else if(draft.type==='line'&&Math.hypot(draft.x2-draft.x1,draft.y2-draft.y1)<4){data.elements.pop();selected.clear();}
+      else if(draft.type==='shape'||draft.type==='text'){
+        if(draft.w<0){draft.x+=draft.w;draft.w=Math.abs(draft.w);}
+        if(draft.h<0){draft.y+=draft.h;draft.h=Math.abs(draft.h);}
+        draft.w=Math.max(draft.type==='text'?180:4,draft.w);
+        draft.h=Math.max(draft.type==='text'?60:4,draft.h);
+      }
+      draft=null;
+      if(draftedType==='shape'||draftedType==='line'){tool='select';svg.dataset.tool=tool;toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button=>{const active=button.dataset.tool===tool;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});updateToolHelp();}
+      setStructuredDirty();paint();
+      if(focusText){const textIndex=[...selected][0];const textEditor=svg.querySelector('[data-index=\"'+textIndex+'\"] .canvas-text-edit');requestAnimationFrame(()=>textEditor?.focus());}
+    }
+  };
+  svg.addEventListener('pointerup',finishPointer);
+  svg.addEventListener('pointercancel',finishPointer);
+  svg.addEventListener('click',e=>{
+    const text=e.target.closest('[data-link-text]')?.getAttribute('data-link-text')||'';
+    const match=text.match(/\[\[([^\]]+)\]\]/);
+    if(match)structuredLink(match[1]);
+  });
+  paint();
+  state.structured.refreshCanvas=paint;
+}
+async function renderGraph(root, data) {
+  const toolbar = root.querySelector('.structured-toolbar');
+  toolbar.innerHTML = `<span>Desmos Graphing Calculator · graph state is saved in this file</span><button data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button>`;
+  toolbar.querySelectorAll('[data-history]').forEach((button) => button.addEventListener('click', () => applyStructuredHistory(button.dataset.history)));
+  const surface = root.querySelector('.structured-surface');
+  const owner = state.structured;
+  const status = (message, configure = false) => {
+    surface.replaceChildren();
+    const panel = document.createElement('div'); panel.className = 'graph-setup';
+    const text = document.createElement('p'); text.textContent = message; panel.append(text);
+    if (configure) { const button = document.createElement('button'); button.className = 'secondary-button'; button.textContent = 'Open Graphing settings'; button.addEventListener('click', () => openSettings('desmos')); panel.append(button); }
+    surface.append(panel);
+  };
+  let key = '';
+  try { key = await window.stillnote.getDesmosKey(); }
+  catch (error) { status(error.message || 'Open a vault to use the saved Desmos key.'); return; }
+  if (!key) { setSettingsHealth('desmos', false, 'Graphing API key missing'); status('A Desmos API key is required to use the graph editor.', true); return; }
+  try {
+    const api = await loadDesmosApi(key);
+    if (state.structured !== owner || !root.isConnected) return;
+    const host = document.createElement('div'); host.className = 'graph-calculator'; surface.replaceChildren(host);
+    const graphTheme = state.theme === 'dark' ? {
+      colors: ['#d1a07e', '#84b7a1', '#83a9d2', '#d88980', '#b19bd2', '#d7c36f']
+    } : state.theme === 'sepia' ? {
+      colors: ['#9d7151', '#6e927b', '#6f89a8', '#b46d5e', '#92779d', '#b09550']
+    } : {};
+    const calculator = api.GraphingCalculator(host, {
+      expressions: true, keypad: true, settingsMenu: true, zoomButtons: true, autosize: true,
+      // Desmos' inversion filter also flips expression colors and custom CSS.
+      // Keep its graphpaper in the normal color space; our scoped CSS themes
+      // the surrounding calculator controls instead.
+      invertedColors: false, fontSize: 15, border: false, ...graphTheme
+    });
+    owner.desmos = calculator;
+    setSettingsHealth('desmos', true, 'Graphing API key working');
+    if (data.state && typeof data.state === 'object') calculator.setState(data.state);
+    else data.state = calculator.getState();
+    calculator.clearHistory();
+    calculator.observeEvent('change', () => {
+      if (state.structured !== owner || !state.active) return;
+      data.state = calculator.getState(); setStructuredDirty();
+    });
+  } catch (error) {
+    if (state.structured === owner && root.isConnected) { setSettingsHealth('desmos', false, 'Graphing API key not working'); status(error.message || 'Could not open Desmos.', true); }
+  }
+}
+function renderSpreadsheet(root, data) {
+  const toolbar = root.querySelector('.structured-toolbar'); toolbar.innerHTML = `<span>Click a cell to edit · use &lt;[Note]&gt; to link</span><button data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button><button class="sheet-add-row">Add row</button><button class="sheet-add-column">Add column</button>`;
+  const surface = root.querySelector('.structured-surface');
+  const render = () => {
+    let html='<table class="sheet-grid"><thead><tr><th></th>'; for(let c=0;c<data.columns;c++) html+=`<th>${columnLabel(c)}</th>`; html+='</tr></thead><tbody>';
+    for(let r=0;r<data.rows;r++){html+=`<tr><th>${r+1}</th>`;for(let c=0;c<data.columns;c++){const key=`${columnLabel(c)}${r+1}`;const value=String(data.cells[key] ?? ''); const shown=value.startsWith('=')?spreadsheetCellValue(data,key):value; html+=`<td contenteditable="true" data-cell="${key}" spellcheck="false">${sheetCellHtml(shown)}</td>`;}html+='</tr>';}
+    html+='</tbody></table>'; surface.innerHTML=html;
+    surface.querySelectorAll('[data-cell]').forEach(cell=>{cell.addEventListener('focus',()=>{cell.textContent=data.cells[cell.dataset.cell]||'';});cell.addEventListener('input',()=>{data.cells[cell.dataset.cell]=cell.innerText;setStructuredDirty();surface.querySelectorAll('[data-cell]').forEach(other=>{if(other===cell||document.activeElement===other)return;const raw=String(data.cells[other.dataset.cell]??'');other.innerHTML=sheetCellHtml(raw.startsWith('=')?spreadsheetCellValue(data,other.dataset.cell):raw);});});cell.addEventListener('blur',()=>{data.cells[cell.dataset.cell]=serializeLinkedText(cell);render();});});
+  };
+  surface.addEventListener('click',e=>{const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();e.stopPropagation();structuredLink(link.dataset.target);}});
+  toolbar.querySelector('.sheet-add-row').addEventListener('click',()=>{data.rows=Math.min(200,data.rows+1);render();setStructuredDirty();});
+  toolbar.querySelector('.sheet-add-column').addEventListener('click',()=>{data.columns=Math.min(26,data.columns+1);render();setStructuredDirty();});render();
+  toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
+}
+async function adoptGoogleTaskListTitle(root, owner, remoteTitle) {
+  const title = String(remoteTitle || '').trim();
+  if (!title || state.structured !== owner || !root.isConnected) return;
+  const titleEl = root.querySelector('.structured-title');
+  if (title === prettyName(state.active)) { owner.title = title; titleEl.textContent = title; return; }
+  const error = noteTitleError(title);
+  if (error) { showToast(`Google list title cannot be used as a file name: ${error}`); return; }
+  const oldPath = state.active;
+  try {
+    await saveActive();
+    if (state.active !== oldPath || state.structured !== owner) return;
+    const moved = await window.stillnote.renameEntry(oldPath, title);
+    if (state.active !== oldPath || state.structured !== owner) return;
+    state.active = moved; owner.file = moved; owner.title = title; titleEl.textContent = title;
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles(); updateStructuredLocation(moved); void window.stillnote.rememberNote(moved).catch(() => {}); setStructuredDirty();
+  } catch (error) { showToast(`Google list title changed, but the task sheet could not be renamed: ${error.message}`); }
+}
+async function renderTaskSheet(root, data) {
+  if (!Array.isArray(data.tasks)) data.tasks = [];
+  const owner = state.structured;
+  let syncing = false;
+  const toolbar = root.querySelector('.structured-toolbar');
+  toolbar.innerHTML = `<span class="task-sheet-status">Loading Google Tasks…</span><button class="secondary-button task-sheet-refresh" type="button" aria-label="Sync with Google Tasks" title="Sync with Google Tasks">${icons.refresh}</button>`;
+  const surface = root.querySelector('.structured-surface');
+  surface.innerHTML = `<form class="task-sheet-add"><input class="settings-input" type="text" maxlength="1024" placeholder="Add a task…" aria-label="New task"><button class="primary-button" type="submit">Add task</button></form><div class="task-sheet-list" aria-live="polite"></div>`;
+  const status = toolbar.querySelector('.task-sheet-status');
+  const list = surface.querySelector('.task-sheet-list');
+  const isCurrent = () => state.structured === owner && root.isConnected;
+  const paintTasks = () => {
+    if (!data.tasks?.length) { list.innerHTML = '<div class="task-sheet-empty">No tasks in this list yet.</div>'; return; }
+    const taskMap = new Map(data.tasks.map((task, index) => [task.id, { task, index }]));
+    const renderRows = (tasks) => [...tasks].sort((a, b) => Number(Boolean(a.parent)) - Number(Boolean(b.parent))).map((task) => {
+      const index = data.tasks.indexOf(task);
+      const depth = task.parent && taskMap.has(task.parent) ? 1 : 0;
+      const due = task.due ? String(task.due).slice(0, 10) : '';
+      return `<article class="task-sheet-card${task.status === 'completed' ? ' is-complete' : ''}${depth ? ' is-subtask' : ''}${task.starred ? ' is-starred' : ''}" data-index="${index}"><div class="task-sheet-row"><input class="task-sheet-complete" type="checkbox" aria-label="Mark ${escapeHtml(task.title)} complete" ${task.status === 'completed' ? 'checked' : ''}><input class="task-sheet-title" type="text" maxlength="1024" aria-label="Task title" value="${escapeHtml(task.title)}"><button class="task-sheet-star${task.starred ? ' is-starred' : ''}" type="button" aria-label="${task.starred ? 'Unstar' : 'Star'} task" title="${task.starred ? 'Unstar task' : 'Star task'}">${icons.star}</button><button class="icon-button task-sheet-delete" type="button" aria-label="Delete ${escapeHtml(task.title)}" title="Delete task">${icons.trash}</button></div><div class="task-sheet-fields"><label>Due date<input class="task-sheet-due" type="date" value="${escapeHtml(due)}" aria-label="Due date"></label><label class="task-sheet-details-label">Details<textarea class="task-sheet-details" rows="2" maxlength="8192" placeholder="Add details…" aria-label="Task details">${escapeHtml(task.notes || '')}</textarea></label></div>${depth ? '' : `<form class="task-sheet-subtask"><input class="settings-input" type="text" maxlength="1024" placeholder="Add a subtask…" aria-label="New subtask"><button class="secondary-button" type="submit">Add subtask</button></form>`}</article>`;
+    }).join('');
+    const active = data.tasks.filter((task) => task.status !== 'completed');
+    const completed = data.tasks.filter((task) => task.status === 'completed');
+    list.innerHTML = `${renderRows(active)}${completed.length ? `<details class="task-sheet-completed"><summary>Completed <span>${completed.length}</span></summary><div class="task-sheet-completed-list">${renderRows(completed)}</div></details>` : ''}`;
+    if (!active.length && !completed.length) list.innerHTML = '<div class="task-sheet-empty">No tasks in this list yet.</div>';
+  };
+  const sync = async () => {
+    if (syncing || !isCurrent()) return;
+    syncing = true;
+    status.textContent = 'Syncing…';
+    try {
+      const [lists, tasks] = await Promise.all([window.stillnote.listGoogleTaskLists(), window.stillnote.listGoogleTasks(data.listId)]);
+      if (!isCurrent()) return;
+      const remoteList = lists.find((item) => item.id === data.listId);
+      if (!remoteList) throw new Error('This Google Tasks list no longer exists.');
+      await adoptGoogleTaskListTitle(root, owner, remoteList.title);
+      if (!isCurrent()) return;
+      const previousTasks = JSON.stringify(data.tasks);
+      const localStars = new Map(data.tasks.map((task) => [task.id, Boolean(task.starred)]));
+      data.tasks = tasks.map((task) => ({ id: task.id, title: task.title || '', status: task.status || 'needsAction', due: task.due || null, notes: task.notes || '', parent: task.parent || null, starred: localStars.get(task.id) || false }));
+      paintTasks(); status.textContent = `Synced with Google Tasks · ${data.tasks.length} ${data.tasks.length === 1 ? 'task' : 'tasks'}`;
+      if (previousTasks !== JSON.stringify(data.tasks)) setStructuredDirty();
+    } catch (error) { if (isCurrent()) status.textContent = error.message || 'Could not sync Google Tasks'; }
+    finally { syncing = false; }
+  };
+  const syncTimer = setInterval(() => { if (!isCurrent()) clearInterval(syncTimer); else void sync(); }, 120000);
+  owner.cleanup = () => clearInterval(syncTimer);
+  toolbar.querySelector('.task-sheet-refresh').addEventListener('click', () => void sync());
+  toolbar.querySelectorAll('[data-history]').forEach((button) => button.addEventListener('click', () => applyStructuredHistory(button.dataset.history)));
+  surface.querySelector('.task-sheet-add').addEventListener('submit', async (event) => {
+    event.preventDefault(); const input = surface.querySelector('.task-sheet-add input'); const title = input.value.trim();
+    if (!title) return;
+    const submit = surface.querySelector('.task-sheet-add button'); submit.disabled = true;
+    try {
+      const task = await window.stillnote.createGoogleTask(data.listId, title);
+      if (!isCurrent()) return;
+      data.tasks.push({ id: task.id, title: task.title || title, status: task.status || 'needsAction', due: task.due || null, notes: task.notes || '', parent: null, starred: false });
+      input.value = ''; paintTasks(); setStructuredDirty(); status.textContent = 'Task added to Google Tasks';
+    } catch (error) { if (isCurrent()) { status.textContent = error.message || 'Could not add task'; showToast(status.textContent); } }
+    finally { submit.disabled = false; }
+  });
+  list.addEventListener('change', async (event) => {
+    if (event.target.matches('.task-sheet-due, .task-sheet-details')) {
+      const row = event.target.closest('[data-index]'); const task = data.tasks[Number(row.dataset.index)];
+      const due = event.target.matches('.task-sheet-due') ? event.target.value : String(task.due || '').slice(0, 10);
+      const notes = event.target.matches('.task-sheet-details') ? event.target.value : task.notes || '';
+      const changes = event.target.matches('.task-sheet-due') ? { due: due ? `${due}T00:00:00.000Z` : null } : { notes };
+      event.target.disabled = true;
+      try {
+        const updated = await window.stillnote.updateGoogleTask(data.listId, task.id, changes);
+        if (!isCurrent()) return;
+        if ('due' in changes) task.due = updated.due || null; else task.notes = updated.notes || '';
+        setStructuredDirty(); status.textContent = 'Task updated in Google Tasks';
+      } catch (error) { if (isCurrent()) { if ('due' in changes) event.target.value = String(task.due || '').slice(0, 10); else event.target.value = task.notes || ''; status.textContent = error.message || 'Could not update task'; showToast(status.textContent); } }
+      finally { if (event.target.isConnected) event.target.disabled = false; }
+      return;
+    }
+    if (event.target.matches('.task-sheet-title')) {
+      const row = event.target.closest('[data-index]'); const task = data.tasks[Number(row.dataset.index)]; const title = event.target.value.trim();
+      if (!title) { event.target.value = task.title; return; }
+      event.target.disabled = true;
+      try {
+        const updated = await window.stillnote.updateGoogleTask(data.listId, task.id, { title });
+        if (!isCurrent()) return;
+        task.title = updated.title || title; event.target.value = task.title; setStructuredDirty(); status.textContent = 'Task updated in Google Tasks';
+      } catch (error) { if (isCurrent()) { event.target.value = task.title; status.textContent = error.message || 'Could not update task'; showToast(status.textContent); } }
+      finally { if (event.target.isConnected) event.target.disabled = false; }
+      return;
+    }
+    if (!event.target.matches('.task-sheet-complete')) return;
+    const row = event.target.closest('[data-index]'); const task = data.tasks[Number(row.dataset.index)];
+    const nextStatus = event.target.checked ? 'completed' : 'needsAction'; event.target.disabled = true;
+    try {
+      const updated = await window.stillnote.updateGoogleTask(data.listId, task.id, { status: nextStatus });
+      if (!isCurrent()) return;
+      task.status = updated.status || nextStatus; paintTasks(); setStructuredDirty(); status.textContent = 'Task updated in Google Tasks';
+    } catch (error) { if (isCurrent()) { event.target.checked = task.status === 'completed'; status.textContent = error.message || 'Could not update task'; showToast(status.textContent); } }
+    finally { if (event.target.isConnected) event.target.disabled = false; }
+  });
+  list.addEventListener('focusin', (event) => {
+    const card = event.target.closest('.task-sheet-card');
+    if (card) card.classList.add('is-editing');
+  });
+  list.addEventListener('focusout', (event) => {
+    const card = event.target.closest('.task-sheet-card');
+    if (!card) return;
+    requestAnimationFrame(() => {
+      if (card.isConnected && !card.contains(document.activeElement)) card.classList.remove('is-editing');
+    });
+  });
+  list.addEventListener('click', async (event) => {
+    const star = event.target.closest('.task-sheet-star');
+    if (star) { const row = star.closest('[data-index]'); const task = data.tasks[Number(row.dataset.index)]; task.starred = !task.starred; paintTasks(); setStructuredDirty(); return; }
+    const button = event.target.closest('.task-sheet-delete'); if (!button) return;
+    const row = button.closest('[data-index]'); const index = Number(row.dataset.index); const task = data.tasks[index]; button.disabled = true;
+    try {
+      await window.stillnote.deleteGoogleTask(data.listId, task.id);
+      if (!isCurrent()) return;
+      data.tasks.splice(index, 1); paintTasks(); setStructuredDirty(); status.textContent = 'Task deleted from Google Tasks';
+    } catch (error) { if (isCurrent()) { button.disabled = false; status.textContent = error.message || 'Could not delete task'; showToast(status.textContent); } }
+  });
+  list.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.task-sheet-subtask'); if (!form) return;
+    event.preventDefault(); const row = form.closest('[data-index]'); const parent = data.tasks[Number(row.dataset.index)]; const input = form.querySelector('input'); const title = input.value.trim();
+    if (!title) return;
+    const button = form.querySelector('button'); button.disabled = true;
+    try {
+      const task = await window.stillnote.createGoogleTask(data.listId, title, parent.id);
+      if (!isCurrent()) return;
+      data.tasks.push({ id: task.id, title: task.title || title, status: task.status || 'needsAction', due: task.due || null, notes: task.notes || '', parent: task.parent || parent.id, starred: false });
+      paintTasks(); setStructuredDirty(); status.textContent = 'Subtask added to Google Tasks';
+    } catch (error) { if (isCurrent()) { status.textContent = error.message || 'Could not add subtask'; showToast(status.textContent); } }
+    finally { if (button.isConnected) button.disabled = false; }
+  });
+  paintTasks(); await sync();
+}
+function spreadsheetCellValue(data, key, visiting = new Set()) {
+  key=key.toUpperCase();
+  const raw=String(data.cells[key]??'').trim();
+  if(!raw)return '0';
+  if(!raw.startsWith('=')){const value=Number(raw);return Number.isFinite(value)?String(value):'#VALUE!';}
+  if(visiting.has(key))return '#CYCLE!';
+  const next=new Set(visiting);next.add(key);
+  try {
+    const expression=raw.slice(1),tokens=expression.match(/[A-Za-z]+[0-9]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[()+\-*/^]/g)||[];
+    if(tokens.join('')!==expression.replace(/\s+/g,''))return '#VALUE!';
+    let pos=0;
+    const primary=()=>{const token=tokens[pos++];if(token==='+'||token==='-'){const n=primary();return token==='-'?-n:n;}if(token==='('){const n=add();if(tokens[pos++]!==')')throw new Error('#VALUE!');return n;}if(!token)throw new Error('#VALUE!');if(/^[A-Za-z]+\d+$/.test(token)){const result=spreadsheetCellValue(data,token,next);if(result.startsWith('#'))throw new Error(result);return Number(result);}const value=Number(token);if(!Number.isFinite(value))throw new Error('#VALUE!');return value;};
+    const power=()=>{let n=primary();if(tokens[pos]==='^'){pos++;n=Math.pow(n,power());}return n;};
+    const multiply=()=>{let n=power();while(tokens[pos]==='*'||tokens[pos]==='/'){const op=tokens[pos++],r=power();if(op==='/'&&r===0)throw new Error('#DIV/0!');n=op==='*'?n*r:n/r;}return n;};
+    const add=()=>{let n=multiply();while(tokens[pos]==='+'||tokens[pos]==='-'){const op=tokens[pos++],r=multiply();n=op==='+'?n+r:n-r;}return n;};
+    const result=add();if(pos!==tokens.length||!Number.isFinite(result))return '#VALUE!';return String(Number(result.toPrecision(12)));
+  } catch(error) {return error.message?.startsWith('#')?error.message:'#VALUE!';}
+}
+function columnLabel(index) { let out=''; for(let n=index+1;n;n=Math.floor((n-1)/26)) out=String.fromCharCode(65+(n-1)%26)+out; return out; }
+function sheetCellHtml(value) {
+  const source = String(value), matcher = /(?:<\[([^\]|]+)(?:\|([^\]]+))?\]>|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/g;
+  let html = '', offset = 0, match;
+  while ((match = matcher.exec(source))) {
+    html += escapeHtml(source.slice(offset, match.index));
+    const target = (match[1] || match[3]).trim(), label = match[2] || match[4] || target;
+    html += `<a class="sheet-wiki-link" href="#" data-target="${escapeHtml(target)}">${escapeHtml(label)}</a>`;
+    offset = match.index + match[0].length;
+  }
+  return html + escapeHtml(source.slice(offset));
+}
+function serializeLinkedText(element) {
+  const read = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    if (node.matches('a.sheet-wiki-link')) {
+      const target = node.dataset.target || '', label = node.textContent || target;
+      return `<[${target}${label !== target ? `|${label}` : ''}]>`;
+    }
+    return [...node.childNodes].map(read).join('');
+  };
+  return [...element.childNodes].map(read).join('');
+}
+async function saveActive() {
+  if (state.savePromise) {
+    await state.savePromise;
+    if (state.dirty) return saveActive();
+    return;
+  }
+  if (!state.dirty || !state.active || (!state.view && !state.structured)) return;
+  clearTimeout(state.saveTimer);
+  if (state.structured) {
+    const active = state.active, structured = state.structured, title = (structured.title || prettyName(active)).trim() || prettyName(active);
+    const operation = (async()=>{try{await window.stillnote.writeNote(active,encodeStructured(structured.type,title,structured.data));state.dirty=false;$('#save-state').textContent='Saved';}catch(e){$('#save-state').textContent='Save failed';showToast(e.message||'Could not save file.');}})();
+    state.savePromise=operation;try{await operation;}finally{state.savePromise=null;}return;
+  }
+  const view = state.view;
+  const oldPath = state.active;
+  let writeSucceeded = false;
+  const operation = (async () => {
+    try {
+      if (!oldPath.toLowerCase().endsWith('.md')) {
+        const contents = view.state.doc.toString(); await window.stillnote.writeNote(oldPath, contents); writeSucceeded = true;
+        if (state.view === view && state.active === oldPath) { state.dirty = view.state.doc.toString() !== contents; $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved'; }
+        return;
+      }
+      const firstLine = view.state.doc.line(1);
+      const typedTitle = firstLine.text.trim();
+      const title = (typedTitle || prettyName(oldPath)).replace(/\.md$/i, '').trim() || prettyName(oldPath);
+      if (firstLine.text !== title) view.dispatch({ changes: { from: firstLine.from, to: firstLine.to, insert: title } });
+      const contents = view.state.doc.toString();
+      await window.stillnote.writeNote(oldPath, contents);
+      writeSucceeded = true;
+
+      const titleError = noteTitleError(typedTitle.replace(/\.md$/i, '').trim());
+      if (titleError) {
+        state.dirty = view.state.doc.toString() !== contents;
+        $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
+        if (state.lastTitleValidationMessage !== titleError) showToast(titleError);
+        state.lastTitleValidationMessage = titleError;
+        return;
+      }
+
+      let savedPath = oldPath;
+      const currentTitle = prettyName(oldPath);
+      if (title !== currentTitle) {
+        try { savedPath = await window.stillnote.renameEntry(oldPath, title); }
+        catch (error) {
+          state.dirty = view.state.doc.toString() !== contents;
+          $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
+          showToast(`Note saved, but it could not be renamed: ${error.message}`);
+          return;
+        }
+      }
+      if (savedPath !== oldPath) {
+        state.active = savedPath;
+        [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+        renderFiles();
+        $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(savedPath.split('/').map(prettyName).join(' / '))}</strong>`;
+        $('.location-note').textContent = prettyName(savedPath);
+        void window.stillnote.rememberNote(savedPath).catch((error) => console.error('Could not save active note:', error));
+      }
+      if (state.view === view && state.active === savedPath) {
+        state.dirty = view.state.doc.toString() !== contents;
+        $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
+      }
+    } catch (error) {
+      $('#save-state').textContent = 'Save failed'; showToast(error.message);
+    }
+  })();
+  state.savePromise = operation;
+  try { await operation; }
+  finally { state.savePromise = null; }
+  if (writeSucceeded && state.dirty) return saveActive();
+}
+async function createNote(parentPath = '') {
+  if (!state.vault) return chooseVault();
+  const title = `Untitled ${state.files.filter((file) => prettyName(file).startsWith('Untitled')).length + 1}`;
+  try { const file = await window.stillnote.createNote(title, parentPath); [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]); renderFiles(); await openNote(file); state.view?.focus(); }
+  catch (error) { showToast(error.message || 'Could not create note.'); }
+}
+async function requestCodeFileName() {
+  const form = $('#rename-form'), actions = form.querySelector('.rename-actions');
+  const pickerLabel = document.createElement('label'); pickerLabel.className = 'code-type-picker'; pickerLabel.textContent = 'File type';
+  const picker = document.createElement('select'); picker.className = 'settings-input'; picker.setAttribute('aria-label', 'Code file type');
+  picker.replaceChildren(...codeFileTypes.map(([label, extension]) => { const option = document.createElement('option'); option.value = extension; option.textContent = `${label} (${extension})`; return option; }));
+  pickerLabel.append(picker); actions.before(pickerLabel);
+  const title = await requestNameValue('Create code file', 'Untitled', 'Create file');
+  const extension = picker.value; pickerLabel.remove();
+  if (!title?.trim()) return null;
+  const chosenName = title.trim();
+  const typedExtension = codeFileTypes.map(([, candidate]) => candidate).find((candidate) => chosenName.toLocaleLowerCase().endsWith(candidate));
+  const stem = typedExtension ? chosenName.slice(0, -typedExtension.length) : chosenName;
+  return `${stem}${extension}`;
+}
+async function createCodeFile(parentPath = '') {
+  if (!state.vault) return chooseVault();
+  const name = await requestCodeFileName(); if (!name) return;
+  try {
+    const file = await window.stillnote.createCodeFile(name, parentPath);
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles(); await openNote(file); state.view?.focus();
+  } catch (error) { showToast(error.message || 'Could not create code file.'); }
+}
+async function createStructuredFile(type, parentPath = '') {
+  if (!state.vault) return chooseVault();
+  const label = type === 'canvas' ? 'Canvas' : type === 'graph' ? 'Graph' : 'Spreadsheet';
+  const title = `Untitled ${label} ${state.files.filter((file) => prettyName(file).startsWith(`Untitled ${label}`)).length + 1}`;
+  try {
+    const file = await window.stillnote.createNote(title, parentPath);
+    const data = type === 'canvas' ? canvasDefaults() : type === 'graph' ? graphDefaults() : sheetDefaults();
+    await window.stillnote.writeNote(file, encodeStructured(type, title, data));
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles(); await openNote(file);
+  } catch (error) { showToast(error.message || `Could not create ${label.toLowerCase()}.`); }
+}
+async function createTaskSheet(parentPath = '') {
+  if (!state.vault) return chooseVault();
+  const connection = await window.stillnote.googleTasksStatus().catch(() => null);
+  if (!connection?.clientIdConfigured || !connection.connected) { showToast('Connect Google Tasks in Settings before creating a task sheet.'); openSettings('tasks'); return; }
+  try {
+    const lists = await window.stillnote.listGoogleTaskLists();
+    const choice = await chooseGoogleTaskList(lists);
+    if (!choice) return;
+    let list = choice.list; let requestedTitle = '';
+    if (choice.create) {
+      requestedTitle = (await requestNameValue('New Google Tasks list', '', 'Create list'))?.trim();
+      if (!requestedTitle) return;
+      const invalid = noteTitleError(requestedTitle);
+      if (invalid) { showToast(invalid); return; }
+    }
+    const title = String(requestedTitle || list.title || '').trim();
+    const invalid = noteTitleError(title);
+    if (invalid) { showToast(`This Google Tasks list title cannot be used as a file name: ${invalid}`); return; }
+    const expectedPath = [parentPath, `${title}.md`].filter(Boolean).join('/');
+    if (state.files.some((file) => file.toLocaleLowerCase() === expectedPath.toLocaleLowerCase())) { showToast('A file with this title already exists in that folder.'); return; }
+    if (choice.create) list = await window.stillnote.createGoogleTaskList(title);
+    const file = await window.stillnote.createNote(title, parentPath);
+    const data = taskSheetDefaults(list.id);
+    await window.stillnote.writeNote(file, encodeStructured('tasks', title, data));
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles(); await openNote(file);
+  } catch (error) { showToast(error.message || 'Could not create a Google Tasks sheet.'); }
+}
+function chooseGoogleTaskList(lists) {
+  if (!lists.length) return Promise.resolve({ create: true });
+  const overlay = document.createElement('div'); overlay.className = 'rename-overlay task-list-picker';
+  const options = lists.map((list) => `<option value="${escapeHtml(list.id)}">${escapeHtml(list.title)}</option>`).join('');
+  overlay.innerHTML = `<section class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="task-list-picker-title"><h2 id="task-list-picker-title">Choose a Google Tasks list</h2><select class="settings-input task-list-picker-select">${options}</select><div class="rename-actions"><button type="button" class="secondary-button" data-choice="cancel">Cancel</button><button type="button" class="secondary-button" data-choice="create">Create new list</button><button type="button" class="primary-button" data-choice="use">Use selected list</button></div></section>`;
+  document.body.append(overlay);
+  const select = overlay.querySelector('select'); select.focus();
+  return new Promise((resolve) => {
+    const finish = (choice) => { overlay.remove(); resolve(choice); };
+    overlay.querySelector('[data-choice="cancel"]').addEventListener('click', () => finish(null));
+    overlay.querySelector('[data-choice="create"]').addEventListener('click', () => finish({ create: true }));
+    overlay.querySelector('[data-choice="use"]').addEventListener('click', () => finish({ list: lists.find((list) => list.id === select.value) }));
+    overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(null); });
+  });
+}
+function showNewFileMenu(anchor, parentPath = '') {
+  const menu = $('#new-file-menu'); menu.replaceChildren();
+  const options = [['New note', () => createNote(parentPath)], ['New code file…', () => createCodeFile(parentPath)], ['New canvas', () => createStructuredFile('canvas', parentPath)], ['New spreadsheet', () => createStructuredFile('spreadsheet', parentPath)], ['New graph', () => createStructuredFile('graph', parentPath)], ['New task sheet', () => createTaskSheet(parentPath)]];
+  for (const [label, action] of options) { const button=document.createElement('button');button.className='context-action';button.textContent=label;button.addEventListener('click',()=>{menu.hidden=true;action();});menu.append(button); }
+  const rect=anchor.getBoundingClientRect();menu.hidden=false;
+  menu.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-205))}px`;menu.style.top=`${Math.min(rect.bottom+4,window.innerHeight-menu.offsetHeight-8)}px`;
+}
+async function createFolder(parentPath = '') {
+  if (!state.vault) return chooseVault();
+  const name = await requestNameValue('Create folder', '', 'Create');
+  if (!name?.trim()) return;
+  try {
+    const created = await window.stillnote.createFolder(parentPath, name);
+    if (parentPath) state.collapsed.delete(parentPath);
+    if (created) state.collapsed.delete(created);
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]); renderFiles();
+  } catch (error) { showToast(error.message || 'Could not create folder.'); }
+}
+async function refreshExplorer() {
+  if (!state.vault) return;
+  [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+  renderFiles();
+}
+function canDropOnFolder(item, destinationPath) {
+  if (!item || item.path === destinationPath) return false;
+  if (item.type === 'folder' && destinationPath.startsWith(`${item.path}/`)) return false;
+  return true;
+}
+function clearDragStyles() {
+  document.querySelectorAll('.dragging,.drop-target,.root-drop-target').forEach((element) => element.classList.remove('dragging', 'drop-target', 'root-drop-target'));
+  $('#note-list')?.classList.remove('asset-upload-target');
+}
+function hasExternalFiles(event) { return !state.draggedItem && Array.from(event.dataTransfer?.types || []).includes('Files'); }
+async function uploadDroppedFiles(event, destination = '') {
+  event.preventDefault(); event.stopPropagation(); clearDragStyles();
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (!files.length) return;
+  try {
+    if (files.length > 100) throw new Error('Upload up to 100 files at a time.');
+    const oversized = files.find((file) => file.size > 250 * 1024 * 1024);
+    if (oversized) throw new Error(`${oversized.name} is larger than the 250 MB upload limit.`);
+    const uploads = await Promise.all(files.map(async (file) => ({ name: file.name, data: await file.arrayBuffer() })));
+    const saved = await window.stillnote.uploadAssets(destination, uploads);
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    if (destination) for (const [index, part] of destination.split('/').entries()) state.collapsed.delete(destination.split('/').slice(0, index + 1).join('/'));
+    renderFiles(); showToast(`${saved.length} file${saved.length === 1 ? '' : 's'} added`);
+  } catch (error) { showToast(error.message || 'Files could not be uploaded.'); }
+}
+function wireExplorerDrag(row, node) {
+  row.draggable = true;
+  row.addEventListener('dragstart', (event) => {
+    state.draggedItem = { path: node.path, type: node.type };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-stillnote-path', node.path);
+    event.dataTransfer.setData('application/x-stillnote-type', node.type);
+    row.classList.add('dragging');
+  });
+  row.addEventListener('dragend', () => { state.draggedItem = null; clearDragStyles(); });
+  row.addEventListener('dragover', (event) => { if (!hasExternalFiles(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; row.classList.add('drop-target'); });
+  row.addEventListener('drop', (event) => { if (!hasExternalFiles(event)) return; void uploadDroppedFiles(event, node.type === 'folder' ? node.path : ''); });
+  if (node.type !== 'folder') return;
+  row.addEventListener('dragover', (event) => {
+    if (hasExternalFiles(event)) return;
+    if (!canDropOnFolder(state.draggedItem, node.path)) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move'; row.classList.add('drop-target');
+  });
+  row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+  row.addEventListener('drop', (event) => {
+    if (hasExternalFiles(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    const item = state.draggedItem; state.draggedItem = null; clearDragStyles();
+    if (canDropOnFolder(item, node.path)) moveExplorerEntry(item, node.path);
+  });
+}
+$('#note-list').addEventListener('dragover', (event) => { if (!hasExternalFiles(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; $('#note-list').classList.add('asset-upload-target'); });
+$('#note-list').addEventListener('dragleave', (event) => { if (!$('#note-list').contains(event.relatedTarget)) $('#note-list').classList.remove('asset-upload-target'); });
+$('#note-list').addEventListener('drop', (event) => { if (hasExternalFiles(event)) void uploadDroppedFiles(event, ''); $('#note-list').classList.remove('asset-upload-target'); });
+async function moveExplorerEntry(item, destinationPath) {
+  if (!item || !canDropOnFolder(item, destinationPath)) return;
+  try {
+    const activePathBeforeSave = state.active;
+    await saveActive();
+    const oldPath = item.type === 'note' && activePathBeforeSave === item.path && state.active !== item.path ? state.active : item.path;
+    const movedPath = await window.stillnote.moveEntry(oldPath, destinationPath);
+    let nextActive = state.active;
+    if (state.active === oldPath) nextActive = movedPath;
+    else if (item.type === 'folder' && state.active?.startsWith(`${oldPath}/`)) nextActive = `${movedPath}${state.active.slice(oldPath.length)}`;
+    const collapsed = new Set();
+    for (const folderPath of state.collapsed) {
+      if (folderPath === oldPath) collapsed.add(movedPath);
+      else if (item.type === 'folder' && folderPath.startsWith(`${oldPath}/`)) collapsed.add(`${movedPath}${folderPath.slice(oldPath.length)}`);
+      else collapsed.add(folderPath);
+    }
+    state.collapsed = collapsed;
+    if (destinationPath) state.collapsed.delete(destinationPath);
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles();
+    if (nextActive !== state.active) { state.active = null; await openNote(nextActive); }
+    showToast('Item moved');
+  } catch (error) { showToast(error.message || 'Could not move item.'); }
+}
+$('.explorer-heading').addEventListener('dragover', (event) => {
+  if (!state.draggedItem || !canDropOnFolder(state.draggedItem, '')) return;
+  event.preventDefault(); event.dataTransfer.dropEffect = 'move'; $('.explorer-heading').classList.add('root-drop-target');
+});
+$('.explorer-heading').addEventListener('dragleave', () => $('.explorer-heading').classList.remove('root-drop-target'));
+$('.explorer-heading').addEventListener('drop', (event) => {
+  if (!state.draggedItem || !canDropOnFolder(state.draggedItem, '')) return;
+  event.preventDefault(); event.stopPropagation();
+  const item = state.draggedItem; state.draggedItem = null; clearDragStyles(); moveExplorerEntry(item, '');
+});
+function showExplorerContextMenu(event, node) {
+  event.preventDefault(); event.stopPropagation();
+  const menu = $('#explorer-context-menu'); menu.replaceChildren();
+  const addAction = (label, action, danger = false) => {
+    const button = document.createElement('button'); button.className = `context-action${danger ? ' danger' : ''}`; button.textContent = label;
+    button.addEventListener('click', () => { closeExplorerContextMenu(); action(); }); menu.append(button);
+  };
+  if (node.type === 'folder') {
+    addAction('New note here', () => createNote(node.path));
+    addAction('New code file here…', () => createCodeFile(node.path));
+    addAction('New canvas here', () => createStructuredFile('canvas', node.path));
+    addAction('New spreadsheet here', () => createStructuredFile('spreadsheet', node.path));
+    addAction('New graph here', () => createStructuredFile('graph', node.path));
+    addAction('New task sheet here', () => createTaskSheet(node.path));
+    addAction('New folder here', () => createFolder(node.path));
+    const separator = document.createElement('div'); separator.className = 'context-separator'; menu.append(separator);
+  } else {
+    addAction('Copy link', () => { void window.stillnote.copyFileLink(node.path).then(() => showToast('Link copied')).catch((error) => showToast(error.message || 'Could not copy link.')); });
+  }
+  addAction('Rename…', () => renameExplorerEntry(node));
+  addAction('Delete…', () => deleteExplorerEntry(node), true);
+  menu.hidden = false;
+  const width = 190; const height = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))}px`;
+}
+function closeExplorerContextMenu() { $('#explorer-context-menu').hidden = true; }
+function requestRenameValue(currentName, type) {
+  return requestNameValue(`Rename ${type}`, currentName, 'Rename');
+}
+function requestNameValue(title, initialValue = '', submitLabel = 'Create') {
+  const overlay = $('#rename-overlay');
+  const input = $('#rename-input');
+  $('#rename-title').textContent = title;
+  $('#rename-form').querySelector('[type="submit"]').textContent = submitLabel;
+  input.value = initialValue;
+  overlay.hidden = false;
+  requestAnimationFrame(() => { input.focus(); if (initialValue) input.select(); });
+  return new Promise((resolve) => { resolveRenameDialog = resolve; });
+}
+function finishRenameDialog(value = null) {
+  if (!resolveRenameDialog) return;
+  const resolve = resolveRenameDialog;
+  resolveRenameDialog = null;
+  $('#rename-overlay').hidden = true;
+  resolve(value);
+}
+function confirmDelete(displayName, description) {
+  $('#delete-title').textContent = `Delete “${displayName}”?`;
+  $('#delete-description').textContent = description;
+  $('#delete-overlay').hidden = false;
+  requestAnimationFrame(() => $('#delete-confirm').focus());
+  return new Promise((resolve) => { resolveDeleteDialog = resolve; });
+}
+function finishDeleteDialog(confirmed = false) {
+  if (!resolveDeleteDialog) return;
+  const resolve = resolveDeleteDialog; resolveDeleteDialog = null; $('#delete-overlay').hidden = true; resolve(confirmed);
+}
+async function renameExplorerEntry(node) {
+  const activePathBeforeDialog = state.active;
+  const currentName = node.type === 'note' ? prettyName(node.name) : node.name;
+  const nextName = await requestRenameValue(currentName, node.type);
+  if (!nextName?.trim() || nextName.trim() === currentName) return;
+  try {
+    await saveActive();
+    const sourcePath = node.type === 'note' && activePathBeforeDialog === node.path && state.active !== node.path ? state.active : node.path;
+    if (node.type === 'note' && node.format === 'tasks') {
+      const parsed = decodeStructured(await window.stillnote.readNote(sourcePath));
+      if (parsed?.type === 'tasks' && parsed.data?.listId) await window.stillnote.renameGoogleTaskList(parsed.data.listId, nextName.trim());
+    }
+    const renamed = await window.stillnote.renameEntry(sourcePath, nextName.trim());
+    let nextActive = state.active;
+    if (state.active === sourcePath) nextActive = renamed;
+    else if (node.type === 'folder' && state.active?.startsWith(`${sourcePath}/`)) nextActive = `${renamed}${state.active.slice(sourcePath.length)}`;
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    if (node.type === 'folder' && state.collapsed.delete(sourcePath)) state.collapsed.add(renamed);
+    renderFiles();
+    if (nextActive !== state.active) { state.active = null; await openNote(nextActive); }
+  } catch (error) { showToast(error.message || 'Could not rename item.'); }
+}
+async function deleteExplorerEntry(node) {
+  const displayName = node.type === 'note' ? prettyName(node.name) : node.name;
+  const description = node.type === 'folder' ? 'This also deletes everything inside it.' : 'This deletes this file from the vault.';
+  if (!await confirmDelete(displayName, description)) return;
+  try {
+    const activePathBeforeSave = state.active;
+    await saveActive();
+    const sourcePath = node.type === 'note' && activePathBeforeSave === node.path && state.active !== node.path ? state.active : node.path;
+    const existingFiles = explorerFilePaths();
+    const deletedNotes = node.type === 'note' ? [sourcePath] : existingFiles.filter((file) => file.startsWith(`${sourcePath}/`));
+    const activeDeleted = Boolean(state.active && deletedNotes.includes(state.active));
+    const nearbyIndex = activeDeleted ? existingFiles.indexOf(state.active) : existingFiles.indexOf(sourcePath);
+    await window.stillnote.deleteEntry(sourcePath);
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles();
+    if (activeDeleted) {
+      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null; state.assetViewer?.destroy?.(); state.assetViewer = null; state.dirty = false; state.active = null;
+      await window.stillnote.rememberNote(null);
+      const remainingFiles = explorerFilePaths();
+      if (remainingFiles.length) await openNote(remainingFiles[Math.max(0, Math.min(nearbyIndex, remainingFiles.length - 1))]); else showEmptyVault();
+    }
+    showToast(`${node.type === 'folder' ? 'Folder' : 'File'} deleted`);
+  } catch (error) { showToast(error.message || 'Could not delete item.'); }
+}
+function openSearch() {
+  const search = $('#topbar-search');
+  if (search.classList.contains('is-open')) { $('#search-input').focus(); return; }
+  search.classList.add('is-open');
+  $('.search-trigger').setAttribute('aria-expanded', 'true');
+  $('#search-input').value = '';
+  renderSearch('');
+  $('#search-input').focus();
+}
+function closeSearch() {
+  $('#topbar-search').classList.remove('is-open');
+  $('.search-trigger').setAttribute('aria-expanded', 'false');
+}
+function applyTheme(theme) {
+  state.theme = ['light', 'sepia', 'dark'].includes(theme) ? theme : 'light';
+  $('.app-shell').dataset.theme = state.theme;
+  localStorage.setItem('stillnote-theme', state.theme);
+  state.structured?.refreshCanvas?.();
+  state.structured?.desmos?.updateSettings?.({ invertedColors: false });
+  document.querySelectorAll('.theme-card').forEach((option) => option.setAttribute('aria-pressed', String(option.dataset.theme === state.theme)));
+}
+function restoreWorkspace() {
+  applyTheme(localStorage.getItem('stillnote-theme') || 'light');
+  window.stillnote.restoreSession().then(async (vault) => {
+    if (!vault) return;
+    await setVault(vault);
+    if (vault.lastNote && explorerFilePaths().includes(vault.lastNote)) await openNote(vault.lastNote);
+    else if (explorerFilePaths().length) await openNote(explorerFilePaths()[0]);
+    else showEmptyVault();
+  }).catch((error) => console.error('Could not restore workspace:', error));
+}
+function selectSettingsTab(tab) {
+  document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
+  document.querySelectorAll('.settings-section').forEach((section) => {
+    const active = section.dataset.section === tab;
+    section.classList.toggle('active', active); section.hidden = !active;
+  });
+  if (tab === 'dictionary') renderCustomDictionary();
+  if (tab === 'tasks') void updateGoogleTasksStatus(true);
+}
+function setToolbarPosition(type, position) {
+  if (type === 'notes') {
+    if (!['left', 'right', 'bottom', 'hidden'].includes(position)) return;
+    state.toolbarPositions.notes = position;
+    localStorage.setItem('stillnote-notes-toolbar-position', position);
+    const editor = $('#note-editor'); editor.dataset.toolbarPosition = position;
+    const visible = Boolean(state.view && !state.structured && position !== 'hidden');
+    $('#note-format-toolbar').hidden = !visible;
+    editor.classList.toggle('has-markdown-editor', visible);
+  } else {
+    if (!['left', 'right', 'bottom'].includes(position)) return;
+    state.toolbarPositions.canvas = position;
+    localStorage.setItem('stillnote-canvas-toolbar-position', position);
+    if (state.structured?.type === 'canvas') document.querySelector('.canvas-editor').dataset.toolbarPosition = position;
+  }
+}
+async function updateKeyStatus() {
+  const label = $('#ai-key-status');
+  try {
+    const status = await window.stillnote.aiKeyStatus();
+    label.textContent = !status.vaultOpen ? 'Open a vault to save keys' : status.configured ? 'Key saved in this vault' : 'No key saved';
+    label.className = `key-status${status.configured ? ' configured' : ''}`;
+    setSettingsHealth('ai', status.configured, status.configured ? 'API key saved' : 'API key missing');
+    $('#save-ai-key').disabled = !status.secureStorageAvailable || !status.vaultOpen;
+    $('#remove-ai-key').disabled = !status.vaultOpen;
+    if (!status.secureStorageAvailable) label.textContent = 'Secure key storage is unavailable';
+  } catch { label.textContent = 'Could not check key status'; setSettingsHealth('ai', false, 'Could not check API key'); }
+}
+async function updateDesmosKeyStatus() {
+  const status = await window.stillnote.desmosKeyStatus().catch(() => ({ configured: false, vaultOpen: false, secureStorageAvailable: false }));
+  const detail = !status.vaultOpen ? 'Open a vault to save keys' : status.configured ? 'API key saved in this vault' : 'API key missing';
+  setSettingsHealth('desmos', status.configured, detail);
+  $('#save-desmos-key').disabled = !status.vaultOpen || !status.secureStorageAvailable;
+  $('#remove-desmos-key').disabled = !status.vaultOpen;
+}
+function setSettingsHealth(name, working, detail) {
+  const indicator = document.querySelector(`[data-health="${name}"]`);
+  if (!indicator) return;
+  indicator.innerHTML = working ? icons.statusCheck : icons.statusX;
+  indicator.classList.toggle('is-ok', Boolean(working));
+  indicator.classList.toggle('is-off', !working);
+  indicator.title = detail;
+  const tab = indicator.closest('.settings-tab');
+  const label = tab && [...tab.querySelectorAll('span:not(.settings-health-indicator)')].map((span) => span.textContent.trim()).filter(Boolean).at(-1);
+  if (tab) tab.setAttribute('aria-label', `${label || name}: ${detail}`);
+}
+let settingsAnimation = 0;
+async function openSettings(tab = 'theme') {
+  const overlay = $('#settings-overlay'), modal = $('.settings-modal');
+  settingsAnimation++;
+  overlay.hidden = false;
+  animate(overlay, { opacity: [0, 1], duration: motionDuration(120), ease: 'outQuad' });
+  animate(modal, { opacity: [0, 1], scale: [.985, 1], duration: motionDuration(150), ease: 'outQuad' });
+  selectSettingsTab(tab);
+  $('#directory-name').textContent = state.vault?.name || 'No folder open';
+  $('#directory-path').textContent = state.vault?.path || 'Choose a folder to see its location.';
+  setSettingsHealth('directory', Boolean(state.vault), state.vault ? 'Folder open' : 'No folder open');
+  $('#ai-model').value = localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  $('#desmos-api-key').value = state.vault ? await window.stillnote.getDesmosKey().catch(() => '') : '';
+  await updateDesmosKeyStatus();
+  $('#notes-toolbar-position').value = state.toolbarPositions.notes;
+  $('#canvas-toolbar-position').value = state.toolbarPositions.canvas;
+  syncProofreadingSettings();
+  updateKeyStatus();
+  loadAiModels();
+  void updateGoogleTasksStatus(true);
+}
+async function updateGoogleTasksStatus(loadClientId = false) {
+  const label = $('#google-tasks-status');
+  try {
+    const status = await window.stillnote.googleTasksStatus();
+    if (loadClientId) $('#google-tasks-client-id').value = status.clientId || '';
+    $('#save-google-tasks-client').disabled = !status.secureStorageAvailable || !status.vaultOpen;
+    $('#connect-google-tasks').disabled = !status.vaultOpen || !status.clientIdConfigured || !status.clientSecretConfigured || !status.secureStorageAvailable;
+    $('#disconnect-google-tasks').disabled = !status.connected;
+    if (status.connected) {
+      await window.stillnote.listGoogleTaskLists();
+      label.textContent = 'Connected and responding'; label.className = 'key-status configured';
+      setSettingsHealth('tasks', true, 'Google Tasks connection working');
+    } else {
+      label.textContent = !status.vaultOpen ? 'Open a vault to save credentials' : !status.clientIdConfigured ? 'Client ID needed' : !status.clientSecretConfigured ? 'Client secret needed' : 'Not connected'; label.className = 'key-status';
+      setSettingsHealth('tasks', false, !status.vaultOpen ? 'Open a vault first' : !status.clientIdConfigured ? 'Client ID missing' : !status.clientSecretConfigured ? 'Client secret missing' : 'Google account not connected');
+    }
+    if (!status.secureStorageAvailable) label.textContent = 'Secure storage is unavailable';
+  } catch (error) {
+    label.textContent = error.message || 'Could not check Google Tasks'; label.className = 'key-status error';
+    $('#disconnect-google-tasks').disabled = false;
+    setSettingsHealth('tasks', false, 'Google Tasks connection not working');
+  }
+}
+async function loadAiModels() {
+  const select = $('#ai-model'); const status = $('#ai-model-status'); const selected = localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  select.disabled = true; status.textContent = 'Loading available models…';
+  try {
+    const models = await window.stillnote.listAiModels();
+    setSettingsHealth('ai', true, 'AI API key working');
+    const choices = [...new Set([selected, ...models].filter(Boolean))];
+    select.replaceChildren(...choices.map((model) => { const option = document.createElement('option'); option.value = model; option.textContent = model; return option; }));
+    select.value = choices.includes(selected) ? selected : (models[0] || selected);
+    localStorage.setItem('stillnote-ai-model', select.value);
+    status.textContent = models.length ? `${models.length} models available from Ollama Cloud.` : 'No models were returned for this account.';
+  } catch (error) {
+    setSettingsHealth('ai', false, 'AI API key not working');
+    const fallback = document.createElement('option'); fallback.value = selected; fallback.textContent = `${selected} (saved selection)`; select.replaceChildren(fallback); select.value = selected;
+    status.textContent = error.message || 'Save a valid API key to load available models.';
+  } finally { select.disabled = false; }
+}
+function closeSettings() {
+  const overlay = $('#settings-overlay'), modal = $('.settings-modal'), animation = ++settingsAnimation;
+  animate(modal, { opacity: [1, 0], scale: [1, .99], duration: motionDuration(90), ease: 'inQuad' });
+  animate(overlay, { opacity: [1, 0], duration: motionDuration(100), ease: 'inQuad', onComplete: () => {
+    if (animation === settingsAnimation) { overlay.hidden = true; overlay.style.opacity = ''; modal.style.opacity = ''; modal.style.transform = ''; }
+  } });
+}
+function renderAssistantWelcome() {
+  $('#assistant-messages').innerHTML = '<div class="assistant-welcome"><div class="assistant-welcome-icon">' + icons.assistant + '</div><strong>What would you like to do?</strong><p>Ask a question about this note, or ask me to edit it.</p></div>';
+}
+function setAssistantOpen(open) {
+  if (open && state.home) return;
+  state.assistantOpen = open;
+  $('.workspace').classList.toggle('assistant-open', open);
+  $('#assistant-toggle').setAttribute('aria-pressed', String(open));
+  if (open) $('#assistant-input').focus();
+}
+function setupPanelResizers() {
+  const workspace = $('.workspace');
+  const explorerHandle = $('#sidebar-resizer');
+  const assistantHandle = $('#assistant-resizer');
+  const setWidths = () => {
+    workspace.style.setProperty('--sidebar-width', `${state.sidebarWidth}px`);
+    workspace.style.setProperty('--assistant-width', `${state.assistantWidth}px`);
+    explorerHandle.setAttribute('aria-valuenow', String(state.sidebarWidth));
+    assistantHandle.setAttribute('aria-valuenow', String(state.assistantWidth));
+  };
+  const resizeAt = (panel, clientX) => {
+    const bounds = workspace.getBoundingClientRect();
+    if (panel === 'explorer') {
+      const max = Math.max(190, Math.min(440, bounds.width - (state.assistantOpen ? state.assistantWidth : 0) - 340));
+      state.sidebarWidth = Math.max(190, Math.min(max, clientX - bounds.left));
+    } else {
+      const visibleExplorerWidth = state.sidebarOpen ? state.sidebarWidth : 0;
+      const max = Math.max(280, Math.min(560, bounds.width - visibleExplorerWidth - 340));
+      state.assistantWidth = Math.max(280, Math.min(max, bounds.right - clientX));
+    }
+    setWidths();
+  };
+  let resizing = null;
+  for (const [handle, panel] of [[explorerHandle, 'explorer'], [assistantHandle, 'assistant']]) {
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      resizing = panel;
+      handle.classList.add('is-active');
+      document.body.classList.add('resizing-panels');
+      handle.setPointerCapture?.(event.pointerId);
+    });
+    handle.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const step = event.shiftKey ? 40 : 16;
+      const amount = event.key === 'ArrowRight' ? step : -step;
+      const bounds = workspace.getBoundingClientRect();
+      const position = panel === 'explorer'
+        ? bounds.left + state.sidebarWidth + amount
+        : bounds.right - state.assistantWidth - amount;
+      resizeAt(panel, position);
+    });
+  }
+  window.addEventListener('pointermove', (event) => { if (resizing) resizeAt(resizing, event.clientX); });
+  window.addEventListener('pointerup', () => {
+    if (!resizing) return;
+    resizing = null;
+    document.body.classList.remove('resizing-panels');
+    explorerHandle.classList.remove('is-active');
+    assistantHandle.classList.remove('is-active');
+    localStorage.setItem('stillnote-sidebar-width', String(state.sidebarWidth));
+    localStorage.setItem('stillnote-assistant-width', String(state.assistantWidth));
+  });
+  setWidths();
+}
+function appendChatBubble(role, text) {
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${role}`;
+  bubble.textContent = text;
+  $('#assistant-messages').append(bubble);
+  $('#assistant-messages').scrollTop = $('#assistant-messages').scrollHeight;
+  return bubble;
+}
+function activeDocumentText(){return state.structured?encodeStructured(state.structured.type,state.structured.title||prettyName(state.active),state.structured.data):state.view?.state.doc.toString()||'';}
+function updateAssistantModeCopy() {
+  const editButton = document.querySelector('.assistant-mode[data-mode="edit"]');
+  const taskSheet = state.structured?.type === 'tasks';
+  const pdf = state.active?.toLowerCase().endsWith('.pdf');
+  if (editButton) { editButton.disabled = Boolean(pdf); editButton.title = pdf ? 'PDF files are read-only' : ''; }
+  if (pdf && state.assistantMode === 'edit') { state.assistantMode = 'ask'; document.querySelectorAll('.assistant-mode').forEach((mode) => mode.classList.toggle('active', mode.dataset.mode === 'ask')); }
+  if (editButton) editButton.textContent = taskSheet ? 'Add tasks' : 'Edit note';
+  $('#assistant-input').placeholder = pdf ? 'Ask about this PDF…' : state.assistantMode === 'edit' ? (taskSheet ? 'Describe tasks to add…' : `Describe a change to this ${isEditableAsset(state.active || '') ? 'code file' : 'note'}…`) : (taskSheet ? 'Ask about this task sheet…' : `Ask about this ${isEditableAsset(state.active || '') ? 'code file' : 'note'}…`);
+}
+async function addAiTasksToSheet(specs, notePath, originalDocument) {
+  const owner = state.structured;
+  if (!owner || owner.type !== 'tasks' || state.active !== notePath || activeDocumentText() !== originalDocument) throw new Error('The task sheet changed while Ollama was working. Please try again.');
+  if (!Array.isArray(specs) || !specs.length) return 0;
+  if (specs.length > 30) throw new Error('Ollama returned too many tasks to add at once.');
+  const additions = specs.map((item) => {
+    const title = String(item?.title || '').trim();
+    const notes = String(item?.notes || '').trim();
+    const due = String(item?.due || '').trim();
+    const parentTitle = String(item?.parentTitle || '').trim();
+    if (!title || title.length > 1024) throw new Error('Ollama returned a task with an invalid title.');
+    if (notes.length > 8192) throw new Error(`Details for “${title}” are too long.`);
+    if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(`${due}T00:00:00Z`)))) throw new Error(`Ollama returned an invalid due date for “${title}”.`);
+    return { title, notes, due, parentTitle };
+  });
+  const taskByTitle = new Map(owner.data.tasks.map((task) => [task.title.toLocaleLowerCase(), task]));
+  let added = 0;
+  try {
+    for (const item of additions) {
+      if (state.structured !== owner || state.active !== notePath) throw new Error('The task sheet was closed before all tasks were added.');
+      const parent = item.parentTitle ? taskByTitle.get(item.parentTitle.toLocaleLowerCase()) : null;
+      if (item.parentTitle && !parent) throw new Error(`Could not find parent task “${item.parentTitle}”. Add parent tasks before their subtasks.`);
+      const remote = await window.stillnote.createGoogleTask(owner.data.listId, item.title, parent?.id);
+      if (state.structured !== owner || state.active !== notePath) throw new Error(`Added “${remote.title || item.title}” to Google Tasks, but the task sheet was closed before Stillnote could refresh.`);
+      const task = { id: remote.id, title: remote.title || item.title, status: remote.status || 'needsAction', due: remote.due || null, notes: remote.notes || '', parent: remote.parent || parent?.id || null, starred: false };
+      owner.data.tasks.push(task); taskByTitle.set(task.title.toLocaleLowerCase(), task); added++;
+      if (item.notes || item.due) {
+        const changes = {};
+        if (item.notes) changes.notes = item.notes;
+        if (item.due) changes.due = `${item.due}T00:00:00.000Z`;
+        try {
+          const updated = await window.stillnote.updateGoogleTask(owner.data.listId, task.id, changes);
+          if (state.structured !== owner || state.active !== notePath) throw new Error('The task sheet was closed before the task details could be updated.');
+          task.notes = updated.notes || item.notes;
+          task.due = updated.due || (item.due ? `${item.due}T00:00:00.000Z` : null);
+        } catch (error) { throw new Error(`Added “${task.title}”, but its details could not be saved: ${error.message}`); }
+      }
+      setStructuredDirty();
+    }
+  } catch (error) {
+    if (added && state.structured === owner && state.active === notePath) { setStructuredDirty(); renderStructured('tasks', owner.data, notePath, owner.title || prettyName(notePath)); }
+    throw error;
+  }
+  renderStructured('tasks', owner.data, notePath, owner.title || prettyName(notePath));
+  return added;
+}
+function appendAppliedEdit(container, text, notePath, originalDocument) {
+  if (state.active !== notePath || activeDocumentText() !== originalDocument) {appendChatBubble('assistant error', 'The document changed while I was working, so I did not apply the edit. Please send the request again.');return false;}
+  let updatedDocument=text;
+  const structuredType=state.structured?.type||null;
+  if(structuredType){
+    const parsed=decodeStructured(text);
+    if(!parsed||parsed.type!==structuredType){appendChatBubble('assistant error',`The assistant returned invalid ${structuredType} data, so I did not apply the edit.`);return false;}
+    const current=state.structured;current.data=parsed.data;setStructuredDirty();
+    const history={undoStack:current.undoStack,redoStack:current.redoStack,historySnapshot:current.historySnapshot,historyPending:current.historyPending,historyTimer:current.historyTimer};
+    renderStructured(structuredType,current.data,notePath,current.title||prettyName(notePath));Object.assign(state.structured,history);updateStructuredHistoryButtons();
+    updatedDocument=activeDocumentText();
+  } else {
+    if(!state.view){appendChatBubble('assistant error','The note is no longer open, so I did not apply the edit.');return false;}
+    state.view.dispatch({ changes: { from: 0, to: state.view.state.doc.length, insert: updatedDocument } });
+    state.view.focus();
+  }
+  const message = document.createElement('p'); message.textContent = 'I updated the document.'; container.append(message);
+  const toggle = document.createElement('button'); toggle.className = 'undo-ai-edit-button'; toggle.type = 'button'; toggle.textContent = 'Undo changes';
+  let showingUpdated = true;
+  toggle.addEventListener('click', () => {
+    if(state.active!==notePath){showToast('Open the edited document to undo or redo this change.');return;}
+    const expected=showingUpdated?updatedDocument:originalDocument;
+    if(activeDocumentText()!==expected){showToast('The document has changed since the AI edit; undo was not applied.');return;}
+    if(structuredType)void applyStructuredHistory(showingUpdated?'undo':'redo');
+    else {if(!state.view){showToast('Open the edited document to undo or redo this change.');return;}state.view.dispatch({changes:{from:0,to:state.view.state.doc.length,insert:showingUpdated?originalDocument:updatedDocument}});state.view.focus();}
+    showingUpdated = !showingUpdated;
+    toggle.textContent = showingUpdated ? 'Undo changes' : 'Redo changes';
+  });
+  container.append(toggle);
+  $('#assistant-messages').scrollTop = $('#assistant-messages').scrollHeight;
+  return true;
+}
+async function submitAssistantMessage(event) {
+  event.preventDefault();
+  const prompt = $('#assistant-input').value.trim();
+  if (!prompt) return;
+  const notePath = state.active, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
+  if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, spreadsheet, or graph before using the assistant.'); return; }
+  let keyStatus;
+  try { keyStatus = await window.stillnote.aiKeyStatus(); }
+  catch (error) { showToast(error.message || 'Could not check Ollama key status.'); return; }
+  if (!keyStatus.configured) { openSettings('ai'); return; }
+  const mode = isPdf ? 'ask' : state.assistantMode;
+  const documentType = isPdf ? 'pdf' : state.structured?.type || (isEditableAsset(notePath) ? 'code' : 'markdown');
+  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  localStorage.setItem('stillnote-ai-model', model);
+  const welcome = $('.assistant-welcome'); if (welcome) welcome.remove();
+  appendChatBubble('user', prompt);
+  const loading = appendChatBubble('assistant loading', 'Thinking…');
+  $('#assistant-input').value = ''; $('#assistant-send').disabled = true;
+  try {
+    const documentText = isPdf ? await extractActivePdfText(notePath) : activeDocumentText();
+    if (state.active !== notePath) throw new Error('The active file changed before the assistant request started. Please send it again.');
+    const result = await window.stillnote.askAi({ mode, model, noteName: prettyName(notePath), documentType, document: documentText, prompt, history: state.chatHistory });
+    loading.remove();
+    if (documentType === 'tasks' && result.kind === 'tasks') {
+      const added = await addAiTasksToSheet(result.tasks, notePath, documentText);
+      const responseText = added ? `Added ${added} ${added === 1 ? 'task' : 'tasks'} to Google Tasks.` : 'No tasks were added.';
+      appendChatBubble('assistant', responseText);
+      state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: responseText });
+    } else if (mode === 'edit' && result.kind === 'edit') {
+      const bubble = document.createElement('div'); bubble.className = 'chat-bubble assistant'; $('#assistant-messages').append(bubble);
+      const applied = appendAppliedEdit(bubble, result.text, notePath, documentText);
+      if (!applied) bubble.remove();
+      else state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: 'Applied the requested changes to the document.' });
+    } else {
+      appendChatBubble('assistant', result.text);
+      state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: result.text });
+    }
+    state.chatHistory = state.chatHistory.slice(-8);
+  } catch (error) {
+    loading.remove(); appendChatBubble('assistant error', error.message || 'The assistant could not respond.');
+  } finally { $('#assistant-send').disabled = false; }
+}
+let meetingRecording = false;
+let meetingRecordingStartedAt = 0;
+let meetingDurationTimer = null;
+let meetingTranscript = '';
+let meetingTempId = null;
+let meetingSavedTranscriptPath = null;
+let meetingTempWritePromise = Promise.resolve();
+let meetingStopPromise = Promise.resolve();
+let meetingWhisperWorker = null;
+let meetingWhisperRequest = 0;
+const meetingWhisperPending = new Map();
+let meetingMediaStream = null;
+let meetingAudioContext = null;
+let meetingAudioSource = null;
+let meetingAudioProcessor = null;
+let meetingAudioChunks = [];
+let meetingAudioSampleCount = 0;
+let meetingCaptureGeneration = 0;
+let meetingTranscriptionQueue = Promise.resolve();
+function meetingButtonStatus(message, recording = meetingRecording) {
+  const button = $('#meeting-notes-trigger');
+  button.title = message; button.setAttribute('aria-label', message);
+  button.classList.toggle('is-recording', recording);
+  button.classList.toggle('has-transcript', Boolean(meetingTempId && meetingTranscript.trim()) && !recording);
+  button.setAttribute('aria-pressed', String(recording));
+}
+function updateMeetingDuration() {
+  const elapsed = Math.max(0, Math.floor((Date.now() - meetingRecordingStartedAt) / 1000));
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const seconds = String(elapsed % 60).padStart(2, '0');
+  $('#meeting-notes-trigger .meeting-duration').textContent = `${minutes}:${seconds}`;
+}
+function stopMeetingDuration() {
+  clearInterval(meetingDurationTimer); meetingDurationTimer = null; meetingRecordingStartedAt = 0;
+  $('#meeting-notes-trigger .meeting-duration').hidden = true;
+}
+function persistMeetingTranscript() {
+  if (!meetingTempId) return;
+  const id = meetingTempId, snapshot = meetingTranscript;
+  // Keep the queue usable after a transient write failure. A rejected write
+  // must not prevent the final transcript snapshot from being flushed on stop.
+  meetingTempWritePromise = meetingTempWritePromise.catch(() => {}).then(() => window.stillnote.writeMeetingTranscript(id, snapshot));
+}
+async function clearMeetingTranscript() {
+  const id = meetingTempId; meetingTempId = null;
+  if (id) { await meetingTranscriptionQueue.catch(() => {}); await meetingTempWritePromise.catch(() => {}); await window.stillnote.clearMeetingTranscript(id).catch(() => {}); }
+  meetingTranscript = ''; meetingButtonStatus('Click to start recording', false);
+}
+function cancelMeetingRecording() {
+  stopMeetingDuration();
+  if (meetingRecording) { meetingRecording = false; meetingCaptureGeneration++; void releaseMeetingAudioCapture(false); }
+  if (meetingTempId) void clearMeetingTranscript();
+}
+function ensureMeetingWhisperWorker() {
+  if (meetingWhisperWorker) return meetingWhisperWorker;
+  meetingWhisperWorker = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' });
+  meetingWhisperWorker.addEventListener('message', ({ data }) => {
+    const pending = meetingWhisperPending.get(data.id);
+    if (data.type === 'progress') {
+      if (meetingRecording) {
+        const percent = Number.isFinite(data.progress?.progress) ? ` ${Math.round(data.progress.progress)}%` : '';
+        meetingButtonStatus(`Downloading local Whisper model${percent}…`);
+      }
+      return;
+    }
+    if (!pending) return;
+    meetingWhisperPending.delete(data.id);
+    if (data.type === 'result') pending.resolve(data.text);
+    else pending.reject(new Error(data.message || 'Local Whisper could not transcribe this audio.'));
+  });
+  meetingWhisperWorker.addEventListener('error', (event) => {
+    const error = new Error(event.message || 'The local Whisper worker stopped unexpectedly.');
+    for (const pending of meetingWhisperPending.values()) pending.reject(error);
+    meetingWhisperPending.clear(); meetingWhisperWorker?.terminate(); meetingWhisperWorker = null;
+  });
+  return meetingWhisperWorker;
+}
+function transcribeMeetingAudio(samples) {
+  const worker = ensureMeetingWhisperWorker(), id = ++meetingWhisperRequest;
+  const audio = samples.slice();
+  return new Promise((resolve, reject) => {
+    meetingWhisperPending.set(id, { resolve, reject });
+    worker.postMessage({ type: 'transcribe', id, audio: audio.buffer }, [audio.buffer]);
+  });
+}
+function resampleMeetingAudio(samples, sourceRate) {
+  const targetRate = 16000, ratio = sourceRate / targetRate;
+  const output = new Float32Array(Math.floor(samples.length / ratio));
+  for (let index = 0; index < output.length; index++) {
+    const sourceIndex = index * ratio, left = Math.floor(sourceIndex), fraction = sourceIndex - left;
+    output[index] = samples[left] * (1 - fraction) + (samples[Math.min(left + 1, samples.length - 1)] || 0) * fraction;
+  }
+  return output;
+}
+function queueMeetingAudio(samples, generation) {
+  const audio = resampleMeetingAudio(samples, meetingAudioContext?.sampleRate || 48000);
+  let energy = 0;
+  for (let index = 0; index < audio.length; index += 16) energy += audio[index] * audio[index];
+  if (!audio.length || Math.sqrt(energy / Math.ceil(audio.length / 16)) < 0.004) return;
+  meetingTranscriptionQueue = meetingTranscriptionQueue.then(async () => {
+    if (generation !== meetingCaptureGeneration || !meetingTempId) return;
+    if (meetingRecording) meetingButtonStatus('Transcribing locally with Whisper Small…');
+    const text = await transcribeMeetingAudio(audio);
+    if (generation !== meetingCaptureGeneration || !meetingTempId || !text) return;
+    meetingTranscript = `${meetingTranscript} ${text}`.trim(); persistMeetingTranscript();
+    if (meetingRecording) meetingButtonStatus('Recording locally with Whisper Small…');
+  }).catch((error) => {
+    if (generation !== meetingCaptureGeneration) return;
+    meetingRecording = false;
+    stopMeetingDuration();
+    void releaseMeetingAudioCapture(false);
+    const message = `Local Whisper stopped: ${error.message}`;
+    meetingButtonStatus(message, false); showToast(message);
+  });
+}
+function drainMeetingAudio(force = false) {
+  if (!meetingAudioChunks.length || !meetingAudioContext) return;
+  const sampleRate = meetingAudioContext.sampleRate;
+  if (!force && meetingAudioSampleCount < sampleRate * 30) return;
+  const merged = new Float32Array(meetingAudioSampleCount);
+  let offset = 0;
+  for (const chunk of meetingAudioChunks) { merged.set(chunk, offset); offset += chunk.length; }
+  meetingAudioChunks = []; meetingAudioSampleCount = 0;
+  queueMeetingAudio(merged, meetingCaptureGeneration);
+}
+async function releaseMeetingAudioCapture(flush) {
+  if (flush) drainMeetingAudio(true);
+  if (meetingAudioProcessor) { meetingAudioProcessor.onaudioprocess = null; try { meetingAudioProcessor.disconnect(); } catch {} }
+  if (meetingAudioSource) { try { meetingAudioSource.disconnect(); } catch {} }
+  meetingMediaStream?.getTracks().forEach((track) => track.stop());
+  const context = meetingAudioContext;
+  meetingAudioProcessor = null; meetingAudioSource = null; meetingMediaStream = null; meetingAudioContext = null;
+  if (context && context.state !== 'closed') await context.close().catch(() => {});
+}
+async function startMeetingAudioCapture() {
+  meetingMediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
+  meetingAudioContext = new AudioContext();
+  await meetingAudioContext.resume();
+  meetingAudioSource = meetingAudioContext.createMediaStreamSource(meetingMediaStream);
+  meetingAudioProcessor = meetingAudioContext.createScriptProcessor(4096, 1, 1);
+  meetingAudioProcessor.onaudioprocess = (event) => {
+    event.outputBuffer.getChannelData(0).fill(0);
+    if (!meetingRecording) return;
+    const input = event.inputBuffer.getChannelData(0).slice();
+    meetingAudioChunks.push(input); meetingAudioSampleCount += input.length;
+    drainMeetingAudio();
+  };
+  meetingAudioSource.connect(meetingAudioProcessor); meetingAudioProcessor.connect(meetingAudioContext.destination);
+}
+async function startMeetingRecording() {
+  try {
+    meetingCaptureGeneration++; meetingAudioChunks = []; meetingAudioSampleCount = 0; meetingTranscript = ''; meetingSavedTranscriptPath = null;
+    meetingTempId = await window.stillnote.createMeetingTranscript();
+    meetingTempWritePromise = Promise.resolve();
+    meetingTranscriptionQueue = Promise.resolve();
+    meetingRecording = true;
+    await startMeetingAudioCapture();
+    meetingRecordingStartedAt = Date.now(); updateMeetingDuration();
+    $('#meeting-notes-trigger .meeting-duration').hidden = false;
+    meetingDurationTimer = setInterval(updateMeetingDuration, 250);
+    meetingButtonStatus('Recording locally; click when finished to create a summary and save the transcript. Whisper Small downloads on first use.');
+  } catch (error) {
+    meetingRecording = false; stopMeetingDuration(); await releaseMeetingAudioCapture(false);
+    const id = meetingTempId; meetingTempId = null;
+    if (id) void window.stillnote.clearMeetingTranscript(id).catch(() => {});
+    meetingButtonStatus(error.message || 'Could not start recording', false);
+    showToast(error.message || 'Could not start recording.');
+  }
+}
+function stopMeetingRecording() {
+  if (!meetingRecording) return (async () => {
+    await meetingTranscriptionQueue;
+    await meetingTempWritePromise;
+    if (meetingTempId) meetingTranscript = await window.stillnote.readMeetingTranscript(meetingTempId);
+    return { transcript: meetingTranscript, id: meetingTempId };
+  })();
+  meetingRecording = false;
+  stopMeetingDuration();
+  meetingButtonStatus('Finishing transcription and creating summary…', false);
+  meetingStopPromise = (async () => {
+    try {
+      await releaseMeetingAudioCapture(true);
+      await meetingTranscriptionQueue;
+      await meetingTempWritePromise;
+      if (meetingTempId) meetingTranscript = await window.stillnote.readMeetingTranscript(meetingTempId);
+    } catch (error) { showToast(error.message || 'Could not finish the local transcript.'); }
+    void summarizeMeetingTranscript();
+    return { transcript: meetingTranscript, id: meetingTempId };
+  })();
+  return meetingStopPromise;
+}
+async function summarizeMeetingTranscript() {
+  const transcript = meetingTranscript.trim();
+  if (!transcript) { meetingButtonStatus('No speech was captured; click to record again', false); void clearMeetingTranscript(); return; }
+  if (!state.view || !state.active || state.home) { meetingButtonStatus('Open a note to insert meeting notes', false); return; }
+  const notePath = state.active;
+  const original = state.view.state.doc.toString();
+  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  try {
+    const folder = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
+    const noteTitle = prettyName(notePath).replace(/\.md$/i, '');
+    const timestamp = new Date().toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/[/:]/g, '-');
+    const transcriptTitle = `${noteTitle} transcript ${timestamp}`;
+    const transcriptPath = await window.stillnote.createNote(transcriptTitle, folder);
+    await window.stillnote.writeNote(transcriptPath, `${prettyName(transcriptPath)}\n\n${transcript}\n`);
+    meetingSavedTranscriptPath = transcriptPath;
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    renderFiles();
+    const keyStatus = await window.stillnote.aiKeyStatus().catch(() => ({ configured: false }));
+    if (!keyStatus.configured) { meetingButtonStatus('Transcript saved; add your Ollama key in Settings → AI settings to create the summary', false); openSettings('ai'); return; }
+    if (transcript.length > 100000) { meetingButtonStatus('Transcript saved; it is too long to summarize automatically', false); showToast('Transcript saved, but it is too long to summarize automatically.'); return; }
+    const result = await window.stillnote.askAi({
+      mode: 'edit', model, noteName: prettyName(notePath), documentType: 'markdown', document: original,
+      prompt: `Summarize this meeting/class/seminar transcript into clear notes. Preserve all existing content and the title line exactly, and append the summary at the very bottom of the note. Include key points, decisions, and action items when present. Do not invent details. Do not use Markdown tables. The full transcript is saved in the linked note <[${transcriptPath.replace(/\.md$/i, '')}]>.\n\nTranscript:\n${transcript}`,
+    });
+    if (result.kind !== 'edit' || state.active !== notePath || !state.view || state.view.state.doc.toString() !== original) throw new Error('The note changed while the recording was being processed.');
+    const linkedSummary = `${result.text.replace(/\s*$/, '')}\n\nFull transcript: <[${transcriptPath.replace(/\.md$/i, '')}]>\n`;
+    state.view.dispatch({ changes: { from: 0, to: state.view.state.doc.length, insert: linkedSummary } });
+    state.view.focus(); showToast('Meeting summary added and transcript saved'); await clearMeetingTranscript();
+  } catch (error) { meetingButtonStatus(`Transcript${meetingSavedTranscriptPath ? ' saved' : ''}; ${error.message || 'could not create notes'}`, false); showToast(error.message || 'Could not create meeting notes.'); }
+}
+$('#meeting-notes-trigger').addEventListener('click', () => {
+  if (meetingRecording) meetingStopPromise = stopMeetingRecording();
+  else if (meetingTempId) void clearMeetingTranscript();
+  else void startMeetingRecording();
+});
+function renderSearch(query) {
+  const results = $('#search-results'); results.innerHTML = '';
+  if (!query.trim()) { results.innerHTML = '<div class="search-hint">Type to find a note by title</div>'; return; }
+  const matches = state.files.filter((file) => prettyName(file).toLowerCase().includes(query.toLowerCase()));
+  if (!matches.length) { results.innerHTML = '<div class="search-hint">No matching notes</div>'; return; }
+  for (const file of matches.slice(0, 8)) {
+    const row = document.createElement('button'); row.className = 'search-result'; row.innerHTML = `${icons.file}<span>${escapeHtml(prettyName(file))}</span><small>${escapeHtml(file.includes('/') ? file.split('/').slice(0, -1).join('/') : 'Notes')}</small>`;
+    row.addEventListener('click', () => { closeSearch(); openNote(file); }); results.append(row);
+  }
+}
+
+$('.vault-switcher').addEventListener('click', chooseVault);
+$('#open-vault').addEventListener('click', () => state.vault && !state.files.length ? createNote() : chooseVault());
+$('#new-file').addEventListener('click', (event) => { event.stopPropagation(); showNewFileMenu(event.currentTarget); });
+document.addEventListener('click', (event) => { if (!event.target.closest('#new-file-menu') && !event.target.closest('#new-file')) $('#new-file-menu').hidden = true; });
+$('.search-trigger').addEventListener('click', openSearch);
+$('#search-input').addEventListener('input', (event) => renderSearch(event.target.value));
+document.addEventListener('click', (event) => { if ($('#topbar-search').classList.contains('is-open') && !$('#topbar-search').contains(event.target)) closeSearch(); });
+$('#refresh-notes').addEventListener('click', async () => { await refreshExplorer(); });
+$('#expand-folders').addEventListener('click', () => setExplorerFoldersExpanded(true));
+$('#collapse-folders').addEventListener('click', () => setExplorerFoldersExpanded(false));
+$('#new-folder').addEventListener('click', () => createFolder());
+document.addEventListener('click', (event) => { if (!$('#explorer-context-menu').hidden && !$('#explorer-context-menu').contains(event.target)) closeExplorerContextMenu(); });
+document.addEventListener('click', (event) => { if (!$('#editor-context-menu').hidden && !$('#editor-context-menu').contains(event.target)) closeEditorContextMenu(); });
+$('.sidebar-toggle').addEventListener('click', () => { state.sidebarOpen = !state.sidebarOpen; $('.workspace').classList.toggle('sidebar-collapsed', !state.sidebarOpen); });
+$('#settings-button').addEventListener('click', () => openSettings());
+$('#settings-close').addEventListener('click', closeSettings);
+$('#settings-overlay').addEventListener('click', (event) => { if (event.target === $('#settings-overlay')) closeSettings(); });
+$('#rename-form').addEventListener('submit', (event) => { event.preventDefault(); finishRenameDialog($('#rename-input').value.trim()); });
+$('#rename-cancel').addEventListener('click', () => finishRenameDialog());
+$('#rename-overlay').addEventListener('click', (event) => { if (event.target === $('#rename-overlay')) finishRenameDialog(); });
+$('#delete-cancel').addEventListener('click', () => finishDeleteDialog(false));
+$('#delete-confirm').addEventListener('click', () => finishDeleteDialog(true));
+$('#delete-overlay').addEventListener('click', (event) => { if (event.target === $('#delete-overlay')) finishDeleteDialog(false); });
+document.querySelectorAll('.settings-tab').forEach((button) => button.addEventListener('click', () => selectSettingsTab(button.dataset.tab)));
+$('#custom-dictionary-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (addCustomWord($('#custom-dictionary-input').value)) $('#custom-dictionary-input').value = '';
+});
+$('#notes-toolbar-position').addEventListener('change', (event) => setToolbarPosition('notes', event.target.value));
+$('#canvas-toolbar-position').addEventListener('change', (event) => setToolbarPosition('canvas', event.target.value));
+document.querySelectorAll('.theme-card').forEach((button) => button.addEventListener('click', () => applyTheme(button.dataset.theme)));
+$('#change-directory').addEventListener('click', async () => { await chooseVault(); $('#directory-name').textContent = state.vault?.name || 'No folder open'; $('#directory-path').textContent = state.vault?.path || 'Choose a folder to see its location.'; });
+$('#save-ai-key').addEventListener('click', async () => {
+  try {
+    await window.stillnote.saveAiKey($('#ai-key').value);
+    $('#ai-key').value = ''; await updateKeyStatus(); await loadAiModels(); showToast('Ollama Cloud key saved securely');
+  } catch (error) { $('#ai-key-status').textContent = error.message; $('#ai-key-status').className = 'key-status error'; }
+});
+$('#remove-ai-key').addEventListener('click', async () => { await window.stillnote.clearAiKey(); $('#ai-key').value = ''; await updateKeyStatus(); await loadAiModels(); });
+$('#save-google-tasks-client').addEventListener('click', async () => {
+  try { await window.stillnote.saveGoogleTasksCredentials($('#google-tasks-client-id').value, $('#google-tasks-client-secret').value); $('#google-tasks-client-secret').value = ''; await updateGoogleTasksStatus(); showToast('Google OAuth credentials saved securely'); }
+  catch (error) { $('#google-tasks-status').textContent = error.message || 'Could not save client ID'; $('#google-tasks-status').className = 'key-status error'; }
+});
+$('#connect-google-tasks').addEventListener('click', async () => {
+  const button = $('#connect-google-tasks'); button.disabled = true; $('#google-tasks-status').textContent = 'Waiting for Google sign-in…';
+  try { await window.stillnote.connectGoogleTasks(); await updateGoogleTasksStatus(); showToast('Google Tasks connected'); }
+  catch (error) {
+    await updateGoogleTasksStatus();
+    $('#google-tasks-status').textContent = `Connection failed: ${error.message || 'Could not connect Google Tasks'}`;
+    $('#google-tasks-status').className = 'key-status error';
+    setSettingsHealth('tasks', false, 'Google Tasks connection failed');
+  }
+});
+$('#disconnect-google-tasks').addEventListener('click', async () => {
+  try { await window.stillnote.disconnectGoogleTasks(); await updateGoogleTasksStatus(); showToast('Google Tasks disconnected'); }
+  catch (error) { showToast(error.message || 'Could not disconnect Google Tasks'); }
+});
+function refreshOpenGraph() {
+  if (state.structured?.type !== 'graph') return;
+  const root = document.querySelector('.graph-editor');
+  state.structured.desmos?.destroy?.(); state.structured.desmos = null;
+  if (root) void renderGraph(root, state.structured.data);
+}
+$('#save-desmos-key').addEventListener('click', async () => {
+  const key = $('#desmos-api-key').value.trim();
+  if (!key) { showToast('Enter a Desmos API key first.'); return; }
+  try {
+    await window.stillnote.saveDesmosKey(key);
+    setSettingsHealth('desmos', true, 'API key saved in this vault');
+    showToast('Desmos key saved securely in this vault'); refreshOpenGraph();
+  } catch (error) { showToast(error.message || 'Could not save the Desmos key.'); }
+});
+$('#remove-desmos-key').addEventListener('click', async () => {
+  try { await window.stillnote.clearDesmosKey(); }
+  catch (error) { showToast(error.message || 'Could not remove the Desmos key.'); return; }
+  $('#desmos-api-key').value = '';
+  setSettingsHealth('desmos', false, 'API key missing');
+  state.structured?.desmos?.destroy?.(); if (state.structured) state.structured.desmos = null;
+  refreshOpenGraph(); showToast('Desmos API key removed');
+});
+$('#ai-model').addEventListener('change', () => localStorage.setItem('stillnote-ai-model', $('#ai-model').value || 'glm-4.6'));
+$('#assistant-toggle').addEventListener('click', () => setAssistantOpen(!state.assistantOpen));
+$('#home-button').addEventListener('click', () => { if (!state.home) void openHome(); else $('#home-input')?.focus(); });
+document.querySelectorAll('.assistant-mode').forEach((button) => button.addEventListener('click', () => {
+  state.assistantMode = button.dataset.mode;
+  document.querySelectorAll('.assistant-mode').forEach((mode) => mode.classList.toggle('active', mode === button));
+  updateAssistantModeCopy();
+}));
+$('#assistant-form').addEventListener('submit', submitAssistantMessage);
+$('#assistant-input').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault(); $('#assistant-form').requestSubmit();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  const mod = event.metaKey || event.ctrlKey;
+  if(state.structured?.type==='canvas'&&event.key==='Backspace'&&state.structured.deleteCanvasSelection&&!event.target.closest('input,textarea,[contenteditable="true"]')&&state.structured.data.elements.length){const hasSelection=document.querySelector('.canvas-svg .is-selected');if(hasSelection){event.preventDefault();state.structured.deleteCanvasSelection();return;}}
+  if(state.structured&&mod&&event.key.toLowerCase()==='z'){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
+  if(state.structured&&mod&&event.key.toLowerCase()==='y'){event.preventDefault();void applyStructuredHistory('redo');return;}
+  if (event.key === 'Escape' && !$('#rename-overlay').hidden) { event.preventDefault(); finishRenameDialog(); return; }
+  if (event.key === 'Escape' && !$('#delete-overlay').hidden) { event.preventDefault(); finishDeleteDialog(false); return; }
+  if (mod && event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch(); }
+  if (event.key === 'Escape' && $('#topbar-search').classList.contains('is-open')) closeSearch();
+  if (event.key === 'Escape' && !$('#settings-overlay').hidden) closeSettings();
+  if (event.key === 'Escape' && !$('#explorer-context-menu').hidden) closeExplorerContextMenu();
+  if (event.key === 'Escape' && !$('#editor-context-menu').hidden) closeEditorContextMenu();
+  if (event.key === 'Escape' && state.assistantOpen) setAssistantOpen(false);
+  if (mod && event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); createFolder(); }
+  else if (mod && event.key.toLowerCase() === 'n') { event.preventDefault(); createNote(); }
+  if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); saveActive(); }
+  if (mod && event.key.toLowerCase() === 'p') { event.preventDefault(); exportPdf(); }
+  if (mod && event.key.toLowerCase() === 'o') { event.preventDefault(); chooseVault(); }
+  if (mod && event.key === ',') { event.preventDefault(); openSettings(); }
+  if (mod && event.shiftKey && event.key.toLowerCase() === 'a') { event.preventDefault(); setAssistantOpen(!state.assistantOpen); }
+});
+window.addEventListener('beforeunload', () => { state.assetViewer?.destroy?.(); if (state.dirty && state.active && state.view) window.stillnote.writeNote(state.active, state.view.state.doc.toString()); else if(state.dirty&&state.active&&state.structured)window.stillnote.writeNote(state.active,encodeStructured(state.structured.type,state.structured.title||prettyName(state.active),state.structured.data)); });
+restoreWorkspace();

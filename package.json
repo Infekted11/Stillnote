@@ -1,0 +1,85 @@
+{
+  "name": "stillnote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A calm, local-first Markdown workspace.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.cjs dev\"",
+    "build": "vite build",
+    "start": "npm run build && node scripts/start-electron.cjs production",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.8",
+    "@huggingface/transformers": "^4.3.1",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/markdown": "^1.8.1",
+    "animejs": "^4.5.0",
+    "occt-import-js": "^0.0.23",
+    "pdfjs-dist": "^6.4.299",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^44.9.1",
+    "electron-builder": "^26.0.12",
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.stillnote.app",
+    "productName": "Stillnote",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "main-logo.icns",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/.stillnote-credentials.enc",
+      "!**/.stillnote-dictionary.enc"
+    ],
+    "mac": {
+      "icon": "main-logo.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
+  }
+}
