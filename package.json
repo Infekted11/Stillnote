@@ -49,6 +49,7 @@
   },
   "private": false,
   "description": "A local-first Markdown workspace.",
+  "author": "Infekted11",
   "productName": "Stillnote",
   "main": "electron/main.cjs",
   "bin": {
@@ -71,9 +72,6 @@
     "dist:win": "electron-builder --win nsis",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb"
   },
-  "dependencies": {
-    "electron": "^44.9.1"
-  },
   "devDependencies": {
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-css": "^6.3.1",
@@ -90,6 +88,7 @@
     "@lezer/highlight": "^1.2.1",
     "@lezer/markdown": "^1.8.1",
     "animejs": "^4.5.0",
+    "electron": "^44.9.1",
     "concurrently": "^9.1.2",
     "electron-builder": "^26.18.0",
     "occt-import-js": "^0.0.23",
