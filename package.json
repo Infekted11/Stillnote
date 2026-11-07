@@ -2,7 +2,8 @@
   "name": "@infekted11/stillnote",
   "version": "1.0.1",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+  "access": "public",
+  "registry": "https://registry.npmjs.org/"
   },
   "private": false,
   "description": "A local-first Markdown workspace.",
