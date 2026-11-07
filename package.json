@@ -42,7 +42,7 @@
     }
   },
   "name": "@infekted11/stillnote",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
