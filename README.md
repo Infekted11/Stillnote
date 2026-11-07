@@ -2,24 +2,43 @@
 
 A local-first Markdown notes app starter built with Electron, Vite, and CodeMirror 6.
 
-## Install the npm package
+## Download and install
 
-Stillnote is available from the public npm registry. Install Node.js and npm, then install and launch the app:
+Download the latest installer from [GitHub Releases](https://github.com/Infekted11/Stillnote/releases/latest). Choose the `.dmg` for macOS or the `.exe` for Windows. Linux AppImage and DEB installers are also available. To update, download and install the latest release; your vault files are stored separately from the app.
+
+The installers are not code-signed or notarized, so macOS Gatekeeper or Windows SmartScreen may show a warning on first launch.
+
+### macOS
+
+1. Open the downloaded `.dmg` and drag **Stillnote** to **Applications**.
+2. If macOS says it cannot verify the developer or check the app for malicious software, first try Control-clicking **Stillnote** in Applications and choosing **Open**, then confirm **Open**.
+3. If macOS still blocks it, try opening Stillnote once, then go to **System Settings → Privacy & Security** and select **Open Anyway** in the Security section.
+
+If you trust that the DMG came from the official Stillnote GitHub Releases page, you can also remove its quarantine attribute in Terminal:
 
 ```sh
-npm install --global @infekted11/stillnote@latest
-stillnote
+xattr -dr com.apple.quarantine /Applications/Stillnote.app
 ```
 
-The first launch downloads the Electron binary for your platform and requires an internet connection. Later launches reuse that binary. See [Electron's installation notes](https://www.electronjs.org/docs/latest/tutorial/installation#binary-download-step). On macOS, allow Stillnote to access Keychain if prompted so it can read credentials saved by the app.
-
-To update Stillnote to the latest published version, run:
+If that does not clear the block, the broader command below removes all extended attributes from the app bundle:
 
 ```sh
-npm install --global @infekted11/stillnote@latest
+xattr -cr /Applications/Stillnote.app
 ```
 
-Your vault notes and settings are stored outside the npm package and remain available when you update it.
+### Windows
+
+If SmartScreen displays **Windows protected your PC** for the installer, verify that you downloaded the `.exe` from the official Stillnote GitHub Releases page. Select **More info → Run anyway** to continue. This applies to the SmartScreen reputation warning; do not allow an installer that Windows Security identifies as malware.
+
+### Download from the command line
+
+Install [GitHub CLI](https://cli.github.com/), then download the latest macOS installer with:
+
+```sh
+gh release download --repo Infekted11/Stillnote --pattern '*.dmg'
+```
+
+Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a release tag before `--repo` to download a specific version.
 
 ## Run from source
 
@@ -65,15 +84,7 @@ npm run dist:win
 npm run dist:linux
 ```
 
-The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host. To create a GitHub release with installers for all three platforms, push a version tag matching the package version, such as `v1.1.1`. The workflow in `.github/workflows/release-app.yml` builds each platform on its native runner and attaches the installers to that release. Download an installer from the command line with GitHub CLI, for example:
-
-```sh
-gh release download --repo Infekted11/Stillnote --pattern '*.dmg'
-```
-
-Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a tag such as `v1.1.1` before `--repo` to download from a specific release.
-
-Unsigned macOS builds can be opened locally, but distributing them broadly requires Apple Developer signing and notarization to avoid Gatekeeper warnings. Windows builds can also be signed with a code-signing certificate; without one, Windows may show a reputation warning.
+The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host.
 
 ## Set up API keys and accounts
 
