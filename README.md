@@ -11,6 +11,12 @@ npm config set @Infekted11:registry https://npm.pkg.github.com
 npm install @Infekted11/stillnote@1.0.0
 ```
 
+To update a package-managed installation to the latest published version, run this in the project where you installed Stillnote:
+
+```sh
+npm install @Infekted11/stillnote@latest
+```
+
 ## Run from source
 
 To run or develop the app from a checkout, install the repository dependencies and start Electron:
@@ -59,8 +65,35 @@ The installers are written to `release/`. macOS creates a DMG and ZIP, Windows c
 
 Unsigned macOS builds can be opened locally, but distributing them broadly requires Apple Developer signing and notarization to avoid Gatekeeper warnings. Windows builds can also be signed with a code-signing certificate; without one, Windows may show a reputation warning.
 
-The assistant uses Ollama Cloud's `https://ollama.com/api/chat` endpoint. Configure the API key and cloud model in **Settings → AI settings**. The app sends the current note and your request to Ollama when you submit a prompt.
+## Set up API keys and accounts
 
-Google Tasks needs credentials for an OAuth **Desktop app**. In Google Cloud Console, enable the Google Tasks API, create a Desktop app OAuth client, then save its client ID and client secret in **Settings → Google Tasks** and connect your account. Task sheet files are Markdown with an embedded task list ID and a local task cache; the Google Tasks list is the source of truth and changes sync from Google when you open or refresh the sheet.
+Open a vault before saving credentials. Stillnote encrypts API keys and Google OAuth credentials in a hidden `.stillnote-credentials.enc` file in that vault, using Electron's operating-system-backed encryption. The file can only be decrypted on the same device and operating-system account. Enter your credentials again if you move to another device.
 
-Each person using Stillnote enters their own Ollama Cloud and Desmos API keys, and their own Google Tasks OAuth Desktop app credentials, in Settings. Those credentials are encrypted together in the hidden `.stillnote-credentials.enc` file at the root of the selected vault. Electron encrypts the file with the operating system account, so it can be decrypted on the same device and account only; users should enter their keys again on another device. The personal dictionary is stored separately in the encrypted `.stillnote-dictionary.enc` file in the selected vault. The explorer hides both files, and the DMG build explicitly excludes them and `.env` files. Do not share the vault folder if you want to keep its credentials or personal dictionary private. Existing Ollama and Google credentials migrate from the app data folder when a vault is opened, and an existing Desmos key migrates from local app storage.
+### Ollama Cloud API key
+
+1. Sign in to [Ollama](https://ollama.com/) or create an account.
+2. Open [Ollama API keys](https://ollama.com/settings/keys), create a key, and copy it.
+3. In Stillnote, open **Settings → AI settings**, paste the key, and click **Save key**. Choose a cloud model from the model menu.
+
+Stillnote uses Ollama Cloud's `https://ollama.com/api/chat` endpoint. It sends the open note and your prompt to Ollama when you use the assistant.
+
+### Desmos API key
+
+1. Open [Desmos My API](https://www.desmos.com/my-api) and sign in or create an account.
+2. Follow the page to get an API key for your project, then copy the key.
+3. In Stillnote, open **Settings → Graphing**, paste the key, and click **Save key**.
+
+Stillnote loads the Desmos Graphing Calculator from Desmos, so graph previews need an internet connection.
+
+### Google Tasks OAuth credentials
+
+1. Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard.
+2. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it.
+3. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”.
+4. Copy the Client ID and Client Secret, you will need these and won't be able to view them again.
+5. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user.
+6. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.
+
+Task sheet files are Markdown with an embedded task list ID and a local task cache. Google Tasks is the source of truth; changes sync when you open or refresh a sheet.
+
+The personal dictionary is stored separately in the encrypted `.stillnote-dictionary.enc` file in the selected vault. The explorer hides both files, and the DMG build explicitly excludes them and `.env` files. Do not share the vault folder if you want to keep its credentials or personal dictionary private. Existing Ollama and Google credentials migrate from the app data folder when a vault is opened, and an existing Desmos key migrates from local app storage.
