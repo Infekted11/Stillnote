@@ -1,12 +1,13 @@
 {
   "name": "@infekted11/stillnote",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "private": false,
   "description": "A local-first Markdown workspace.",
+  "productName": "Stillnote",
   "main": "electron/main.cjs",
   "bin": {
     "stillnote": "bin/stillnote.cjs"
@@ -15,6 +16,7 @@
     "bin/",
     "dist/",
     "electron/",
+    "assets/icon.png",
     "main-logo.icns",
     "README.md"
   ],
@@ -46,11 +48,11 @@
     "@lezer/highlight": "^1.2.1",
     "@lezer/markdown": "^1.8.1",
     "animejs": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "electron-builder": "^26.0.12",
     "occt-import-js": "^0.0.23",
     "pdfjs-dist": "^6.4.299",
     "three": "^0.186.1",
-    "concurrently": "^9.1.2",
-    "electron-builder": "^26.0.12",
     "vite": "^6.1.0",
     "wait-on": "^8.0.2"
   },

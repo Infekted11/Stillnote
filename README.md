@@ -11,7 +11,7 @@ npm install --global @infekted11/stillnote@latest
 stillnote
 ```
 
-The first launch downloads the Electron binary for your platform and requires an internet connection. Later launches reuse that binary. See [Electron's installation notes](https://www.electronjs.org/docs/latest/tutorial/installation#binary-download-step).
+The first launch downloads the Electron binary for your platform and requires an internet connection. Later launches reuse that binary. See [Electron's installation notes](https://www.electronjs.org/docs/latest/tutorial/installation#binary-download-step). On macOS, allow Stillnote to access Keychain if prompted so it can read credentials saved by the app.
 
 To update Stillnote to the latest published version, run:
 
@@ -65,13 +65,13 @@ npm run dist:win
 npm run dist:linux
 ```
 
-The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host. To create a GitHub release with installers for all three platforms, push a version tag matching the package version, such as `v1.1.0`. The workflow in `.github/workflows/release-app.yml` builds each platform on its native runner and attaches the installers to that release. Download an installer from the command line with GitHub CLI, for example:
+The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host. To create a GitHub release with installers for all three platforms, push a version tag matching the package version, such as `v1.1.1`. The workflow in `.github/workflows/release-app.yml` builds each platform on its native runner and attaches the installers to that release. Download an installer from the command line with GitHub CLI, for example:
 
 ```sh
 gh release download --repo Infekted11/Stillnote --pattern '*.dmg'
 ```
 
-Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a tag such as `v1.1.0` before `--repo` to download from a specific release.
+Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a tag such as `v1.1.1` before `--repo` to download from a specific release.
 
 Unsigned macOS builds can be opened locally, but distributing them broadly requires Apple Developer signing and notarization to avoid Gatekeeper warnings. Windows builds can also be signed with a code-signing certificate; without one, Windows may show a reputation warning.
 

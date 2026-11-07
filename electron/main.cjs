@@ -5,6 +5,9 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 
+// Keep the Keychain service name stable between the npm CLI and packaged app.
+app.setName('Stillnote');
+
 let mainWindow;
 let vaultPath = null;
 let lastNote = null;
@@ -739,7 +742,8 @@ app.whenReady().then(() => {
     callback(permission === 'media' && audioOnly && trustedAppPage);
   });
   if (process.platform === 'darwin' && app.dock) {
-    app.dock.setIcon(nativeImage.createFromPath(path.join(__dirname, '../main-logo.icns')));
+    const dockIcon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
+    if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
   }
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
