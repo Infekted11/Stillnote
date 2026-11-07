@@ -4,20 +4,23 @@ A local-first Markdown notes app starter built with Electron, Vite, and CodeMirr
 
 ## Install the npm package
 
-Stillnote is published on GitHub Packages as `@infekted11/stillnote`. To install it in a Node.js project, authenticate npm with a GitHub personal access token (classic) that has the `read:packages` scope. The GitHub account used by the token must also have access to the package.
+Stillnote can be installed as a desktop app from GitHub Packages. Install Node.js and npm first. Then authenticate npm with a GitHub personal access token (classic) that has the `read:packages` scope. The GitHub account used by the token must have access to the package.
 
 ```sh
 npm login --scope=@infekted11 --auth-type=legacy --registry=https://npm.pkg.github.com
-npm install @infekted11/stillnote@1.0.0
+npm install --global @infekted11/stillnote@1.0.1
+stillnote
 ```
 
-When prompted, enter your GitHub username, paste the token as the password, and enter your email address. Run the commands from the directory of the Node.js project where you want to add Stillnote. npm saves the login in your user config so you can install future versions without logging in again.
+When prompted, enter your GitHub username, paste the token as the password, and enter your email address. npm saves the login in your user config. The `stillnote` command launches the desktop app.
 
-To update a package-managed installation to the latest published version, run this in the project where you installed Stillnote:
+To update Stillnote to the latest published version, run:
 
 ```sh
-npm install @infekted11/stillnote@latest
+npm install --global @infekted11/stillnote@latest
 ```
+
+Your vault notes and settings are stored outside the npm package and remain available when you update it.
 
 ## Run from source
 
@@ -63,7 +66,13 @@ npm run dist:win
 npm run dist:linux
 ```
 
-The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host. The GitHub Actions workflow in `.github/workflows/package.yml` builds each platform on its native runner; run it manually from the Actions tab or push a version tag such as `v0.1.0` to create downloadable artifacts.
+The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host. To create a GitHub release with installers for all three platforms, push a version tag matching the package version, such as `v1.0.1`. The workflow in `.github/workflows/release-app.yml` builds each platform on its native runner and attaches the installers to that release. Download an installer from the command line with GitHub CLI, for example:
+
+```sh
+gh release download --repo Infekted11/Stillnote --pattern '*.dmg'
+```
+
+Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a tag such as `v1.0.1` before `--repo` to download from a specific release.
 
 Unsigned macOS builds can be opened locally, but distributing them broadly requires Apple Developer signing and notarization to avoid Gatekeeper warnings. Windows builds can also be signed with a code-signing certificate; without one, Windows may show a reputation warning.
 

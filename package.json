@@ -1,12 +1,22 @@
 {
   "name": "@infekted11/stillnote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "private": false,
   "description": "A local-first Markdown workspace.",
   "main": "electron/main.cjs",
+  "bin": {
+    "stillnote": "bin/stillnote.cjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "electron/",
+    "main-logo.icns",
+    "README.md"
+  ],
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.cjs dev\"",
     "build": "vite build",
@@ -17,6 +27,9 @@
     "dist:linux": "npm run build && electron-builder --linux AppImage deb"
   },
   "dependencies": {
+    "electron": "^44.9.1"
+  },
+  "devDependencies": {
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.12",
@@ -34,11 +47,8 @@
     "animejs": "^4.5.0",
     "occt-import-js": "^0.0.23",
     "pdfjs-dist": "^6.4.299",
-    "three": "^0.186.1"
-  },
-  "devDependencies": {
+    "three": "^0.186.1",
     "concurrently": "^9.1.2",
-    "electron": "^44.9.1",
     "electron-builder": "^26.0.12",
     "vite": "^6.1.0",
     "wait-on": "^8.0.2"
