@@ -46,7 +46,7 @@
     }
   },
   "name": "@infekted11/stillnote",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "repository": {
     "type": "git",
     "url": "https://github.com/Infekted11/Stillnote"
@@ -58,8 +58,8 @@
   "private": false,
   "description": "A local-first Markdown workspace.",
   "author": {
-  "name": "Stillnote",
-  "email": "opmolina73@gmail.com"
+    "name": "Stillnote",
+    "email": "opmolina73@gmail.com"
   },
   "productName": "Stillnote",
   "desktopName": "com.stillnote.app.desktop",
