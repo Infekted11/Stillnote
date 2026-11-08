@@ -1,0 +1,7 @@
+.topbar-windows {
+  padding-right: calc(22px + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+}
+
+.topbar-windows .traffic-space {
+  display: none;
+}

@@ -719,7 +719,11 @@ function registerIpc() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 620,
-    titleBarStyle: 'hiddenInset', backgroundColor: '#f7f7f5',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : process.platform === 'win32' ? 'hidden' : 'default',
+    ...(process.platform === 'win32' ? {
+      titleBarOverlay: { color: '#f7f7f5', symbolColor: '#82837b', height: 54 },
+    } : {}),
+    backgroundColor: '#f7f7f5',
     ...(process.platform === 'win32' ? { icon: assetPath('assets', 'icon.ico') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

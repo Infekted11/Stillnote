@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('stillnote', {
+  platform: process.platform,
   googleTasksStatus: () => ipcRenderer.invoke('google-tasks:status'),
   saveGoogleTasksCredentials: (clientId, clientSecret) => ipcRenderer.invoke('google-tasks:save-client-credentials', clientId, clientSecret),
   connectGoogleTasks: () => ipcRenderer.invoke('google-tasks:connect'),

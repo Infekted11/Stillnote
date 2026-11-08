@@ -16,6 +16,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
+import './window-controls.css';
 
 const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
 
@@ -221,9 +222,10 @@ const icons = {
 };
 
 const app = document.querySelector('#app');
+const isWindows = window.stillnote.platform === 'win32';
 app.innerHTML = `
   <div class="app-shell">
-    <header class="topbar">
+    <header class="topbar${isWindows ? ' topbar-windows' : ''}">
       <div class="traffic-space"></div>
       <button class="icon-button sidebar-toggle" aria-label="Toggle sidebar">${icons.panel}</button>
       <div class="topbar-location"><span class="location-vault">No vault</span><span class="location-divider">/</span><span class="location-note">Welcome</span></div>
