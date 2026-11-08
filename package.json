@@ -1,1 +1,104 @@
-{"build":{"appId":"com.stillnote.app","productName":"Stillnote","directories":{"output":"release"},"files":["dist/**/*","electron/**/*","package.json","assets/icon.ico","main-logo.icns","!**/.env","!**/.env.*","!**/.stillnote-credentials.enc","!**/.stillnote-dictionary.enc"],"mac":{"icon":"main-logo.icns","target":["dmg","zip"]},"win":{"icon":"assets/icon.ico","target":["nsis"]},"nsis":{"oneClick":false,"allowToChangeInstallationDirectory":true},"linux":{"icon":"assets/icon.png","category":"Office","packageName":"stillnote","executableName":"stillnote","syncDesktopName":true,"target":["AppImage","deb"]}},"name":"@infekted11/stillnote","version":"1.3.0","repository":{"type":"git","url":"https://github.com/Infekted11/Stillnote"},"publishConfig":{"access":"public","registry":"https://registry.npmjs.org/"},"private":false,"description":"A local-first Markdown workspace.","author":{"name":"Stillnote","email":"opmolina73@gmail.com"},"productName":"Stillnote","desktopName":"com.stillnote.app.desktop","main":"electron/main.cjs","bin":{"stillnote":"bin/stillnote.cjs"},"files":["bin/","dist/","electron/","assets/icon.ico","assets/icon.png","main-logo.icns","README.md"],"scripts":{"dev":"concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.cjs dev\"","build":"vite build","start":"npm run build && node scripts/start-electron.cjs production","dist":"electron-builder","dist:mac":"electron-builder --mac dmg","dist:win":"electron-builder --win nsis","dist:linux":"npm run build && electron-builder --linux AppImage deb"},"devDependencies":{"@codemirror/commands":"^6.8.1","@codemirror/lang-css":"^6.3.1","@codemirror/lang-html":"^6.4.12","@codemirror/lang-javascript":"^6.2.5","@codemirror/lang-json":"^6.0.2","@codemirror/lang-markdown":"^6.3.2","@codemirror/lang-python":"^6.2.1","@codemirror/language":"^6.11.0","@codemirror/search":"^6.5.10","@codemirror/state":"^6.5.2","@codemirror/view":"^6.36.8","@huggingface/transformers":"^4.3.1","@lezer/highlight":"^1.2.1","@lezer/markdown":"^1.8.1","animejs":"^4.5.0","electron":"^44.9.1","concurrently":"^9.1.2","electron-builder":"^26.18.0","occt-import-js":"^0.0.23","pdfjs-dist":"^6.4.299","three":"^0.186.1","vite":"^6.1.0","wait-on":"^8.0.2"}}
+{
+  "build": {
+    "appId": "com.stillnote.app",
+    "productName": "Stillnote",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "main-logo.icns",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/.stillnote-credentials.enc",
+      "!**/.stillnote-dictionary.enc"
+    ],
+    "mac": {
+      "icon": "main-logo.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
+  },
+  "name": "@infekted11/stillnote",
+  "version": "1.2.4",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Infekted11/Stillnote"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "private": false,
+  "description": "A local-first Markdown workspace.",
+  "author": "Infekted11",
+  "productName": "Stillnote",
+  "main": "electron/main.cjs",
+  "bin": {
+    "stillnote": "bin/stillnote.cjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "electron/",
+    "assets/icon.png",
+    "main-logo.icns",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.cjs dev\"",
+    "build": "vite build",
+    "start": "npm run build && node scripts/start-electron.cjs production",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:win": "electron-builder --win nsis",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+  },
+  "devDependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.8",
+    "@huggingface/transformers": "^4.3.1",
+    "@lezer/highlight": "^1.2.1",
+    "@lezer/markdown": "^1.8.1",
+    "animejs": "^4.5.0",
+    "electron": "^44.9.1",
+    "concurrently": "^9.1.2",
+    "electron-builder": "^26.18.0",
+    "occt-import-js": "^0.0.23",
+    "pdfjs-dist": "^6.4.299",
+    "three": "^0.186.1",
+    "vite": "^6.1.0",
+    "wait-on": "^8.0.2"
+  }
+}
