@@ -56,7 +56,10 @@
   },
   "private": false,
   "description": "A local-first Markdown workspace.",
-  "author": "Infekted11",
+  "author": {
+  "name": "Stillnote",
+  "email": "opmolina73@gmail.com"
+  },
   "productName": "Stillnote",
   "desktopName": "com.stillnote.app.desktop",
   "main": "electron/main.cjs",
