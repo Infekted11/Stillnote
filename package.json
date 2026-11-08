@@ -9,7 +9,7 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "main-logo.icns",
+      "assets/icon.icns",
       "!**/.env",
       "!**/.env.*",
       "!**/.stillnote-credentials.enc",
@@ -26,7 +26,7 @@
       }
     ],
     "mac": {
-      "icon": "main-logo.icns",
+      "icon": "assets/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -65,9 +65,9 @@
     "bin/",
     "dist/",
     "electron/",
+    "assets/icon.icns",
     "assets/icon.ico",
     "assets/icon.png",
-    "main-logo.icns",
     "README.md"
   ],
   "scripts": {

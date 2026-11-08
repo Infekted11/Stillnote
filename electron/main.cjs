@@ -789,10 +789,6 @@ app.whenReady().then(() => {
       },
     ]));
   }
-  if (process.platform === 'darwin' && app.dock) {
-    const dockIcon = nativeImage.createFromPath(assetPath('assets', 'icon.png'));
-    if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
-  }
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
