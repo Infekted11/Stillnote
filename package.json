@@ -37,6 +37,10 @@
       "icon": "assets/icon.png",
       "category": "Office",
       "executableName": "stillnote",
+      "artifactName": "stillnote-${version}.${ext}",
+      "deb": {
+        "packageName": "stillnote"
+      },
       "syncDesktopName": true,
       "target": [
         "AppImage",
