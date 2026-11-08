@@ -9,6 +9,7 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
+      "assets/icon.ico",
       "main-logo.icns",
       "!**/.env",
       "!**/.env.*",
@@ -35,6 +36,8 @@
     "linux": {
       "icon": "assets/icon.png",
       "category": "Office",
+      "executableName": "stillnote",
+      "syncDesktopName": true,
       "target": [
         "AppImage",
         "deb"
@@ -55,6 +58,7 @@
   "description": "A local-first Markdown workspace.",
   "author": "Infekted11",
   "productName": "Stillnote",
+  "desktopName": "com.stillnote.app.desktop",
   "main": "electron/main.cjs",
   "bin": {
     "stillnote": "bin/stillnote.cjs"
@@ -63,6 +67,7 @@
     "bin/",
     "dist/",
     "electron/",
+    "assets/icon.ico",
     "assets/icon.png",
     "main-logo.icns",
     "README.md"

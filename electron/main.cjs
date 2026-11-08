@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage, nativeImage, session, shell, clipboard } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, nativeImage, session, shell, clipboard, Menu } = require('electron');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
@@ -715,6 +715,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 620,
     titleBarStyle: 'hiddenInset', backgroundColor: '#f7f7f5',
+    ...(process.platform === 'win32' ? { icon: path.join(__dirname, '../assets/icon.ico') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false,
@@ -741,6 +742,44 @@ app.whenReady().then(() => {
     const audioOnly = !Array.isArray(details.mediaTypes) || details.mediaTypes.includes('audio');
     callback(permission === 'media' && audioOnly && trustedAppPage);
   });
+  if (process.platform === 'win32') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: 'File',
+        submenu: [{ role: 'quit', label: 'Exit' }],
+      },
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+          { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+          { role: 'selectAll' },
+        ],
+      },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+          { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+          { type: 'separator' }, { role: 'togglefullscreen' },
+        ],
+      },
+      {
+        label: 'Window',
+        submenu: [{ role: 'minimize' }, { role: 'close' }],
+      },
+      {
+        label: 'Help',
+        submenu: [{
+          label: 'About Stillnote',
+          click: () => dialog.showMessageBox(mainWindow, {
+            type: 'info', title: 'About Stillnote', message: 'Stillnote',
+            detail: `Version ${app.getVersion()}`,
+          }),
+        }],
+      },
+    ]));
+  }
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
