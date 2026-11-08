@@ -63,6 +63,8 @@ npm start
 - Use the right-side note assistant to ask questions about the open note or request a complete Markdown edit. AI edits are previewed and applied only when you choose **Apply to note**.
 - Store an Ollama Cloud API key encrypted with Electron's OS-backed secure storage.
 - Create task sheets linked to Google Tasks lists. Tasks sync when opened or when you press **Sync**.
+- Create Geometry files for points, segments, circles, and triangles, with lengths and areas calculated from their coordinates.
+- Create 3D Calculator files to plot surfaces of the form `z = f(x, y)`. The built-in expression parser and Three.js renderer work offline; Ollama can answer questions about or edit both Geometry and 3D Calculator files.
 - Search note titles with `⌘K` / `Ctrl+K`.
 - Electron context isolation and a narrow preload API for vault file access.
 

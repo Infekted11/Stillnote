@@ -15,8 +15,10 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { compileSurfaceExpression } from './surface-math.js';
 import './style.css';
 import './window-controls.css';
+import './interactive-math.css';
 
 const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
 
@@ -286,7 +288,7 @@ app.innerHTML = `
           <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>How to</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
-            <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files and PDFs. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
+            <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
             <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p></section>
             <section class="settings-section" data-section="tasks" hidden><div class="settings-section-heading"><span class="eyebrow">GOOGLE TASKS</span><h3>Sync task sheets</h3><p>Task sheets read from and write to Google Tasks lists. Your OAuth credentials and account token are encrypted in this vault.</p></div><label class="field-label" for="google-tasks-client-id">OAuth Desktop app client ID</label><input class="settings-input" id="google-tasks-client-id" type="text" autocomplete="off" placeholder="123456789.apps.googleusercontent.com"><label class="field-label" for="google-tasks-client-secret">OAuth client secret</label><input class="settings-input" id="google-tasks-client-secret" type="password" autocomplete="new-password" placeholder="Paste the secret from the same Desktop app client"><div class="key-actions"><button class="primary-button" id="save-google-tasks-client">Save credentials</button><button class="secondary-button" id="connect-google-tasks">Connect Google account</button><button class="secondary-button" id="disconnect-google-tasks">Disconnect</button><span class="key-status" id="google-tasks-status">Checking connection…</span></div><p class="settings-note">Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”. Copy the Client ID and Client Secret, you will need these and won't be able to view them again. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.</p></section>
 
@@ -974,7 +976,7 @@ async function openHome() {
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
   try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
   if (state.view) { state.view.destroy(); state.view = null; }
-  state.structured?.desmos?.destroy?.();
+  state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
   state.structured = null; updateAssistantModeCopy(); state.active = null; state.home = true; state.dirty = false;
   state.assistantOpen = false; $('.workspace').classList.remove('assistant-open');
   $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><div class="home-footnote">Relevant notes are selected on this device before they’re sent with your request.</div></div></div></section>`;
@@ -1186,7 +1188,7 @@ async function openNote(file) {
     state.assetPath = null; state.assetBytes = null; state.pdfText = null; state.pdfTextPromise = null;
     if (!file.toLowerCase().endsWith('.md') && !isEditableAsset(file)) {
       const changedFile = state.active !== file;
-      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null; state.dirty = false; state.active = file;
+      state.view?.destroy(); state.view = null; state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.(); state.structured = null; state.dirty = false; state.active = file;
       if (changedFile) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
       $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
       updateAssistantModeCopy();
@@ -1200,7 +1202,7 @@ async function openNote(file) {
     if(navigationId!==state.navigationId)return;
     if (!file.toLowerCase().endsWith('.md')) {
       const changedFile = state.active !== file;
-      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null;
+      state.view?.destroy(); state.view = null; state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.(); state.structured = null;
       if (changedFile) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
       $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
       renderAssetTextEditor(file, contents, navigationId); state.dirty = false; $('#save-state').textContent = 'Saved'; $('#note-editor').hidden = false; $('#welcome').hidden = true; $('#editor-footer').querySelector('span').textContent = fileExtension(file).toUpperCase();
@@ -1222,7 +1224,7 @@ async function openNote(file) {
     }
     const structuredFile = decodeStructured(contents);
     if (state.view) { state.view.destroy(); state.view = null; }
-    state.structured?.desmos?.destroy?.();
+    state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
     state.structured = null;
     updateAssistantModeCopy();
     // Structured editors are plain DOM rather than CodeMirror views, so destroy
@@ -1337,7 +1339,7 @@ function encodeStructured(type, title, data) {
   return `${title}\n<!-- stillnote:type=${type} -->\n\n\`\`\`stillnote-${type}\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`;
 }
 function decodeStructured(contents) {
-  const match = contents.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks)\s*-->[\s\S]*?```stillnote-\1\s*\n([\s\S]*?)\n```/);
+  const match = contents.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*-->[\s\S]*?```stillnote-\1\s*\n([\s\S]*?)\n```/);
   if (!match) return null;
   try { return { type: match[1], data: JSON.parse(match[2]) }; } catch { return { type: match[1], data: null }; }
 }
@@ -1345,6 +1347,15 @@ function canvasDefaults() { return { version: 1, width: 1200, height: 760, eleme
 function sheetDefaults() { return { version: 1, columns: 8, rows: 20, cells: {} }; }
 function graphDefaults() { return { version: 1, state: null }; }
 function taskSheetDefaults(listId) { return { version: 1, listId, tasks: [] }; }
+function geometryDefaults() { return { version: 1, elements: [] }; }
+function calculator3dDefaults() { return { version: 1, expression: 'sin(sqrt(x^2 + y^2))', range: 6, resolution: 48 }; }
+function validCoordinate(point) { return point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)); }
+function isValidStructuredPayload(type, data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (type === 'geometry') return Array.isArray(data.elements) && data.elements.length <= 500 && data.elements.every((item) => item && (item.type === 'point' && validCoordinate(item) || item.type === 'segment' && Array.isArray(item.points) && item.points.length === 2 && item.points.every(validCoordinate) || item.type === 'circle' && validCoordinate(item.center) && Number.isFinite(Number(item.radius)) && Number(item.radius) > 0 || item.type === 'triangle' && Array.isArray(item.points) && item.points.length === 3 && item.points.every(validCoordinate)));
+  if (type === 'calculator3d') { try { compileSurfaceExpression(data.expression); return Number.isFinite(Number(data.range)) && Number(data.range) >= 1 && Number(data.range) <= 30; } catch { return false; } }
+  return true;
+}
 let desmosApiLoad = null;
 let desmosApiLoadedKey = null;
 function loadDesmosApi(apiKey) {
@@ -1484,7 +1495,8 @@ async function applyStructuredHistory(direction){
 function renderStructured(type, rawData, file, title) {
   cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
   state.structured?.cleanup?.();
-  const data = rawData && typeof rawData === 'object' ? rawData : type === 'canvas' ? canvasDefaults() : type === 'graph' ? graphDefaults() : type === 'tasks' ? taskSheetDefaults('') : sheetDefaults();
+  const defaults = { canvas: canvasDefaults, graph: graphDefaults, tasks: () => taskSheetDefaults(''), geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
+  const data = rawData && typeof rawData === 'object' ? rawData : (defaults[type] || sheetDefaults)();
   state.structured?.desmos?.destroy?.();
   state.structured = { type, data, title, file, undoStack:[], redoStack:[], historySnapshot:JSON.stringify({title,data}), historyPending:false };
   updateAssistantModeCopy();
@@ -1529,6 +1541,8 @@ function renderStructured(type, rawData, file, title) {
   if (type === 'canvas') renderCanvas(root, data);
   else if (type === 'graph') void renderGraph(root, data);
   else if (type === 'tasks') void renderTaskSheet(root, data);
+  else if (type === 'geometry') renderGeometry(root, data);
+  else if (type === 'calculator3d') renderCalculator3d(root, data);
   else renderSpreadsheet(root, data);
   updateStructuredHistoryButtons();
   return root;
@@ -1536,6 +1550,67 @@ function renderStructured(type, rawData, file, title) {
 function updateStructuredLocation(file) {
   $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(file.split('/').map(prettyName).join(' / '))}</strong>`;
   $('.location-note').textContent = prettyName(file);
+}
+function renderGeometry(root, data) {
+  data.elements = Array.isArray(data.elements) ? data.elements.filter((item) => item && (item.type === 'point' && validCoordinate(item) || item.type === 'segment' && Array.isArray(item.points) && item.points.length === 2 && item.points.every(validCoordinate) || item.type === 'circle' && validCoordinate(item.center) && Number.isFinite(Number(item.radius)) && Number(item.radius) > 0 || item.type === 'triangle' && Array.isArray(item.points) && item.points.length === 3 && item.points.every(validCoordinate))).slice(0, 500) : [];
+  const toolbar = root.querySelector('.structured-toolbar');
+  toolbar.innerHTML = `<span>Geometry · choose a tool, then click or drag on the plane</span><select aria-label="Geometry tool"><option value="point">Point</option><option value="segment">Segment</option><option value="circle">Circle</option><option value="triangle">Triangle</option><option value="select">Select</option></select><button type="button" data-geometry-delete>Delete selected</button><button type="button" data-history="undo" aria-label="Undo">${icons.undo}</button><button type="button" data-history="redo" aria-label="Redo">${icons.redo}</button>`;
+  const surface = root.querySelector('.structured-surface');
+  surface.innerHTML = `<svg class="geometry-plane" viewBox="0 0 800 520" role="img" aria-label="Interactive geometry plane"></svg><div class="geometry-measurements" aria-live="polite"></div>`;
+  const svg = surface.querySelector('svg');
+  const measurements = surface.querySelector('.geometry-measurements');
+  const tool = toolbar.querySelector('select');
+  let selected = -1, start = null;
+  const toScreen = (p) => ({ x: 400 + Number(p.x) * 32, y: 260 - Number(p.y) * 32 });
+  const fromEvent = (event) => { const p = svg.createSVGPoint(); p.x = event.clientX; p.y = event.clientY; const q = p.matrixTransform(svg.getScreenCTM().inverse()); return { x: Math.round((q.x - 400) / 32 * 100) / 100, y: Math.round((260 - q.y) / 32 * 100) / 100 }; };
+  const el = (tag, attrs = {}) => { const node = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value)); return node; };
+  const draw = () => {
+    svg.replaceChildren();
+    const grid = el('path', { d: Array.from({ length: 25 }, (_, i) => `M${i * 32} 0V520`).join('') + Array.from({ length: 17 }, (_, i) => `M0 ${i * 32}H800`).join(''), class: 'geometry-grid' }); svg.append(grid);
+    svg.append(el('path', { d: 'M0 260H800M400 0V520', class: 'geometry-axis' }));
+    data.elements.forEach((item, index) => {
+      const points = (item.points || []).map(toScreen); let shape;
+      if (item.type === 'point') { const p = toScreen(item); shape = el('circle', { cx: p.x, cy: p.y, r: 6, class: 'geometry-point' }); if (item.label) { const label = el('text', { x: p.x + 9, y: p.y - 8 }); label.textContent = String(item.label).slice(0, 32); svg.append(label); } }
+      else if (item.type === 'segment' && points.length >= 2) shape = el('line', { x1: points[0].x, y1: points[0].y, x2: points[1].x, y2: points[1].y, class: 'geometry-line' });
+      else if (item.type === 'circle' && item.center) { const c = toScreen(item.center); shape = el('circle', { cx: c.x, cy: c.y, r: Math.max(1, Number(item.radius) * 32), class: 'geometry-circle' }); }
+      else if (item.type === 'triangle' && points.length >= 3) shape = el('polygon', { points: points.map(p => `${p.x},${p.y}`).join(' '), class: 'geometry-triangle' });
+      if (shape) { shape.dataset.index = index; if (index === selected) shape.classList.add('selected'); svg.append(shape); }
+    });
+    const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
+    const summaries = data.elements.map((item,i) => {
+      if (item.type === 'segment' && item.points?.length >= 2) return `Segment ${i+1}: length ${distance(...item.points).toFixed(2)}`;
+      if (item.type === 'circle' && item.center) return `Circle ${i+1}: radius ${Number(item.radius).toFixed(2)}, area ${(Math.PI*Number(item.radius)**2).toFixed(2)}`;
+      if (item.type === 'triangle' && item.points?.length >= 3) { const [a,b,c]=item.points; return `Triangle ${i+1}: area ${(Math.abs(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y))/2).toFixed(2)}`; }
+      return null;
+    }).filter(Boolean);
+    measurements.textContent = summaries.join('  ·  ') || 'Lengths and areas appear here as you add shapes.';
+  };
+  toolbar.querySelector('[data-geometry-delete]').addEventListener('click', () => { if (selected >= 0) { data.elements.splice(selected,1); selected=-1; setStructuredDirty(); draw(); } });
+  svg.addEventListener('pointerdown', (event) => { const index = event.target.closest('[data-index]')?.dataset.index; if (tool.value === 'select') { selected = index == null ? -1 : Number(index); draw(); return; } start = fromEvent(event); if (tool.value === 'point') { data.elements.push({ type: 'point', ...start, label: `P${data.elements.filter(x=>x.type==='point').length+1}` }); start=null; setStructuredDirty(); draw(); } else { svg.setPointerCapture(event.pointerId); } });
+  svg.addEventListener('pointerup', (event) => { if (!start) return; const end=fromEvent(event), a=start; start=null; if (tool.value==='segment') data.elements.push({type:'segment',points:[a,end]}); else if(tool.value==='circle') data.elements.push({type:'circle',center:a,radius:Math.max(.05,Math.hypot(end.x-a.x,end.y-a.y))}); else if(tool.value==='triangle') data.elements.push({type:'triangle',points:[a,{x:end.x,y:a.y},end]}); setStructuredDirty(); draw(); });
+  draw();
+}
+function renderCalculator3d(root, data) {
+  const toolbar=root.querySelector('.structured-toolbar');
+  toolbar.innerHTML=`<span>3D Calculator · plot z = f(x, y)</span><label>z = <input class="surface-expression" aria-label="Surface expression" spellcheck="false"></label><label>Range <input class="surface-range" type="number" min="1" max="30" step="1" aria-label="Plot range"></label><button type="button" data-surface-plot>Plot</button><button type="button" data-history="undo" aria-label="Undo">${icons.undo}</button><button type="button" data-history="redo" aria-label="Redo">${icons.redo}</button>`;
+  const surface=root.querySelector('.structured-surface');surface.innerHTML=`<div class="surface-plot" role="img" aria-label="Three dimensional function plot"></div><div class="surface-status" aria-live="polite">Drag to rotate · scroll to zoom</div>`;
+  const input=toolbar.querySelector('.surface-expression'), rangeInput=toolbar.querySelector('.surface-range'), host=surface.querySelector('.surface-plot'), status=surface.querySelector('.surface-status');
+  data.expression=typeof data.expression==='string'?data.expression:'sin(sqrt(x^2 + y^2))'; data.range=Math.max(1,Math.min(30,Number(data.range)||6));
+  input.value=data.expression;rangeInput.value=data.range;
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(state.theme==='dark'?0x242520:state.theme==='sepia'?0xfaf6ed:0xffffff);
+  const camera=new THREE.PerspectiveCamera(45,1,.1,1000);camera.position.set(9,8,10);
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));host.append(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x6b6255,2));const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(4,8,6);scene.add(light);
+  const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.target.set(0,0,0);
+  const grid=new THREE.GridHelper(12,24,state.theme==='dark'?0x77786e:0x77766e,state.theme==='dark'?0x484a42:0xd8d6cf);scene.add(grid);
+  let mesh=null;
+  const resize=()=>{const w=Math.max(1,host.clientWidth),h=Math.max(1,host.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();};
+  const observer=new ResizeObserver(resize);observer.observe(host);resize();
+  const plot=(recordChange=true)=>{try{const fn=compileSurfaceExpression(input.value);const bound=Math.max(1,Math.min(30,Number(rangeInput.value)||6));const resolution=Math.max(20,Math.min(100,Number(data.resolution)||48));const geometry=new THREE.BufferGeometry(),vertices=[],indices=[];for(let j=0;j<=resolution;j++)for(let i=0;i<=resolution;i++){const x=-bound+2*bound*i/resolution,y=-bound+2*bound*j/resolution;let z=fn(x,y);if(!Number.isFinite(z)||Math.abs(z)>1000)z=NaN;vertices.push(x,z,y);}for(let j=0;j<resolution;j++)for(let i=0;i<resolution;i++){const a=j*(resolution+1)+i,b=a+1,c=a+resolution+1,d=c+1;indices.push(a,c,b,b,c,d);}geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setIndex(indices);geometry.computeVertexNormals();const material=new THREE.MeshStandardMaterial({color:0x987353,side:THREE.DoubleSide,roughness:.62,metalness:.05,wireframe:false});const next=new THREE.Mesh(geometry,material);if(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();}mesh=next;scene.add(mesh);data.expression=input.value.trim();data.range=bound;if(recordChange)setStructuredDirty();status.textContent=`z = ${data.expression} · range ±${bound}`;}catch(error){status.textContent=error.message||'Expression could not be plotted.';}};
+  toolbar.querySelector('[data-surface-plot]').addEventListener('click',plot);input.addEventListener('keydown',event=>{if(event.key==='Enter')plot();});
+  let frame;const animate=()=>{frame=requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);};animate();plot(false);
+  state.structured.refreshCalculator3d=()=>{scene.background.set(state.theme==='dark'?0x242520:state.theme==='sepia'?0xfaf6ed:0xffffff);};
+  state.structured.cleanup=()=>{cancelAnimationFrame(frame);observer.disconnect();controls.dispose();if(mesh){mesh.geometry.dispose();mesh.material.dispose();}renderer.dispose();};
 }
 function renderCanvas(root, data) {
   const toolbar = root.querySelector('.structured-toolbar');
@@ -2085,11 +2160,13 @@ async function createCodeFile(parentPath = '') {
 }
 async function createStructuredFile(type, parentPath = '') {
   if (!state.vault) return chooseVault();
-  const label = type === 'canvas' ? 'Canvas' : type === 'graph' ? 'Graph' : 'Spreadsheet';
+  const labels = { canvas: 'Canvas', graph: 'Graph', geometry: 'Geometry', calculator3d: '3D Calculator', spreadsheet: 'Spreadsheet' };
+  const label = labels[type] || 'Spreadsheet';
   const title = `Untitled ${label} ${state.files.filter((file) => prettyName(file).startsWith(`Untitled ${label}`)).length + 1}`;
   try {
     const file = await window.stillnote.createNote(title, parentPath);
-    const data = type === 'canvas' ? canvasDefaults() : type === 'graph' ? graphDefaults() : sheetDefaults();
+    const defaults = { canvas: canvasDefaults, graph: graphDefaults, geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
+    const data = (defaults[type] || sheetDefaults)();
     await window.stillnote.writeNote(file, encodeStructured(type, title, data));
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
     renderFiles(); await openNote(file);
@@ -2140,7 +2217,7 @@ function chooseGoogleTaskList(lists) {
 }
 function showNewFileMenu(anchor, parentPath = '') {
   const menu = $('#new-file-menu'); menu.replaceChildren();
-  const options = [['New note', () => createNote(parentPath)], ['New code file…', () => createCodeFile(parentPath)], ['New canvas', () => createStructuredFile('canvas', parentPath)], ['New spreadsheet', () => createStructuredFile('spreadsheet', parentPath)], ['New graph', () => createStructuredFile('graph', parentPath)], ['New task sheet', () => createTaskSheet(parentPath)]];
+  const options = [['New note', () => createNote(parentPath)], ['New code file…', () => createCodeFile(parentPath)], ['New canvas', () => createStructuredFile('canvas', parentPath)], ['New geometry', () => createStructuredFile('geometry', parentPath)], ['New 3D calculator', () => createStructuredFile('calculator3d', parentPath)], ['New spreadsheet', () => createStructuredFile('spreadsheet', parentPath)], ['New graph', () => createStructuredFile('graph', parentPath)], ['New task sheet', () => createTaskSheet(parentPath)]];
   for (const [label, action] of options) { const button=document.createElement('button');button.className='context-action';button.textContent=label;button.addEventListener('click',()=>{menu.hidden=true;action();});menu.append(button); }
   const rect=anchor.getBoundingClientRect();menu.hidden=false;
   menu.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-205))}px`;menu.style.top=`${Math.min(rect.bottom+4,window.innerHeight-menu.offsetHeight-8)}px`;
@@ -2260,6 +2337,8 @@ function showExplorerContextMenu(event, node) {
     addAction('New note here', () => createNote(node.path));
     addAction('New code file here…', () => createCodeFile(node.path));
     addAction('New canvas here', () => createStructuredFile('canvas', node.path));
+    addAction('New geometry here', () => createStructuredFile('geometry', node.path));
+    addAction('New 3D calculator here', () => createStructuredFile('calculator3d', node.path));
     addAction('New spreadsheet here', () => createStructuredFile('spreadsheet', node.path));
     addAction('New graph here', () => createStructuredFile('graph', node.path));
     addAction('New task sheet here', () => createTaskSheet(node.path));
@@ -2345,7 +2424,7 @@ async function deleteExplorerEntry(node) {
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
     renderFiles();
     if (activeDeleted) {
-      state.view?.destroy(); state.view = null; state.structured?.desmos?.destroy?.(); state.structured = null; state.assetViewer?.destroy?.(); state.assetViewer = null; state.dirty = false; state.active = null;
+      state.view?.destroy(); state.view = null; state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.(); state.structured = null; state.assetViewer?.destroy?.(); state.assetViewer = null; state.dirty = false; state.active = null;
       await window.stillnote.rememberNote(null);
       const remainingFiles = explorerFilePaths();
       if (remainingFiles.length) await openNote(remainingFiles[Math.max(0, Math.min(nearbyIndex, remainingFiles.length - 1))]); else showEmptyVault();
@@ -2370,7 +2449,7 @@ function applyTheme(theme) {
   state.theme = ['light', 'sepia', 'dark'].includes(theme) ? theme : 'light';
   $('.app-shell').dataset.theme = state.theme;
   localStorage.setItem('stillnote-theme', state.theme);
-  state.structured?.refreshCanvas?.();
+  state.structured?.refreshCanvas?.(); state.structured?.refreshCalculator3d?.();
   state.structured?.desmos?.updateSettings?.({ invertedColors: false });
   document.querySelectorAll('.theme-card').forEach((option) => option.setAttribute('aria-pressed', String(option.dataset.theme === state.theme)));
 }
@@ -2585,11 +2664,13 @@ function activeDocumentText(){return state.structured?encodeStructured(state.str
 function updateAssistantModeCopy() {
   const editButton = document.querySelector('.assistant-mode[data-mode="edit"]');
   const taskSheet = state.structured?.type === 'tasks';
+  const structuredLabel = ({ geometry: 'geometry', calculator3d: '3D calculator', canvas: 'canvas', graph: 'graph', spreadsheet: 'spreadsheet' })[state.structured?.type] || '';
   const pdf = state.active?.toLowerCase().endsWith('.pdf');
   if (editButton) { editButton.disabled = Boolean(pdf); editButton.title = pdf ? 'PDF files are read-only' : ''; }
   if (pdf && state.assistantMode === 'edit') { state.assistantMode = 'ask'; document.querySelectorAll('.assistant-mode').forEach((mode) => mode.classList.toggle('active', mode.dataset.mode === 'ask')); }
-  if (editButton) editButton.textContent = taskSheet ? 'Add tasks' : 'Edit note';
-  $('#assistant-input').placeholder = pdf ? 'Ask about this PDF…' : state.assistantMode === 'edit' ? (taskSheet ? 'Describe tasks to add…' : `Describe a change to this ${isEditableAsset(state.active || '') ? 'code file' : 'note'}…`) : (taskSheet ? 'Ask about this task sheet…' : `Ask about this ${isEditableAsset(state.active || '') ? 'code file' : 'note'}…`);
+  if (editButton) editButton.textContent = taskSheet ? 'Add tasks' : structuredLabel ? `Edit ${structuredLabel}` : 'Edit note';
+  const documentLabel = taskSheet ? 'task sheet' : structuredLabel || (isEditableAsset(state.active || '') ? 'code file' : 'note');
+  $('#assistant-input').placeholder = pdf ? 'Ask about this PDF…' : state.assistantMode === 'edit' ? (taskSheet ? 'Describe tasks to add…' : `Describe a change to this ${documentLabel}…`) : `Ask about this ${documentLabel}…`;
 }
 async function addAiTasksToSheet(specs, notePath, originalDocument) {
   const owner = state.structured;
@@ -2643,7 +2724,7 @@ function appendAppliedEdit(container, text, notePath, originalDocument) {
   const structuredType=state.structured?.type||null;
   if(structuredType){
     const parsed=decodeStructured(text);
-    if(!parsed||parsed.type!==structuredType){appendChatBubble('assistant error',`The assistant returned invalid ${structuredType} data, so I did not apply the edit.`);return false;}
+    if(!parsed||parsed.type!==structuredType||!isValidStructuredPayload(structuredType,parsed.data)){appendChatBubble('assistant error',`The assistant returned invalid ${structuredType} data, so I did not apply the edit.`);return false;}
     const current=state.structured;current.data=parsed.data;setStructuredDirty();
     const history={undoStack:current.undoStack,redoStack:current.redoStack,historySnapshot:current.historySnapshot,historyPending:current.historyPending,historyTimer:current.historyTimer};
     renderStructured(structuredType,current.data,notePath,current.title||prettyName(notePath));Object.assign(state.structured,history);updateStructuredHistoryButtons();
@@ -2674,7 +2755,7 @@ async function submitAssistantMessage(event) {
   const prompt = $('#assistant-input').value.trim();
   if (!prompt) return;
   const notePath = state.active, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
-  if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, spreadsheet, or graph before using the assistant.'); return; }
+  if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, geometry, 3D calculator, spreadsheet, graph, or task sheet before using the assistant.'); return; }
   let keyStatus;
   try { keyStatus = await window.stillnote.aiKeyStatus(); }
   catch (error) { showToast(error.message || 'Could not check Ollama key status.'); return; }
