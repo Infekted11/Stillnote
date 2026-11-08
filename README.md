@@ -4,7 +4,7 @@ A local-first Markdown notes app starter built with Electron, Vite, and CodeMirr
 
 ## Download and install
 
-Download the latest installer from [GitHub Releases](https://github.com/Infekted11/Stillnote/releases/latest). Choose the `.dmg` for macOS or the `.exe` for Windows. Linux AppImage and DEB installers are also available. To update, download and install the latest release; your vault files are stored separately from the app.
+Download the latest installer from [GitHub Releases](https://github.com/Infekted11/Stillnote/releases/latest). Choose the `.dmg` for macOS or the `.exe` for Windows. To update, download and install the latest release; your vault files are stored separately from the app.
 
 The installers are not code-signed or notarized, so macOS Gatekeeper or Windows SmartScreen may show a warning on first launch.
 
@@ -38,7 +38,7 @@ Install [GitHub CLI](https://cli.github.com/), then download the latest macOS in
 gh release download --repo Infekted11/Stillnote --pattern '*.dmg'
 ```
 
-Change the pattern to `*.exe`, `*.AppImage`, or `*.deb` for Windows or Linux. The latest release is used by default; add a release tag before `--repo` to download a specific version.
+Change the pattern to `*.exe` to download the Windows installer. The latest release is used by default; add a release tag before `--repo` to download a specific version.
 
 ## Run from source
 
@@ -68,7 +68,7 @@ npm start
 
 ## Shortcuts
 
-| Action | macOS | Windows/Linux |
+| Action | macOS | Windows |
 | --- | --- | --- |
 | Search notes | `⌘K` | `Ctrl+K` |
 | New note | `⌘N` | `Ctrl+N` |
@@ -81,10 +81,9 @@ Install dependencies with `npm install`, then run the packaging command for your
 ```sh
 npm run dist:mac
 npm run dist:win
-npm run dist:linux
 ```
 
-The installers are written to `release/`. macOS creates a DMG and ZIP, Windows creates an NSIS installer, and Linux creates an AppImage and DEB package. `npm run dist` asks electron-builder to package for the host platform. Cross-platform builds are not equally reliable from every host.
+The installers are written to `release/`. macOS creates a universal DMG and ZIP for Intel and Apple Silicon, and Windows creates an x64 NSIS installer. Build each installer on its matching operating system; the release workflow uses native macOS and Windows runners.
 
 ## Set up API keys and accounts
 
