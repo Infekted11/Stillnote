@@ -32,13 +32,15 @@ jobs:
         run: npm run build
 
       - name: Build macOS installer
-        run: npx electron-builder --mac dmg zip --publish never
+        run: npx electron-builder --mac dmg zip --universal --publish never
 
       - name: Upload macOS installer
         uses: actions/upload-artifact@v6
         with:
           name: macos-installer
-          path: release/*
+          path: |
+            release/*.dmg
+            release/*.zip
           if-no-files-found: error
 
   build-windows:
@@ -62,17 +64,17 @@ jobs:
         run: npm run build
 
       - name: Build Windows installer
-        run: npx electron-builder --win nsis --publish never
+        run: npx electron-builder --win nsis --x64 --publish never
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v6
         with:
           name: windows-installer
-          path: release/*
+          path: release/*.exe
           if-no-files-found: error
 
-  build-linux:
-    name: Build Linux Installers
+  build-linux-appimage:
+    name: Build Linux AppImage
     runs-on: ubuntu-22.04
 
     steps:
@@ -91,14 +93,44 @@ jobs:
       - name: Build Vite app
         run: npm run build
 
-      - name: Build Linux installers
-        run: npx electron-builder --linux AppImage deb --publish never
+      - name: Build Linux AppImage
+        run: npx electron-builder --linux AppImage --x64 --publish never
 
-      - name: Upload Linux installers
+      - name: Upload Linux AppImage
         uses: actions/upload-artifact@v6
         with:
-          name: linux-installers
-          path: release/*
+          name: linux-appimage
+          path: release/*.AppImage
+          if-no-files-found: error
+
+  build-linux-deb:
+    name: Build Linux DEB
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Vite app
+        run: npm run build
+
+      - name: Build Linux DEB
+        run: npx electron-builder --linux deb --x64 --publish never
+
+      - name: Upload Linux DEB
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-deb
+          path: release/*.deb
           if-no-files-found: error
 
   publish-npm:
@@ -107,7 +139,8 @@ jobs:
     needs:
       - build-macos
       - build-windows
-      - build-linux
+      - build-linux-appimage
+      - build-linux-deb
 
     steps:
       - name: Checkout repository
@@ -137,7 +170,8 @@ jobs:
     needs:
       - build-macos
       - build-windows
-      - build-linux
+      - build-linux-appimage
+      - build-linux-deb
       - publish-npm
 
     steps:
