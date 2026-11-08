@@ -15,6 +15,11 @@ const meetingTempFiles = new Map();
 let googleTasksAccessToken = null;
 let googleTasksAccessTokenExpires = 0;
 
+function assetPath(...segments) {
+  const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
+  return path.join(root, ...segments);
+}
+
 async function persistSession() {
   try {
     const sessionFile = path.join(app.getPath('userData'), 'workspace.json');
@@ -715,7 +720,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 620,
     titleBarStyle: 'hiddenInset', backgroundColor: '#f7f7f5',
-    ...(process.platform === 'win32' ? { icon: path.join(__dirname, '../assets/icon.ico') } : {}),
+    ...(process.platform === 'win32' ? { icon: assetPath('assets', 'icon.ico') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false,
@@ -781,7 +786,7 @@ app.whenReady().then(() => {
     ]));
   }
   if (process.platform === 'darwin' && app.dock) {
-    const dockIcon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
+    const dockIcon = nativeImage.createFromPath(assetPath('assets', 'icon.png'));
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
   }
   createWindow();

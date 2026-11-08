@@ -15,6 +15,16 @@
       "!**/.stillnote-credentials.enc",
       "!**/.stillnote-dictionary.enc"
     ],
+    "extraResources": [
+      {
+        "from": "assets/icon.ico",
+        "to": "assets/icon.ico"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "assets/icon.png"
+      }
+    ],
     "mac": {
       "icon": "main-logo.icns",
       "target": [
@@ -28,6 +38,10 @@
         "nsis"
       ]
     },
+    "deb": {
+      "artifactName": "stillnote_${version}_${arch}.${ext}",
+      "packageName": "stillnote"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
@@ -35,6 +49,8 @@
     "linux": {
       "icon": "assets/icon.png",
       "category": "Office",
+      "executableName": "stillnote",
+      "syncDesktopName": true,
       "target": [
         "AppImage",
         "deb"
@@ -55,6 +71,7 @@
   "description": "A local-first Markdown workspace.",
   "author": "Infekted11",
   "productName": "Stillnote",
+  "desktopName": "com.stillnote.app.desktop",
   "main": "electron/main.cjs",
   "bin": {
     "stillnote": "bin/stillnote.cjs"
@@ -63,6 +80,7 @@
     "bin/",
     "dist/",
     "electron/",
+    "assets/icon.ico",
     "assets/icon.png",
     "main-logo.icns",
     "README.md"
@@ -72,9 +90,11 @@
     "build": "vite build",
     "start": "npm run build && node scripts/start-electron.cjs production",
     "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac dmg",
-    "dist:win": "electron-builder --win nsis",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb"
+    "dist:mac": "electron-builder --mac dmg zip --universal",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:linux:appimage": "npm run build && electron-builder --linux AppImage --x64",
+    "dist:linux:deb": "npm run build && electron-builder --linux deb --x64",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --x64 && electron-builder --linux deb --x64"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.8.1",
