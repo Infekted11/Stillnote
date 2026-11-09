@@ -306,6 +306,7 @@ async function updateMovedFileLinks(oldPath, newPath) {
     for (const [target, original] of written.reverse()) await fs.writeFile(target, original, 'utf8');
     throw error;
   }
+  mainWindow?.webContents.send('vault:links-updated', moves);
 }
 
 async function walkMarkdown(dir, base = '') {
@@ -671,6 +672,12 @@ function registerIpc() {
           await fs.rename(target, backup);
           try { await fs.rename(temporary, destination); }
           catch (error) { await fs.rename(backup, target).catch(() => {}); throw error; }
+          try { await updateMovedFileLinks(relativePath, path.relative(vaultPath, destination).split(path.sep).join('/')); }
+          catch (error) {
+            await fs.rm(destination, { force: true });
+            await fs.rename(backup, target);
+            throw error;
+          }
           await fs.rm(backup, { force: true }).catch(() => {});
         } finally { await fs.rm(temporary, { force: true }).catch(() => {}); }
       } else {
@@ -680,6 +687,8 @@ function registerIpc() {
           try { await fs.rename(temporary, destination); }
           catch (error) { await fs.rename(temporary, target).catch(() => {}); throw error; }
         } else await fs.rename(target, destination);
+        try { await updateMovedFileLinks(relativePath, path.relative(vaultPath, destination).split(path.sep).join('/')); }
+        catch (error) { await fs.rename(destination, target); throw error; }
       }
     }
     return path.relative(vaultPath, destination).split(path.sep).join('/');

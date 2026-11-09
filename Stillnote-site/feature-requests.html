@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Help shape Stillnote. Share an idea for your workspace.">
+  <meta name="theme-color" content="#f6f4ee">
+  <title>Feature requests — Stillnote</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Stillnote home">
+      <img src="logo.svg" alt="" width="34" height="34">
+      <span>Stillnote</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#integrations">Integrations</a>
+      <a href="index.html#privacy">Local first</a>
+      <a href="feature-requests.html" aria-current="page">Feature requests</a>
+      <a href="log.html">Log</a>
+    </nav>
+    <a class="button button-small" href="https://github.com/Infekted11/Stillnote/releases/latest">Download <span aria-hidden="true">↗</span></a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button>
+  </header>
+
+  <main class="inner-page section-shell">
+    <div class="page-heading"><p class="eyebrow">ROOM FOR YOUR IDEAS</p><h1>What would make<br>Stillnote <em>more yours?</em></h1><p>Tell us what you’re missing, what gets in your way, or what you’d love to try.</p></div>
+    <div class="request-layout">
+      <aside class="page-note"><h2>Good things start<br>with a small idea.</h2><p>You don’t need a perfect spec. A little context about what you’re trying to do goes a long way.</p><p>This form prepares an email in your mail app. You can review and edit it before sending.</p></aside>
+      <form id="request-form" class="request-form">
+        <label for="request-title">Your idea <span aria-hidden="true">*</span></label>
+        <input id="request-title" name="title" required maxlength="150" placeholder="A short title for your feature">
+        <label for="request-details">What would you like to do? <span aria-hidden="true">*</span></label>
+        <textarea id="request-details" name="details" required maxlength="2000" rows="6" placeholder="Describe the feature and how it would help you."></textarea>
+        <label for="request-context">How do you work around it today? <span class="optional">Optional</span></label>
+        <textarea id="request-context" name="context" maxlength="1000" rows="3" placeholder="Any extra context or examples?"></textarea>
+        <label for="request-platform">Your platform <span class="optional">Optional</span></label>
+        <select id="request-platform" name="platform"><option value="">Choose a platform</option><option>macOS</option><option>Windows</option><option>Other</option></select>
+        <div class="form-actions"><button class="button" type="submit">Draft email <span aria-hidden="true">↗</span></button><button class="text-link copy-draft" type="button" id="copy-draft">Copy draft</button></div>
+        <p id="request-status" class="form-status" role="status"></p>
+        <label for="draft-preview">Email preview</label><textarea id="draft-preview" rows="8" readonly placeholder="Your email draft will appear here as you type."></textarea>
+      </form>
+    </div>
+  </main>
+  <footer class="section-shell"><a class="brand" href="index.html"><img src="logo.svg" alt="" width="30" height="30"><span>Stillnote</span></a><p>A little room to grow.</p><div><a href="feature-requests.html">Feature requests</a><a href="log.html">Log</a><a href="https://github.com/Infekted11/Stillnote">GitHub ↗</a></div></footer>
+  <script src="script.js"></script>
+  <script src="feature-requests.js"></script>
+</body>
+</html>

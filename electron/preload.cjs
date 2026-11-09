@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('stillnote', {
   getBacklinks: (path) => ipcRenderer.invoke('vault:backlinks', path),
   copyFileLink: (path) => ipcRenderer.invoke('vault:copy-link', path),
   resetUnreadableCredentials: () => ipcRenderer.invoke('credentials:reset-unreadable'),
+  onFileLinksUpdated: (listener) => {
+    const handler = (_event, moves) => listener(moves);
+    ipcRenderer.on('vault:links-updated', handler);
+    return () => ipcRenderer.removeListener('vault:links-updated', handler);
+  },
   onStorageRecovered: (listener) => {
     const handler = (_event, kind) => listener(kind);
     ipcRenderer.on('storage:recovered', handler);

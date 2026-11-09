@@ -2622,6 +2622,30 @@ function showExplorerContextMenu(event, node) {
   menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8))}px`;
   menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))}px`;
 }
+// Keep unsaved editor content in sync so a later save cannot restore old links.
+window.stillnote.onFileLinksUpdated?.((moves) => {
+  const rewrite = (text) => text.replace(/<\[([^\]\r\n]+)\]>|\[\[([^\]\r\n]+)\]\]/g, (source, modern, legacy) => {
+    const value = modern ?? legacy, raw = value.split('|')[0].split('#')[0];
+    const target = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+    const move = moves.find(([oldPath]) => target === oldPath.toLowerCase() || (!/\.[^/]+$/.test(target) && `${target}.md` === oldPath.toLowerCase()));
+    if (!move) return source;
+    const valueUpdated = move[1] + value.slice(raw.length);
+    return modern !== undefined ? `<[${valueUpdated}]>` : `[[${valueUpdated}]]`;
+  });
+  if (state.view) {
+    const text = state.view.state.doc.toString(), updated = rewrite(text);
+    if (text !== updated) state.view.dispatch({ changes: { from: 0, to: text.length, insert: updated } });
+  }
+  const updateData = (data) => {
+    if (!data || typeof data !== 'object') return;
+    for (const key of Object.keys(data)) {
+      if (typeof data[key] === 'string') data[key] = rewrite(data[key]);
+      else updateData(data[key]);
+    }
+  };
+  updateData(state.structured?.data);
+  scheduleBacklinks();
+});
 let backlinkTimer;
 let backlinkRequest = 0;
 let backlinkResults = [];
