@@ -5,7 +5,9 @@
     "protocols": [
       {
         "name": "Stillnote links",
-        "schemes": ["stillnote"]
+        "schemes": [
+          "stillnote"
+        ]
       }
     ],
     "directories": {
@@ -50,7 +52,7 @@
     }
   },
   "name": "@infekted11/stillnote",
-  "version": "1.3.8",
+  "version": "1.4.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Infekted11/Stillnote"
