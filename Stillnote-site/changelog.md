@@ -4,6 +4,12 @@
 
 ### Added:
 
+- Matched website icons to the app’s custom outline SVGs across the demo, feature cards, integrations, and workspace tools.
+
+- Changed the header title and navigation text to invert the colors behind them.
+
+- Made the site menu bar nearly transparent while retaining its background blur.
+
 - Fixed live local transcription: speech is appended to the current note in short chunks using Whisper Medium in 15-second recording intervals, with remaining audio transcribed after stopping. Removed the automatic cloud summary and separate transcript file.
 
 - Images now align to the top with text wrapping along their right side across multiple lines, then returning to full width below the image.
