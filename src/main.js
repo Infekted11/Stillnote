@@ -1,3 +1,4 @@
+import { attachMediaResize } from './media-resize.js';
 import { reorderSpreadsheet } from './spreadsheet.js';
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
@@ -448,8 +449,10 @@ class WikiMediaWidget extends WidgetType {
         const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.alt = this.file; image.loading = 'lazy';
         image.addEventListener('load', () => { if (preview.isConnected) view.requestMeasure(); });
         image.src = asset.data; preview.append(image);
+        attachMediaResize(preview, view, `${state.vault?.path}/${state.active}:${this.file}:${this.from}`, image);
       } else if (['.obj', '.stl', '.step', '.stp'].includes(extension)) {
         const viewport = document.createElement('span'); viewport.className = 'cm-wiki-3d-preview'; preview.append(viewport);
+        attachMediaResize(preview, view, `${state.vault?.path}/${state.active}:${this.file}:${this.from}`);
         void mountInlineModelPreview(viewport, this.file, asset, preview);
       }
     }).catch(() => {
@@ -1091,6 +1094,7 @@ function renderHomeHistory() {
   }
 }
 async function openHome() {
+  if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
   try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
@@ -1292,6 +1296,8 @@ async function renderAssetPreview(file, navigationId) {
   }
 }
 async function openNote(file) {
+  if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
+  if (meetingStarting) cancelMeetingRecording();
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
   state.home = false; $('#assistant-toggle').disabled = false; $('#assistant-toggle').removeAttribute('aria-disabled'); $('#home-button').setAttribute('aria-pressed', 'false');
   const navigationId=state.navigationId=(state.navigationId||0)+1;
@@ -3299,13 +3305,11 @@ async function submitAssistantMessage(event) {
   } finally { $('#assistant-send').disabled = false; }
 }
 let meetingRecording = false;
+let meetingStarting = false;
 let meetingRecordingStartedAt = 0;
 let meetingDurationTimer = null;
-let meetingTranscript = '';
-let meetingTempId = null;
-let meetingSavedTranscriptPath = null;
-let meetingTempWritePromise = Promise.resolve();
-let meetingStopPromise = Promise.resolve();
+let meetingStopPromise = null;
+let meetingTargetView = null;
 let meetingWhisperWorker = null;
 let meetingWhisperRequest = 0;
 const meetingWhisperPending = new Map();
@@ -3321,35 +3325,26 @@ function meetingButtonStatus(message, recording = meetingRecording) {
   const button = $('#meeting-notes-trigger');
   button.title = message; button.setAttribute('aria-label', message);
   button.classList.toggle('is-recording', recording);
-  button.classList.toggle('has-transcript', Boolean(meetingTempId && meetingTranscript.trim()) && !recording);
+  button.classList.remove('has-transcript');
   button.setAttribute('aria-pressed', String(recording));
 }
 function updateMeetingDuration() {
   const elapsed = Math.max(0, Math.floor((Date.now() - meetingRecordingStartedAt) / 1000));
-  const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const seconds = String(elapsed % 60).padStart(2, '0');
-  $('#meeting-notes-trigger .meeting-duration').textContent = `${minutes}:${seconds}`;
+  $('#meeting-notes-trigger .meeting-duration').textContent = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
 }
 function stopMeetingDuration() {
-  clearInterval(meetingDurationTimer); meetingDurationTimer = null; meetingRecordingStartedAt = 0;
+  clearInterval(meetingDurationTimer); meetingDurationTimer = null;
   $('#meeting-notes-trigger .meeting-duration').hidden = true;
 }
-function persistMeetingTranscript() {
-  if (!meetingTempId) return;
-  const id = meetingTempId, snapshot = meetingTranscript;
-  // Keep the queue usable after a transient write failure. A rejected write
-  // must not prevent the final transcript snapshot from being flushed on stop.
-  meetingTempWritePromise = meetingTempWritePromise.catch(() => {}).then(() => window.stillnote.writeMeetingTranscript(id, snapshot));
-}
-async function clearMeetingTranscript() {
-  const id = meetingTempId; meetingTempId = null;
-  if (id) { await meetingTranscriptionQueue.catch(() => {}); await meetingTempWritePromise.catch(() => {}); await window.stillnote.clearMeetingTranscript(id).catch(() => {}); }
-  meetingTranscript = ''; meetingButtonStatus('Click to start recording', false);
-}
 function cancelMeetingRecording() {
-  stopMeetingDuration();
-  if (meetingRecording) { meetingRecording = false; meetingCaptureGeneration++; void releaseMeetingAudioCapture(false); }
-  if (meetingTempId) void clearMeetingTranscript();
+  if (meetingRecording || meetingStopPromise) void stopMeetingRecording();
+  if (meetingStarting) meetingCaptureGeneration++;
+}
+function appendMeetingText(text) {
+  if (!text.trim() || !meetingTargetView || state.view !== meetingTargetView) return;
+  const view = meetingTargetView, end = view.state.doc.length;
+  const suffix = view.state.doc.toString().endsWith('\n') ? '' : '\n';
+  view.dispatch({ changes: { from: end, insert: `${suffix}${text.trim()}\n` } });
 }
 function ensureMeetingWhisperWorker() {
   if (meetingWhisperWorker) return meetingWhisperWorker;
@@ -3357,7 +3352,7 @@ function ensureMeetingWhisperWorker() {
   meetingWhisperWorker.addEventListener('message', ({ data }) => {
     const pending = meetingWhisperPending.get(data.id);
     if (data.type === 'progress') {
-      if (meetingRecording) {
+      if (meetingRecording || meetingStarting) {
         const percent = Number.isFinite(data.progress?.progress) ? ` ${Math.round(data.progress.progress)}%` : '';
         meetingButtonStatus(`Downloading local Whisper model${percent}…`);
       }
@@ -3365,7 +3360,7 @@ function ensureMeetingWhisperWorker() {
     }
     if (!pending) return;
     meetingWhisperPending.delete(data.id);
-    if (data.type === 'result') pending.resolve(data.text);
+    if (data.type === 'result' || data.type === 'ready') pending.resolve(data.text);
     else pending.reject(new Error(data.message || 'Local Whisper could not transcribe this audio.'));
   });
   meetingWhisperWorker.addEventListener('error', (event) => {
@@ -3375,12 +3370,13 @@ function ensureMeetingWhisperWorker() {
   });
   return meetingWhisperWorker;
 }
-function transcribeMeetingAudio(samples) {
+function transcribeMeetingAudio(samples = null) {
   const worker = ensureMeetingWhisperWorker(), id = ++meetingWhisperRequest;
-  const audio = samples.slice();
+  const audio = samples?.slice();
   return new Promise((resolve, reject) => {
     meetingWhisperPending.set(id, { resolve, reject });
-    worker.postMessage({ type: 'transcribe', id, audio: audio.buffer }, [audio.buffer]);
+    if (audio) worker.postMessage({ type: 'transcribe', id, audio: audio.buffer }, [audio.buffer]);
+    else worker.postMessage({ type: 'load', id });
   });
 }
 function resampleMeetingAudio(samples, sourceRate) {
@@ -3396,17 +3392,18 @@ function queueMeetingAudio(samples, generation) {
   const audio = resampleMeetingAudio(samples, meetingAudioContext?.sampleRate || 48000);
   let energy = 0;
   for (let index = 0; index < audio.length; index += 16) energy += audio[index] * audio[index];
-  if (!audio.length || Math.sqrt(energy / Math.ceil(audio.length / 16)) < 0.004) return;
+  if (!audio.length || Math.sqrt(energy / Math.ceil(audio.length / 16)) < 0.001) return;
   meetingTranscriptionQueue = meetingTranscriptionQueue.then(async () => {
-    if (generation !== meetingCaptureGeneration || !meetingTempId) return;
-    if (meetingRecording) meetingButtonStatus('Transcribing locally with Whisper Small…');
+    if (generation !== meetingCaptureGeneration || !meetingTargetView) return;
+    if (meetingRecording) meetingButtonStatus('Transcribing locally…');
     const text = await transcribeMeetingAudio(audio);
-    if (generation !== meetingCaptureGeneration || !meetingTempId || !text) return;
-    meetingTranscript = `${meetingTranscript} ${text}`.trim(); persistMeetingTranscript();
-    if (meetingRecording) meetingButtonStatus('Recording locally with Whisper Small…');
+    if (generation !== meetingCaptureGeneration || !meetingTargetView || !text) return;
+    appendMeetingText(text);
+    if (meetingRecording) meetingButtonStatus('Transcribing live locally · Click to stop');
   }).catch((error) => {
     if (generation !== meetingCaptureGeneration) return;
     meetingRecording = false;
+    meetingCaptureGeneration++;
     stopMeetingDuration();
     void releaseMeetingAudioCapture(false);
     const message = `Local Whisper stopped: ${error.message}`;
@@ -3416,7 +3413,7 @@ function queueMeetingAudio(samples, generation) {
 function drainMeetingAudio(force = false) {
   if (!meetingAudioChunks.length || !meetingAudioContext) return;
   const sampleRate = meetingAudioContext.sampleRate;
-  if (!force && meetingAudioSampleCount < sampleRate * 30) return;
+  if (!force && meetingAudioSampleCount < sampleRate * 15) return;
   const merged = new Float32Array(meetingAudioSampleCount);
   let offset = 0;
   for (const chunk of meetingAudioChunks) { merged.set(chunk, offset); offset += chunk.length; }
@@ -3448,80 +3445,53 @@ async function startMeetingAudioCapture() {
   meetingAudioSource.connect(meetingAudioProcessor); meetingAudioProcessor.connect(meetingAudioContext.destination);
 }
 async function startMeetingRecording() {
+  if (meetingStarting || meetingRecording || meetingStopPromise) return;
+  if (!state.view || !state.active?.toLowerCase().endsWith('.md') || state.home || state.structured) {
+    showToast('Open a Markdown note to transcribe into.'); return;
+  }
+  meetingStarting = true;
+  const target = state.view, generation = ++meetingCaptureGeneration;
+  const button = $('#meeting-notes-trigger'); button.disabled = true;
   try {
-    meetingCaptureGeneration++; meetingAudioChunks = []; meetingAudioSampleCount = 0; meetingTranscript = ''; meetingSavedTranscriptPath = null;
-    meetingTempId = await window.stillnote.createMeetingTranscript();
-    meetingTempWritePromise = Promise.resolve();
+    meetingButtonStatus('Loading local Whisper Medium model (downloads on first use)…', false);
+    await transcribeMeetingAudio();
+    if (generation !== meetingCaptureGeneration || state.view !== target || state.home) return;
+    meetingTargetView = target;
+    meetingAudioChunks = []; meetingAudioSampleCount = 0;
     meetingTranscriptionQueue = Promise.resolve();
-    meetingRecording = true;
     await startMeetingAudioCapture();
+    if (generation !== meetingCaptureGeneration || state.view !== target || state.home) { await releaseMeetingAudioCapture(false); return; }
+    meetingRecording = true;
     meetingRecordingStartedAt = Date.now(); updateMeetingDuration();
     $('#meeting-notes-trigger .meeting-duration').hidden = false;
     meetingDurationTimer = setInterval(updateMeetingDuration, 250);
-    meetingButtonStatus('Recording locally; click when finished to create a summary and save the transcript. Whisper Small downloads on first use.');
+    meetingButtonStatus('Transcribing live locally · Click to stop');
+    showToast('Live transcription started at the bottom of this note');
   } catch (error) {
     meetingRecording = false; stopMeetingDuration(); await releaseMeetingAudioCapture(false);
-    const id = meetingTempId; meetingTempId = null;
-    if (id) void window.stillnote.clearMeetingTranscript(id).catch(() => {});
-    meetingButtonStatus(error.message || 'Could not start recording', false);
-    showToast(error.message || 'Could not start recording.');
-  }
+    meetingButtonStatus(error.message || 'Could not start transcription', false);
+    showToast(error.message || 'Could not start transcription.');
+  } finally { meetingStarting = false; button.disabled = false; }
 }
 function stopMeetingRecording() {
-  if (!meetingRecording) return (async () => {
-    await meetingTranscriptionQueue;
-    await meetingTempWritePromise;
-    if (meetingTempId) meetingTranscript = await window.stillnote.readMeetingTranscript(meetingTempId);
-    return { transcript: meetingTranscript, id: meetingTempId };
-  })();
-  meetingRecording = false;
-  stopMeetingDuration();
-  meetingButtonStatus('Finishing transcription and creating summary…', false);
+  if (meetingStopPromise) return meetingStopPromise;
+  if (!meetingRecording) return Promise.resolve();
+  meetingRecording = false; stopMeetingDuration();
+  const button = $('#meeting-notes-trigger'); button.disabled = true;
+  meetingButtonStatus('Finishing local transcription…', false);
   meetingStopPromise = (async () => {
     try {
       await releaseMeetingAudioCapture(true);
       await meetingTranscriptionQueue;
-      await meetingTempWritePromise;
-      if (meetingTempId) meetingTranscript = await window.stillnote.readMeetingTranscript(meetingTempId);
-    } catch (error) { showToast(error.message || 'Could not finish the local transcript.'); }
-    void summarizeMeetingTranscript();
-    return { transcript: meetingTranscript, id: meetingTempId };
+      if (state.view === meetingTargetView) await saveActive();
+      meetingButtonStatus('Start live local transcription', false);
+    } catch (error) { showToast(error.message || 'Could not finish transcription.'); }
+    finally { meetingTargetView = null; meetingStopPromise = null; button.disabled = false; }
   })();
   return meetingStopPromise;
 }
-async function summarizeMeetingTranscript() {
-  const transcript = meetingTranscript.trim();
-  if (!transcript) { meetingButtonStatus('No speech was captured; click to record again', false); void clearMeetingTranscript(); return; }
-  if (!state.view || !state.active || state.home) { meetingButtonStatus('Open a note to insert meeting notes', false); return; }
-  const notePath = state.active;
-  const original = state.view.state.doc.toString();
-  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
-  try {
-    const folder = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
-    const noteTitle = prettyName(notePath).replace(/\.md$/i, '');
-    const timestamp = new Date().toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/[/:]/g, '-');
-    const transcriptTitle = `${noteTitle} transcript ${timestamp}`;
-    const transcriptPath = await window.stillnote.createNote(transcriptTitle, folder);
-    await window.stillnote.writeNote(transcriptPath, `${prettyName(transcriptPath)}\n\n${transcript}\n`);
-    meetingSavedTranscriptPath = transcriptPath;
-    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
-    renderFiles();
-    const keyStatus = await window.stillnote.aiKeyStatus().catch(() => ({ configured: false }));
-    if (!keyStatus.configured) { meetingButtonStatus('Transcript saved; add your Ollama key in Settings → AI settings to create the summary', false); openSettings('ai'); return; }
-    if (transcript.length > 100000) { meetingButtonStatus('Transcript saved; it is too long to summarize automatically', false); showToast('Transcript saved, but it is too long to summarize automatically.'); return; }
-    const result = await window.stillnote.askAi({
-      mode: 'edit', model, noteName: prettyName(notePath), documentType: 'markdown', document: original,
-      prompt: `Summarize this meeting/class/seminar transcript into clear notes. Preserve all existing content and the title line exactly, and append the summary at the very bottom of the note. Include key points, decisions, and action items when present. Do not invent details. Do not use Markdown tables. The full transcript is saved in the linked note <[${transcriptPath.replace(/\.md$/i, '')}]>.\n\nTranscript:\n${transcript}`,
-    });
-    if (result.kind !== 'edit' || state.active !== notePath || !state.view || state.view.state.doc.toString() !== original) throw new Error('The note changed while the recording was being processed.');
-    const linkedSummary = `${result.text.replace(/\s*$/, '')}\n\nFull transcript: <[${transcriptPath.replace(/\.md$/i, '')}]>\n`;
-    state.view.dispatch({ changes: { from: 0, to: state.view.state.doc.length, insert: linkedSummary } });
-    state.view.focus(); showToast('Meeting summary added and transcript saved'); await clearMeetingTranscript();
-  } catch (error) { meetingButtonStatus(`Transcript${meetingSavedTranscriptPath ? ' saved' : ''}; ${error.message || 'could not create notes'}`, false); showToast(error.message || 'Could not create meeting notes.'); }
-}
 $('#meeting-notes-trigger').addEventListener('click', () => {
-  if (meetingRecording) meetingStopPromise = stopMeetingRecording();
-  else if (meetingTempId) void clearMeetingTranscript();
+  if (meetingRecording) void stopMeetingRecording();
   else void startMeetingRecording();
 });
 function renderSearch(query) {
