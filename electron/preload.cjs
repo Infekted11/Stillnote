@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const queuedDeepLinks = [];
+const deepLinkListeners = new Set();
+ipcRenderer.on('stillnote:deep-link', (_event, link) => {
+  if (!deepLinkListeners.size) queuedDeepLinks.push(link);
+  else for (const listener of deepLinkListeners) listener(link);
+});
 
 contextBridge.exposeInMainWorld('stillnote', {
   platform: process.platform,
@@ -25,7 +31,19 @@ contextBridge.exposeInMainWorld('stillnote', {
   renameEntry: (path, name) => ipcRenderer.invoke('vault:rename', path, name),
   deleteEntry: (path) => ipcRenderer.invoke('vault:delete', path),
   moveEntry: (path, destinationFolderPath) => ipcRenderer.invoke('vault:move', path, destinationFolderPath),
+  getBacklinks: (path) => ipcRenderer.invoke('vault:backlinks', path),
   copyFileLink: (path) => ipcRenderer.invoke('vault:copy-link', path),
+  resetUnreadableCredentials: () => ipcRenderer.invoke('credentials:reset-unreadable'),
+  onStorageRecovered: (listener) => {
+    const handler = (_event, kind) => listener(kind);
+    ipcRenderer.on('storage:recovered', handler);
+    return () => ipcRenderer.removeListener('storage:recovered', handler);
+  },
+  onDeepLink: (listener) => {
+    deepLinkListeners.add(listener);
+    while (queuedDeepLinks.length) listener(queuedDeepLinks.shift());
+    return () => deepLinkListeners.delete(listener);
+  },
   restoreSession: () => ipcRenderer.invoke('session:restore'),
   rememberNote: (path) => ipcRenderer.invoke('session:remember-note', path),
   aiKeyStatus: () => ipcRenderer.invoke('ai:key-status'),

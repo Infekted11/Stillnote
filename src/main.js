@@ -15,10 +15,8 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { compileSurfaceExpression } from './surface-math.js';
 import './style.css';
 import './window-controls.css';
-import './interactive-math.css';
 
 const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
 
@@ -231,7 +229,7 @@ app.innerHTML = `
       <div class="traffic-space"></div>
       <button class="icon-button sidebar-toggle" aria-label="Toggle sidebar">${icons.panel}</button>
       <div class="topbar-location"><span class="location-vault">No vault</span><span class="location-divider">/</span><span class="location-note">Welcome</span></div>
-      <div class="topbar-actions"><button class="icon-button home-trigger" id="home-button" title="Home" aria-label="Home">${icons.home}</button><div class="topbar-search" id="topbar-search"><button class="icon-button search-trigger" title="Search notes (⌘K)" aria-label="Search notes" aria-expanded="false">${icons.search}</button><input class="topbar-search-input" id="search-input" placeholder="Search notes…" autocomplete="off" aria-label="Search notes"><div class="topbar-search-results" id="search-results"></div></div><button class="icon-button assistant-trigger" id="assistant-toggle" title="Open assistant">${icons.assistant}</button></div>
+      <div class="topbar-actions"><button class="icon-button home-trigger" id="home-button" title="Home" aria-label="Home">${icons.home}</button><div class="topbar-search" id="topbar-search"><button class="icon-button search-trigger" title="Search notes (⌘⇧F / Ctrl+Shift+F)" aria-label="Search notes" aria-expanded="false">${icons.search}</button><input class="topbar-search-input" id="search-input" placeholder="Search notes…" autocomplete="off" aria-label="Search notes"><div class="topbar-search-results" id="search-results"></div></div><button class="icon-button assistant-trigger" id="assistant-toggle" title="Open assistant">${icons.assistant}</button></div>
     </header>
     <div class="workspace">
       <aside class="sidebar">
@@ -271,7 +269,7 @@ app.innerHTML = `
             <button type="button" class="meeting-notes-trigger" id="meeting-notes-trigger" title="Click to start recording" aria-label="Start meeting recording" aria-pressed="false">${icons.mic}<span class="meeting-duration" hidden>00:00</span></button>
           </div>
         </div>
-        <footer class="statusbar"><div class="status-left"><span class="status-dot"></span><span id="status-vault">No vault open</span></div><div class="status-right"><span>Markdown</span><span class="status-divider"></span><span>UTF-8</span><span class="status-divider"></span><span>⌘ K Search</span></div></footer>
+        <footer class="statusbar"><div class="status-left"><span class="status-dot"></span><span id="status-vault">No vault open</span></div><div class="status-right"><button id="backlink-count" type="button" disabled>0 backlinks</button><span>Markdown</span><span class="status-divider"></span><span>UTF-8</span><span class="status-divider"></span><span>⌘ K Search</span></div></footer>
       </main>
       <div class="panel-resizer assistant-resizer" id="assistant-resizer" role="separator" aria-orientation="vertical" aria-label="Resize assistant panel" aria-valuemin="280" aria-valuemax="560" tabindex="0"></div>
       <aside class="assistant-drawer" id="assistant-drawer" aria-label="AI assistant">
@@ -285,21 +283,21 @@ app.innerHTML = `
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="settings-modal-header"><div><div class="eyebrow">PREFERENCES</div><h2 id="settings-title">Settings</h2></div><button class="icon-button" id="settings-close" aria-label="Close settings">${icons.close}</button></header>
         <div class="settings-modal-body">
-          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>How to</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
+          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
             <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
-            <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p></section>
+            <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p><button class="secondary-button" id="reset-unreadable-credentials" type="button">Reset unreadable credentials</button><p class="settings-note">Use this only when Stillnote cannot decrypt credentials. It archives the unreadable credentials file so you can enter new Ollama, Desmos, and Google Tasks credentials.</p></section>
             <section class="settings-section" data-section="tasks" hidden><div class="settings-section-heading"><span class="eyebrow">GOOGLE TASKS</span><h3>Sync task sheets</h3><p>Task sheets read from and write to Google Tasks lists. Your OAuth credentials and account token are encrypted in this vault.</p></div><label class="field-label" for="google-tasks-client-id">OAuth Desktop app client ID</label><input class="settings-input" id="google-tasks-client-id" type="text" autocomplete="off" placeholder="123456789.apps.googleusercontent.com"><label class="field-label" for="google-tasks-client-secret">OAuth client secret</label><input class="settings-input" id="google-tasks-client-secret" type="password" autocomplete="new-password" placeholder="Paste the secret from the same Desktop app client"><div class="key-actions"><button class="primary-button" id="save-google-tasks-client">Save credentials</button><button class="secondary-button" id="connect-google-tasks">Connect Google account</button><button class="secondary-button" id="disconnect-google-tasks">Disconnect</button><span class="key-status" id="google-tasks-status">Checking connection…</span></div><p class="settings-note">Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”. Copy the Client ID and Client Secret, you will need these and won't be able to view them again. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.</p></section>
 
-            <section class="settings-section" data-section="desmos" hidden><div class="settings-section-heading"><span class="eyebrow">DESMOS GRAPHING CALCULATOR</span><h3>Connect Desmos</h3><p>Graphs use the Desmos Graphing Calculator API and save their state inside the Markdown file.</p></div><label class="field-label" for="desmos-api-key">Desmos API key</label><input class="settings-input" id="desmos-api-key" type="password" autocomplete="off" placeholder="Enter your Desmos API key"><div class="key-actions"><button class="primary-button" id="save-desmos-key">Save key</button><button class="secondary-button" id="remove-desmos-key">Remove key</button></div><p class="settings-note">Get an API key at desmos.com/my-api. The calculator loads from Desmos and requires an internet connection.</p></section>
+            <section class="settings-section" data-section="desmos" hidden><div class="settings-section-heading"><span class="eyebrow">DESMOS TOOLS</span><h3>Connect Desmos</h3><p>Graph, Geometry, and 3D Calculator files save their Desmos state inside the Markdown file.</p></div><label class="field-label" for="desmos-api-key">Desmos API key</label><input class="settings-input" id="desmos-api-key" type="password" autocomplete="off" placeholder="Enter your Desmos API key"><div class="key-actions"><button class="primary-button" id="save-desmos-key">Save key</button><button class="secondary-button" id="remove-desmos-key">Remove key</button></div><p class="settings-note">Get an API key at desmos.com/my-api. Geometry Tool and 3D Calculator access must be enabled for your key. Desmos loads from the internet.</p></section>
 
             <section class="settings-section" data-section="dictionary" hidden><div class="settings-section-heading"><span class="eyebrow">SPELL CHECK</span><h3>Personal dictionary</h3><p>Words here are treated as correctly spelled in your notes. This dictionary is encrypted in a separate file in the selected vault.</p></div><form class="dictionary-add-form" id="custom-dictionary-form"><input class="settings-input" id="custom-dictionary-input" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Add a word"><button class="secondary-button" type="submit">Add word</button></form><div class="custom-dictionary-list" id="custom-dictionary-list" aria-live="polite"></div></section>
 
             <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
-            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">MATH IN NOTES</span><h3>How to write equations</h3><p>Wrap math in dollar signs. The equation renders when you move the cursor off its line.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Examples</h4><div class="shortcut-row"><span>Power and subscript</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral with bounds</span><kbd>$\\int_0^1 x^2 dx$</kbd></div></div><div class="shortcut-group"><h4>Greek letters</h4><div class="shortcut-row"><span>Lowercase delta</span><kbd>$/delta$</kbd></div><div class="shortcut-row"><span>Uppercase Delta</span><kbd>$/Delta$</kbd></div><div class="shortcut-row"><span>Other letters</span><kbd>/alpha, /theta, /Omega</kbd></div></div><div class="shortcut-group"><h4>Edit and preview</h4><div class="shortcut-row"><span>Click an equation</span><kbd>Return to source</kbd></div><div class="shortcut-row"><span>Right-click an equation</span><kbd>Desmos preview</kbd></div></div></div></section>
-            <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
+            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write and link notes</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div></div></section>
+            <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
           </div>
         </div>
       </section>
@@ -315,10 +313,19 @@ app.innerHTML = `
       </form>
     </div>
     <div class="rename-overlay delete-overlay" id="delete-overlay" hidden><section class="rename-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">Delete item?</h2><p id="delete-description"></p><div class="rename-actions"><button type="button" class="secondary-button" id="delete-cancel">Cancel</button><button type="button" class="primary-button delete-confirm" id="delete-confirm">Delete</button></div></section></div>
+    <div class="link-picker-overlay" id="link-picker-overlay" hidden><section class="link-picker" role="dialog" aria-modal="true" aria-labelledby="link-picker-title"><header><div><span class="eyebrow">INSERT LINK</span><h2 id="link-picker-title">Choose a file or task</h2></div><button class="icon-button" id="link-picker-close" type="button" aria-label="Close link picker">${icons.close}</button></header><div class="link-picker-tabs" id="link-picker-tabs" role="tablist" aria-label="Link sources"></div><label class="link-picker-search">${icons.search}<input id="link-picker-query" type="search" autocomplete="off" placeholder="Filter files…" aria-label="Filter links"></label><div class="link-picker-results" id="link-picker-results" role="listbox"></div><footer><span>Click an item to insert it at the cursor</span><kbd>Esc</kbd></footer></section></div>
     <div class="toast" id="toast" hidden></div>
   </div>`;
 
-const state = { vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null };
+const state = { vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
+{
+  const workspaceShortcuts = [...document.querySelectorAll('.shortcut-group')].find((group) => group.querySelector('h4')?.textContent === 'Workspace');
+  const firstRow = workspaceShortcuts?.querySelector('.shortcut-row');
+  if (firstRow) {
+    firstRow.querySelector('span').textContent = 'Insert a file or task link'; firstRow.querySelector('kbd').textContent = '⌘ / Ctrl K';
+    const searchRow = document.createElement('div'); searchRow.className = 'shortcut-row'; searchRow.innerHTML = `<span>Search notes</span><kbd>⌘ / Ctrl ${icons.shift} F</kbd>`; firstRow.after(searchRow);
+  }
+}
 function loadToolbarPositions() {
   const notePosition = localStorage.getItem('stillnote-notes-toolbar-position');
   const canvasPosition = localStorage.getItem('stillnote-canvas-toolbar-position');
@@ -421,7 +428,7 @@ class WikiMediaWidget extends WidgetType {
   toDOM(view) {
     const extension = `.${fileExtension(this.file)}`;
     const is3d = ['.obj', '.stl', '.step', '.stp'].includes(extension);
-    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${is3d ? ' is-3d' : ' is-image'}`; preview.title = `${this.file} · place the caret in the link to edit it`;
+    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'cm-wiki-media-edit'; edit.textContent = 'Edit link'; edit.title = 'Show and edit the link';
     edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
     edit.addEventListener('click', (event) => {
@@ -434,7 +441,9 @@ class WikiMediaWidget extends WidgetType {
       if (!preview.isConnected) return;
       preview.replaceChildren(edit);
       if (asset.mime.startsWith('image/')) {
-        const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.src = asset.data; image.alt = this.file; image.loading = 'lazy'; preview.append(image);
+        const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.alt = this.file; image.loading = 'lazy';
+        image.addEventListener('load', () => { if (preview.isConnected) view.requestMeasure(); });
+        image.src = asset.data; preview.append(image);
       } else if (['.obj', '.stl', '.step', '.stp'].includes(extension)) {
         const viewport = document.createElement('span'); viewport.className = 'cm-wiki-3d-preview'; preview.append(viewport);
         void mountInlineModelPreview(viewport, this.file, asset, preview);
@@ -450,6 +459,84 @@ class WikiMediaWidget extends WidgetType {
   }
   destroy(dom) { dom.__disposePreview?.(); }
   eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to; }
+}
+const taskPreviewCache = new Map();
+function decodeTaskReferencePart(value) { try { return decodeURIComponent(value); } catch { return value; } }
+function taskReferenceSyntax(listName, taskName) { return `;;${encodeURIComponent(listName)}/${encodeURIComponent(taskName)};;`; }
+async function resolveTaskReference(listName, taskName, fresh = false) {
+  const key = `${listName.toLocaleLowerCase()}\u0000${taskName.toLocaleLowerCase()}`;
+  const cached = taskPreviewCache.get(key);
+  if (!fresh && cached && Date.now() - cached.time < 15000) return cached.promise;
+  const promise = (async () => {
+    const lists = await window.stillnote.listGoogleTaskLists();
+    const matchingLists = lists.filter((list) => String(list.title || '').trim().toLocaleLowerCase() === listName.toLocaleLowerCase());
+    if (matchingLists.length !== 1) throw new Error(matchingLists.length ? `More than one task list is named “${listName}”.` : `Task list “${listName}” was not found.`);
+    const tasks = await window.stillnote.listGoogleTasks(matchingLists[0].id);
+    const matchingTasks = tasks.filter((task) => String(task.title || '').trim().toLocaleLowerCase() === taskName.toLocaleLowerCase());
+    if (matchingTasks.length !== 1) throw new Error(matchingTasks.length ? `More than one task is named “${taskName}”.` : `Task “${taskName}” was not found.`);
+    return { list: matchingLists[0], task: matchingTasks[0] };
+  })();
+  taskPreviewCache.set(key, { time: Date.now(), promise });
+  try { return await promise; } catch (error) { if (taskPreviewCache.get(key)?.promise === promise) taskPreviewCache.delete(key); throw error; }
+}
+function replaceTaskReferenceInEditor(view, source, approximateFrom, approximateTo, replacement) {
+  if (view !== state.view) return false;
+  const document = view.state.doc.toString();
+  let from = approximateFrom, to = approximateTo;
+  if (document.slice(from, to) !== source) {
+    from = document.indexOf(source, Math.max(0, approximateFrom - 200));
+    if (from < 0) return false;
+    to = from + source.length;
+  }
+  view.dispatch({ changes: { from, to, insert: replacement }, selection: { anchor: from + replacement.length }, scrollIntoView: true });
+  return true;
+}
+class TaskReferenceWidget extends WidgetType {
+  constructor(listName, taskName, source, from, to) { super(); this.listName = listName; this.taskName = taskName; this.source = source; this.from = from; this.to = to; }
+  toDOM(view) {
+    const preview = document.createElement('span'); preview.className = 'cm-task-preview is-loading';
+    preview.addEventListener('contextmenu', (event) => showTaskContextMenu(event, this.listName, this.taskName));
+    preview.innerHTML = `<span class="cm-task-preview-status"></span><span class="cm-task-preview-copy"><strong>${escapeHtml(this.taskName)}</strong><small>${escapeHtml(this.listName)} · Loading task…</small></span>`;
+    const stop = (event) => event.stopPropagation(); preview.addEventListener('pointerdown', stop); preview.addEventListener('mousedown', stop); preview.addEventListener('click', stop);
+    resolveTaskReference(this.listName, this.taskName).then(({ list, task }) => {
+      if (!preview.isConnected) return;
+      if (task.status === 'completed') { replaceTaskReferenceInEditor(view, this.source, this.from, this.to, ''); return; }
+      preview.className = 'cm-task-preview'; preview.replaceChildren();
+      const complete = document.createElement('input'); complete.type = 'checkbox'; complete.className = 'cm-task-preview-complete'; complete.setAttribute('aria-label', `Complete ${task.title}`);
+      const fields = document.createElement('span'); fields.className = 'cm-task-preview-fields';
+      const title = document.createElement('input'); title.className = 'cm-task-preview-title'; title.value = task.title || this.taskName; title.maxLength = 1024; title.setAttribute('aria-label', 'Task title');
+      const backlinkLines = String(task.notes || '').split(/\r?\n/).filter((line) => /^Stillnote note:\s+stillnote:\/\/open\?/i.test(line.trim()));
+      let editableNotes = String(task.notes || '').split(/\r?\n/).filter((line) => !/^Stillnote note:\s+stillnote:\/\/open\?/i.test(line.trim())).join('\n').trim();
+      const details = document.createElement('textarea'); details.className = 'cm-task-preview-details'; details.value = editableNotes; details.rows = 2; details.maxLength = 8192; details.placeholder = 'Add task details…'; details.setAttribute('aria-label', 'Task details');
+      const meta = document.createElement('small'); meta.textContent = list.title || this.listName;
+      fields.append(title, details, meta); preview.append(complete, fields);
+      const setBusy = (busy) => { complete.disabled = busy; title.disabled = busy; details.disabled = busy; preview.classList.toggle('is-busy', busy); };
+      complete.addEventListener('change', async () => {
+        if (!complete.checked) return;
+        setBusy(true);
+        try { await window.stillnote.updateGoogleTask(list.id, task.id, { status: 'completed' }); taskPreviewCache.clear(); replaceTaskReferenceInEditor(view, this.source, this.from, this.to, ''); view.focus(); }
+        catch (error) { complete.checked = false; setBusy(false); showToast(error.message || 'Could not complete task.'); }
+      });
+      title.addEventListener('change', async () => {
+        const nextTitle = title.value.trim(); if (!nextTitle || nextTitle === task.title) { title.value = task.title; return; }
+        setBusy(true);
+        try {
+          const updated = await window.stillnote.updateGoogleTask(list.id, task.id, { title: nextTitle });
+          const finalTitle = updated.title || nextTitle; taskPreviewCache.clear();
+          replaceTaskReferenceInEditor(view, this.source, this.from, this.to, taskReferenceSyntax(list.title || this.listName, finalTitle));
+        } catch (error) { title.value = task.title; setBusy(false); showToast(error.message || 'Could not rename task.'); }
+      });
+      details.addEventListener('change', async () => {
+        if (details.value.trim() === editableNotes) return;
+        setBusy(true);
+        try { const notes = `${details.value.trim()}${details.value.trim() && backlinkLines.length ? '\n\n' : ''}${backlinkLines.join('\n')}`; const updated = await window.stillnote.updateGoogleTask(list.id, task.id, { notes }); task.notes = updated.notes || notes; editableNotes = details.value.trim(); details.value = editableNotes; taskPreviewCache.clear(); }
+        catch (error) { details.value = editableNotes; showToast(error.message || 'Could not update task details.'); }
+        finally { if (preview.isConnected) setBusy(false); }
+      });
+    }).catch((error) => { if (preview.isConnected) { preview.className = 'cm-task-preview is-error'; preview.querySelector('small').textContent = error.message || 'Task unavailable'; } });
+    return preview;
+  }
+  eq(other) { return other.source === this.source && other.from === this.from && other.to === this.to; }
 }
 function showDesmosPreview(source, x, y) {
   document.querySelector('.equation-preview')?._dismiss?.();
@@ -522,6 +609,14 @@ function makeLiveMarkdownDecorations(view) {
     const line = view.state.doc.line(number);
     const isInsideCode = fencedCodeRanges.some(([from, to]) => line.from >= from && line.to <= to);
     if (!isInsideCode) {
+      const taskMatcher = /;;([^;\n/]+)\/([^;\n]+?);;/g; let taskMatch;
+      while ((taskMatch = taskMatcher.exec(line.text))) {
+        const from = line.from + taskMatch.index, to = from + taskMatch[0].length;
+        if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
+        const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
+        if (!caretTouches) decorations.push(Decoration.replace({ widget: new TaskReferenceWidget(decodeTaskReferencePart(taskMatch[1].trim()), decodeTaskReferencePart(taskMatch[2].trim()), taskMatch[0], from, to) }).range(from, to));
+        else decorations.push(Decoration.mark({ class: 'cm-md-task-link' }).range(from, to));
+      }
       const wikiMatcher = /(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])/g; let wikiMatch;
       while ((wikiMatch = wikiMatcher.exec(line.text))) {
         const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
@@ -844,6 +939,7 @@ async function exportPdf(notePath = state.active) {
   } catch (error) { showToast(error.message || 'Could not export PDF.'); }
 }
 function renderFiles() {
+  scheduleBacklinks();
   list.innerHTML = '';
   if (!state.files.length) {
     if (!state.tree.length) list.innerHTML = `<div class="empty-files"><span class="empty-file-icon">${icons.folder}</span><span>Folder is empty</span></div>`;
@@ -853,25 +949,41 @@ function renderFiles() {
       if (node.type === 'folder') {
         const isCollapsed = state.collapsed.has(node.path);
         const row = document.createElement('button');
-        row.className = 'folder-row'; row.style.setProperty('--depth', depth);
+        row.className = `folder-row${state.explorerSelection.has(node.path) ? ' selected' : ''}`; row.style.setProperty('--depth', depth);
         row.setAttribute('aria-expanded', String(!isCollapsed));
         row.innerHTML = `<span class="folder-chevron${isCollapsed ? ' is-collapsed' : ''}">${icons.down}</span>${isCollapsed ? icons.folder : icons.folderOpen}<span>${escapeHtml(node.name)}</span>`;
-        row.title = node.path; row.addEventListener('click', () => { isCollapsed ? state.collapsed.delete(node.path) : state.collapsed.add(node.path); renderFiles(); });
+        row.title = node.path; row.addEventListener('click', (event) => { if (selectExplorerNode(node, event.shiftKey)) return; isCollapsed ? state.collapsed.delete(node.path) : state.collapsed.add(node.path); renderFiles(); });
         row.addEventListener('contextmenu', (event) => showExplorerContextMenu(event, node));
         wireExplorerDrag(row, node);
         parent.append(row);
         if (!isCollapsed) addNodes(node.children, parent, depth + 1);
       } else {
         const row = document.createElement('button');
-        row.className = `note-row${node.path === state.active ? ' selected' : ''}`;
+        row.className = `note-row${node.path === state.active || state.explorerSelection.has(node.path) ? ' selected' : ''}`;
         row.style.setProperty('--depth', depth);
         row.innerHTML = `${icons[node.format] || icons.file}<span>${escapeHtml(prettyName(node.name))}</span>`;
-        row.title = node.path; row.addEventListener('click', () => openNote(node.path));
+        row.title = node.path; row.addEventListener('click', (event) => { if (selectExplorerNode(node, event.shiftKey)) return; void openNote(node.path); });
         row.addEventListener('contextmenu', (event) => showExplorerContextMenu(event, node)); wireExplorerDrag(row, node); parent.append(row);
       }
     }
   };
   addNodes(state.tree, list);
+}
+function selectExplorerNode(node, additive = false) {
+  if (additive) {
+    state.explorerSelection.has(node.path) ? state.explorerSelection.delete(node.path) : state.explorerSelection.add(node.path);
+    renderFiles();
+    return true;
+  }
+  state.explorerSelection = new Set([node.path]);
+  return false;
+}
+function findExplorerNode(targetPath, nodes = state.tree) {
+  for (const node of nodes) {
+    if (node.path === targetPath) return node;
+    if (node.type === 'folder') { const found = findExplorerNode(targetPath, node.children || []); if (found) return found; }
+  }
+  return null;
 }
 function explorerFilePaths(nodes = state.tree, paths = []) {
   for (const node of nodes) node.type === 'folder' ? explorerFilePaths(node.children || [], paths) : paths.push(node.path);
@@ -923,6 +1035,7 @@ async function chooseVault() {
     await setVault(vault);
     if (explorerFilePaths().length) await openNote(explorerFilePaths()[0]);
     else showEmptyVault();
+    await openPendingDeepLinks();
   } catch (error) { showToast(error.message || 'Could not open that folder.'); }
 }
 function renderHomeTranscript() {
@@ -943,8 +1056,10 @@ function renderHomeTranscript() {
       const ref = (match[1] || match[2]).trim();
       const found = resolveVaultFileTarget(ref.split('#')[0]);
       if (!found) { bubble.append(document.createTextNode(ref)); continue; }
-      const link = document.createElement('button'); link.type = 'button'; link.className = 'home-file-link'; link.textContent = prettyName(found); link.title = `Open ${found}`;
-      link.addEventListener('click', async () => {
+      const link = document.createElement('button'); link.type = 'button'; link.className = 'home-file-link'; link.textContent = prettyName(found); link.title = `Right-click to open ${found}`;
+      link.addEventListener('click', (event) => event.preventDefault());
+      link.addEventListener('contextmenu', async (event) => {
+        event.preventDefault();
         const followupHistory = state.homeSession.messages.slice(-8).map(({ role, content }) => ({ role, content }));
         await navigateWikiTarget(ref); setAssistantOpen(true);
         $('#assistant-messages').replaceChildren();
@@ -1276,7 +1391,9 @@ async function openNote(file) {
 }
 $('#editor-content').addEventListener('contextmenu', (event) => {
   if (!event.target.closest('.cm-editor') || !state.view) return;
-  if (event.target.closest('.cm-wiki-media-preview')) { event.preventDefault(); return; }
+  const mediaLink = event.target.closest('.cm-wiki-media-preview');
+  if (mediaLink) { event.preventDefault(); event.stopPropagation(); void navigateWikiTarget(mediaLink.dataset.target); return; }
+  if (openWikiLinkAt(state.view, event)) { event.stopPropagation(); return; }
   const equation = event.target.closest('math[data-equation]');
   if (equation) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(equation.dataset.equation, event.clientX, event.clientY); return; }
   const position = state.view.posAtCoords({ x: event.clientX, y: event.clientY });
@@ -1285,10 +1402,6 @@ $('#editor-content').addEventListener('contextmenu', (event) => {
     while ((match = matcher.exec(line.text))) if (position >= line.from + match.index && position <= line.from + match.index + match[0].length) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(match[1], event.clientX, event.clientY); return; }
   }
   void handleEditorContextMenu(state.view, event);
-});
-$('#editor-content').addEventListener('click', (event) => {
-  if (!event.target.closest('.cm-editor') || event.target.closest('.cm-wiki-media-preview') || !state.view || !state.active?.toLocaleLowerCase().endsWith('.md')) return;
-  openWikiLinkAt(state.view, event);
 });
 $('#note-format-toolbar').addEventListener('mousedown', (event) => event.preventDefault());
 $('#note-format-toolbar').addEventListener('click', (event) => {
@@ -1307,6 +1420,7 @@ $('#note-format-toolbar').addEventListener('click', (event) => {
 function onEdit() {
   state.dirty = true; $('#save-state').textContent = 'Unsaved changes';
   const documentText = state.view.state.doc.toString();
+  scheduleTaskReferenceLinks(state.view);
   updateWordCount(documentText);
   if (!state.active?.toLowerCase().endsWith('.md')) { clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 650); return; }
   const title = state.view.state.doc.line(1).text;
@@ -1347,24 +1461,22 @@ function canvasDefaults() { return { version: 1, width: 1200, height: 760, eleme
 function sheetDefaults() { return { version: 1, columns: 8, rows: 20, cells: {} }; }
 function graphDefaults() { return { version: 1, state: null }; }
 function taskSheetDefaults(listId) { return { version: 1, listId, tasks: [] }; }
-function geometryDefaults() { return { version: 1, elements: [] }; }
-function calculator3dDefaults() { return { version: 1, expression: 'sin(sqrt(x^2 + y^2))', range: 6, resolution: 48 }; }
-function validCoordinate(point) { return point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)); }
+function geometryDefaults() { return { version: 1, state: null }; }
+function calculator3dDefaults() { return { version: 1, state: null }; }
 function isValidStructuredPayload(type, data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  if (type === 'geometry') return Array.isArray(data.elements) && data.elements.length <= 500 && data.elements.every((item) => item && (item.type === 'point' && validCoordinate(item) || item.type === 'segment' && Array.isArray(item.points) && item.points.length === 2 && item.points.every(validCoordinate) || item.type === 'circle' && validCoordinate(item.center) && Number.isFinite(Number(item.radius)) && Number(item.radius) > 0 || item.type === 'triangle' && Array.isArray(item.points) && item.points.length === 3 && item.points.every(validCoordinate)));
-  if (type === 'calculator3d') { try { compileSurfaceExpression(data.expression); return Number.isFinite(Number(data.range)) && Number(data.range) >= 1 && Number(data.range) <= 30; } catch { return false; } }
+  if (type === 'geometry' || type === 'calculator3d') return data.state == null || (typeof data.state === 'object' && !Array.isArray(data.state));
   return true;
 }
 let desmosApiLoad = null;
 let desmosApiLoadedKey = null;
 function loadDesmosApi(apiKey) {
-  if (!apiKey) return Promise.reject(new Error('Add a Desmos API key in Settings → Graphing to open this graph.'));
+  if (!apiKey) return Promise.reject(new Error('Add a Desmos API key in Settings → Graphing to open this tool.'));
   if (window.Desmos?.GraphingCalculator && desmosApiLoadedKey === apiKey) return Promise.resolve(window.Desmos);
   if (desmosApiLoad?.key === apiKey) return desmosApiLoad.promise;
   const promise = new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = `https://www.desmos.com/api/v1.11/calculator.js?apiKey=${encodeURIComponent(apiKey)}`;
+    script.src = `https://www.desmos.com/api/v1.12/calculator.js?apiKey=${encodeURIComponent(apiKey)}`;
     script.async = true;
     script.onload = () => {
       if (!window.Desmos?.GraphingCalculator) { reject(new Error('Desmos loaded without its Graphing Calculator API.')); return; }
@@ -1402,6 +1514,12 @@ function slugForHeading(value) {
 function findNoteAnchor(view, fragment) {
   let decoded = fragment;
   try { decoded = decodeURIComponent(fragment.replace(/\+/g, ' ')); } catch {}
+  const lineTarget = decoded.match(/^L(\d+)$/i);
+  if (lineTarget) {
+    const number = Number(lineTarget[1]);
+    if (Number.isInteger(number) && number >= 1 && number <= view.state.doc.lines) return view.state.doc.line(number).from;
+    return null;
+  }
   const wanted = slugForHeading(decoded);
   const doc = view.state.doc;
   let inFence = false, fenceChar = '', fenceLength = 0, slugCounts = new Map();
@@ -1433,27 +1551,86 @@ function findNoteAnchor(view, fragment) {
   const match = new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}(?=$|[^\\p{L}\\p{N}_])`, 'iu').exec(doc.toString());
   return match ? match.index + match[1].length : null;
 }
+let taskReferenceTimer = null;
+function taskReferenceUrl(file, line) {
+  const url = new URL('stillnote://open');
+  url.searchParams.set('note', file);
+  url.searchParams.set('line', String(line));
+  return url.toString();
+}
+function replaceTaskNoteLink(notes, file, nextUrl) {
+  let found = false;
+  const updated = String(notes || '').replace(/stillnote:\/\/open\?[^\s]+/g, (candidate) => {
+    try {
+      if (new URL(candidate).searchParams.get('note') === file) { found = true; return nextUrl; }
+    } catch {}
+    return candidate;
+  });
+  return found ? updated : `${updated.replace(/\s*$/, '')}${updated.trim() ? '\n\n' : ''}Stillnote note: ${nextUrl}`;
+}
+function scheduleTaskReferenceLinks(view) {
+  clearTimeout(taskReferenceTimer);
+  if (!view || view !== state.view || !state.active?.toLowerCase().endsWith('.md')) return;
+  const file = state.active;
+  taskReferenceTimer = setTimeout(() => { void linkTaskReferencesInNote(view, file); }, 500);
+}
+async function linkTaskReferencesInNote(view, file) {
+  if (view !== state.view || state.active !== file) return;
+  const document = view.state.doc;
+  const matcher = /;;([^;\n/]+)\/([^;\n]+?);;/g;
+  const references = [];
+  let match;
+  while ((match = matcher.exec(document.toString()))) {
+    const listName = decodeTaskReferencePart(match[1].trim()), taskName = decodeTaskReferencePart(match[2].trim());
+    if (listName && taskName) references.push({ listName, taskName, line: document.lineAt(match.index).number });
+  }
+  for (const reference of references) {
+    if (view !== state.view || state.active !== file) return;
+    const key = `${file}\u0000${reference.listName.toLocaleLowerCase()}\u0000${reference.taskName.toLocaleLowerCase()}\u0000${reference.line}`;
+    if (state.taskLinkStates.has(key)) continue;
+    state.taskLinkStates.set(key, 'pending');
+    try {
+      const lists = await window.stillnote.listGoogleTaskLists();
+      const candidates = lists.filter((list) => String(list.title || '').trim().toLocaleLowerCase() === reference.listName.toLocaleLowerCase());
+      if (candidates.length !== 1) throw new Error(candidates.length ? `More than one Google Tasks list is named “${reference.listName}”.` : `No Google Tasks list is named “${reference.listName}”.`);
+      const tasks = await window.stillnote.listGoogleTasks(candidates[0].id);
+      const matchingTasks = tasks.filter((task) => String(task.title || '').trim().toLocaleLowerCase() === reference.taskName.toLocaleLowerCase());
+      if (matchingTasks.length !== 1) throw new Error(matchingTasks.length ? `More than one task named “${reference.taskName}” is in “${reference.listName}”.` : `No task named “${reference.taskName}” is in “${reference.listName}”.`);
+      const task = matchingTasks[0], url = taskReferenceUrl(file, reference.line);
+      const existing = String(task.notes || ''), nextNotes = replaceTaskNoteLink(existing, file, url);
+      if (nextNotes !== existing) await window.stillnote.updateGoogleTask(candidates[0].id, task.id, { notes: nextNotes });
+      state.taskLinkStates.set(key, 'linked');
+      if (view === state.view && state.active === file) showToast(`Linked “${reference.taskName}” to line ${reference.line}.`);
+    } catch (error) {
+      state.taskLinkStates.set(key, 'error');
+      if (view === state.view && state.active === file) showToast(error.message || `Could not link “${reference.taskName}”.`);
+    }
+  }
+}
+function queueDeepLink(rawLink) {
+  try {
+    const url = new URL(String(rawLink));
+    if (url.protocol !== 'stillnote:' || url.hostname !== 'open') return;
+    const file = url.searchParams.get('note') || '';
+    const line = Number(url.searchParams.get('line'));
+    if (!file || !Number.isInteger(line) || line < 1) return;
+    state.pendingDeepLinks.push({ file, line });
+    void openPendingDeepLinks();
+  } catch {}
+}
+async function openPendingDeepLinks() {
+  if (!state.workspaceRestored || !state.vault || !state.pendingDeepLinks.length) return;
+  const links = state.pendingDeepLinks.splice(0);
+  for (const link of links) await navigateWikiTarget(`${link.file}#L${link.line}`);
+}
 function resolveVaultFileTarget(target) {
   const clean = String(target || '').trim().replace(/\\/g, '/').replace(/^\.\//, '').toLocaleLowerCase();
   if (!clean) return null;
   const files = explorerFilePaths();
   const exact = files.find((file) => file.toLocaleLowerCase() === clean);
   if (exact) return exact;
-  const withoutExtension = (value) => value.replace(/\.[^./]+$/, '');
-  if (!/\.[^/]+$/.test(clean)) {
-    const markdownMatch = files.find((file) => file.toLocaleLowerCase() === `${clean}.md`);
-    if (markdownMatch) return markdownMatch;
-  }
-  const pathMatches = files.filter((file) => withoutExtension(file.toLocaleLowerCase()) === withoutExtension(clean));
-  if (pathMatches.length === 1) return pathMatches[0];
-  if (pathMatches.length > 1) return pathMatches.find((file) => file.toLocaleLowerCase().endsWith('.md')) || null;
-  if (clean.includes('/')) return null;
-  const baseMatches = files.filter((file) => {
-    const basename = file.split('/').at(-1).toLocaleLowerCase();
-    return basename === clean || withoutExtension(basename) === withoutExtension(clean);
-  });
-  if (baseMatches.length === 1) return baseMatches[0];
-  if (baseMatches.length > 1) return baseMatches.find((file) => file.toLocaleLowerCase().endsWith('.md')) || null;
+  // Extensionless note links still refer to an exact path from the vault root.
+  if (!/\.[^/]+$/.test(clean)) return files.find((file) => file.toLocaleLowerCase() === `${clean}.md`) || null;
   return null;
 }
 function setStructuredDirty() {
@@ -1552,6 +1729,8 @@ function updateStructuredLocation(file) {
   $('.location-note').textContent = prettyName(file);
 }
 function renderGeometry(root, data) {
+  void renderDesmosTool(root, data, 'geometry');
+  return;
   data.elements = Array.isArray(data.elements) ? data.elements.filter((item) => item && (item.type === 'point' && validCoordinate(item) || item.type === 'segment' && Array.isArray(item.points) && item.points.length === 2 && item.points.every(validCoordinate) || item.type === 'circle' && validCoordinate(item.center) && Number.isFinite(Number(item.radius)) && Number(item.radius) > 0 || item.type === 'triangle' && Array.isArray(item.points) && item.points.length === 3 && item.points.every(validCoordinate))).slice(0, 500) : [];
   const toolbar = root.querySelector('.structured-toolbar');
   toolbar.innerHTML = `<span>Geometry · choose a tool, then click or drag on the plane</span><select aria-label="Geometry tool"><option value="point">Point</option><option value="segment">Segment</option><option value="circle">Circle</option><option value="triangle">Triangle</option><option value="select">Select</option></select><button type="button" data-geometry-delete>Delete selected</button><button type="button" data-history="undo" aria-label="Undo">${icons.undo}</button><button type="button" data-history="redo" aria-label="Redo">${icons.redo}</button>`;
@@ -1591,6 +1770,8 @@ function renderGeometry(root, data) {
   draw();
 }
 function renderCalculator3d(root, data) {
+  void renderDesmosTool(root, data, 'calculator3d');
+  return;
   const toolbar=root.querySelector('.structured-toolbar');
   toolbar.innerHTML=`<span>3D Calculator · plot z = f(x, y)</span><label>z = <input class="surface-expression" aria-label="Surface expression" spellcheck="false"></label><label>Range <input class="surface-range" type="number" min="1" max="30" step="1" aria-label="Plot range"></label><button type="button" data-surface-plot>Plot</button><button type="button" data-history="undo" aria-label="Undo">${icons.undo}</button><button type="button" data-history="redo" aria-label="Redo">${icons.redo}</button>`;
   const surface=root.querySelector('.structured-surface');surface.innerHTML=`<div class="surface-plot" role="img" aria-label="Three dimensional function plot"></div><div class="surface-status" aria-live="polite">Drag to rotate · scroll to zoom</div>`;
@@ -1611,6 +1792,51 @@ function renderCalculator3d(root, data) {
   let frame;const animate=()=>{frame=requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);};animate();plot(false);
   state.structured.refreshCalculator3d=()=>{scene.background.set(state.theme==='dark'?0x242520:state.theme==='sepia'?0xfaf6ed:0xffffff);};
   state.structured.cleanup=()=>{cancelAnimationFrame(frame);observer.disconnect();controls.dispose();if(mesh){mesh.geometry.dispose();mesh.material.dispose();}renderer.dispose();};
+}
+async function renderDesmosTool(root, data, type) {
+  const isGeometry = type === 'geometry';
+  const label = isGeometry ? 'Desmos Geometry Tool' : 'Desmos 3D Calculator';
+  const toolbar = root.querySelector('.structured-toolbar');
+  toolbar.innerHTML = `<span>${label} · state is saved in this file</span><button data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button>`;
+  toolbar.querySelectorAll('[data-history]').forEach((button) => button.addEventListener('click', () => applyStructuredHistory(button.dataset.history)));
+  const surface = root.querySelector('.structured-surface');
+  const owner = state.structured;
+  const status = (message, configure = false) => {
+    surface.replaceChildren();
+    const panel = document.createElement('div'); panel.className = 'graph-setup';
+    const text = document.createElement('p'); text.textContent = message; panel.append(text);
+    if (configure) { const button = document.createElement('button'); button.className = 'secondary-button'; button.textContent = 'Open Graphing settings'; button.addEventListener('click', () => openSettings('desmos')); panel.append(button); }
+    surface.append(panel);
+  };
+  let key = '';
+  try { key = await window.stillnote.getDesmosKey(); }
+  catch (error) { status(error.message || 'Open a vault to use the saved Desmos key.'); return; }
+  if (!key) { setSettingsHealth('desmos', false, 'Desmos API key missing'); status(`A Desmos API key with ${isGeometry ? 'Geometry Tool' : '3D Calculator'} access is required.`, true); return; }
+  try {
+    const api = await loadDesmosApi(key);
+    if (state.structured !== owner || !root.isConnected) return;
+    const constructor = isGeometry ? api.Geometry : api.Calculator3D;
+    const feature = isGeometry ? 'GeometryCalculator' : 'Calculator3D';
+    if (typeof constructor !== 'function' || api.enabledFeatures?.[feature] === false) throw new Error(`This Desmos API key does not have ${isGeometry ? 'Geometry Tool' : '3D Calculator'} access enabled.`);
+    const host = document.createElement('div'); host.className = 'graph-calculator'; surface.replaceChildren(host);
+    const tool = constructor(host, { expressions: true, keypad: true, settingsMenu: true, zoomButtons: true, autosize: true, border: false, invertedColors: false });
+    owner.desmos = tool;
+    setSettingsHealth('desmos', true, 'Desmos API key working');
+    if (data.state && typeof data.state === 'object') {
+      try { tool.setState(data.state); } catch { data.state = tool.getState(); }
+    } else {
+      const migratingLegacyFile = Object.keys(data).some((key) => !['version', 'state'].includes(key));
+      data.state = tool.getState();
+      if (migratingLegacyFile) setStructuredDirty();
+    }
+    tool.clearHistory();
+    tool.observeEvent('change', () => {
+      if (state.structured !== owner || !state.active) return;
+      data.state = tool.getState(); setStructuredDirty();
+    });
+  } catch (error) {
+    if (state.structured === owner && root.isConnected) { setSettingsHealth('desmos', false, 'Desmos tool unavailable'); status(error.message || `Could not open ${label}.`, true); }
+  }
 }
 function renderCanvas(root, data) {
   const toolbar = root.querySelector('.structured-toolbar');
@@ -1712,7 +1938,7 @@ function renderCanvas(root, data) {
   const point = e => { const p = svg.createSVGPoint(); p.x=e.clientX;p.y=e.clientY; const q=p.matrixTransform(svg.getScreenCTM().inverse()); return {x:q.x,y:q.y}; };
   const updateToolHelp=()=>{const help={select:'Drag selected items to move them. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=help[tool]||'';toolHelp.hidden=!help[tool];};
   updateToolHelp();
-  svg.addEventListener('pointerdown', e => {const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();structuredLink(link.dataset.target);return;}const textEditor=e.target.closest('.canvas-text-edit');if(textEditor&&tool==='select'&&e.detail>=2)return; const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
+  svg.addEventListener('pointerdown', e => {const textEditor=e.target.closest('.canvas-text-edit');if(textEditor&&tool==='select'&&e.detail>=2)return; const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
     if(tool==='select') {
       const endpointHandle=e.target.closest('[data-point-handle]');
       if(endpointHandle&&Number.isInteger(ix)){interaction={kind:'point',index:ix,handle:endpointHandle.dataset.pointHandle,original:structuredClone(data.elements[ix])};svg.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();return;}
@@ -1794,10 +2020,13 @@ function renderCanvas(root, data) {
   };
   svg.addEventListener('pointerup',finishPointer);
   svg.addEventListener('pointercancel',finishPointer);
-  svg.addEventListener('click',e=>{
+  svg.addEventListener('click',e=>{if(e.target.closest('.sheet-wiki-link'))e.preventDefault();});
+  svg.addEventListener('contextmenu',e=>{
+    const link=e.target.closest('.sheet-wiki-link');
     const text=e.target.closest('[data-link-text]')?.getAttribute('data-link-text')||'';
-    const match=text.match(/\[\[([^\]]+)\]\]/);
-    if(match)structuredLink(match[1]);
+    const match=text.match(/(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])/);
+    const target=link?.dataset.target||(match?.[1]||match?.[2]);
+    if(target){e.preventDefault();e.stopPropagation();structuredLink(target);}
   });
   paint();
   state.structured.refreshCanvas=paint;
@@ -1857,7 +2086,8 @@ function renderSpreadsheet(root, data) {
     html+='</tbody></table>'; surface.innerHTML=html;
     surface.querySelectorAll('[data-cell]').forEach(cell=>{cell.addEventListener('focus',()=>{cell.textContent=data.cells[cell.dataset.cell]||'';});cell.addEventListener('input',()=>{data.cells[cell.dataset.cell]=cell.innerText;setStructuredDirty();surface.querySelectorAll('[data-cell]').forEach(other=>{if(other===cell||document.activeElement===other)return;const raw=String(data.cells[other.dataset.cell]??'');other.innerHTML=sheetCellHtml(raw.startsWith('=')?spreadsheetCellValue(data,other.dataset.cell):raw);});});cell.addEventListener('blur',()=>{data.cells[cell.dataset.cell]=serializeLinkedText(cell);render();});});
   };
-  surface.addEventListener('click',e=>{const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();e.stopPropagation();structuredLink(link.dataset.target);}});
+  surface.addEventListener('click',e=>{const link=e.target.closest('.sheet-wiki-link');if(link)e.preventDefault();});
+  surface.addEventListener('contextmenu',e=>{const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();e.stopPropagation();structuredLink(link.dataset.target);}});
   toolbar.querySelector('.sheet-add-row').addEventListener('click',()=>{data.rows=Math.min(200,data.rows+1);render();setStructuredDirty();});
   toolbar.querySelector('.sheet-add-column').addEventListener('click',()=>{data.columns=Math.min(26,data.columns+1);render();setStructuredDirty();});render();
   toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
@@ -1939,6 +2169,11 @@ async function renderTaskSheet(root, data) {
       input.value = ''; paintTasks(); setStructuredDirty(); status.textContent = 'Task added to Google Tasks';
     } catch (error) { if (isCurrent()) { status.textContent = error.message || 'Could not add task'; showToast(status.textContent); } }
     finally { submit.disabled = false; }
+  });
+  list.addEventListener('contextmenu', (event) => {
+    const row = event.target.closest('[data-index]');
+    const task = row && data.tasks[Number(row.dataset.index)];
+    if (task) showTaskContextMenu(event, owner.title || prettyName(state.active), task.title);
   });
   list.addEventListener('change', async (event) => {
     if (event.target.matches('.task-sheet-due, .task-sheet-details')) {
@@ -2067,7 +2302,7 @@ async function saveActive() {
   clearTimeout(state.saveTimer);
   if (state.structured) {
     const active = state.active, structured = state.structured, title = (structured.title || prettyName(active)).trim() || prettyName(active);
-    const operation = (async()=>{try{await window.stillnote.writeNote(active,encodeStructured(structured.type,title,structured.data));state.dirty=false;$('#save-state').textContent='Saved';}catch(e){$('#save-state').textContent='Save failed';showToast(e.message||'Could not save file.');}})();
+    const operation = (async()=>{try{await window.stillnote.writeNote(active,encodeStructured(structured.type,title,structured.data));state.dirty=false;$('#save-state').textContent='Saved';scheduleBacklinks();}catch(e){$('#save-state').textContent='Save failed';showToast(e.message||'Could not save file.');}})();
     state.savePromise=operation;try{await operation;}finally{state.savePromise=null;}return;
   }
   const view = state.view;
@@ -2086,7 +2321,7 @@ async function saveActive() {
       if (firstLine.text !== title) view.dispatch({ changes: { from: firstLine.from, to: firstLine.to, insert: title } });
       const contents = view.state.doc.toString();
       await window.stillnote.writeNote(oldPath, contents);
-      writeSucceeded = true;
+      writeSucceeded = true; scheduleBacklinks();
 
       const titleError = noteTitleError(typedTitle.replace(/\.md$/i, '').trim());
       if (titleError) {
@@ -2312,7 +2547,7 @@ async function moveExplorerEntry(item, destinationPath) {
     if (destinationPath) state.collapsed.delete(destinationPath);
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
     renderFiles();
-    if (nextActive !== state.active) { state.active = null; await openNote(nextActive); }
+    if (nextActive) { state.active = null; await openNote(nextActive); }
     showToast('Item moved');
   } catch (error) { showToast(error.message || 'Could not move item.'); }
 }
@@ -2328,10 +2563,15 @@ $('.explorer-heading').addEventListener('drop', (event) => {
 });
 function showExplorerContextMenu(event, node) {
   event.preventDefault(); event.stopPropagation();
+  if (!state.explorerSelection.has(node.path)) state.explorerSelection = new Set([node.path]);
+  renderFiles();
   const menu = $('#explorer-context-menu'); menu.replaceChildren();
   const addAction = (label, action, danger = false) => {
     const button = document.createElement('button'); button.className = `context-action${danger ? ' danger' : ''}`; button.textContent = label;
-    button.addEventListener('click', () => { closeExplorerContextMenu(); action(); }); menu.append(button);
+    const run = (skipConfirm = false) => { closeExplorerContextMenu(); action(skipConfirm); };
+    button.addEventListener('click', () => run(danger && state.contextDeleteBypass));
+    if (danger) button.addEventListener('keydown', (keyEvent) => { if (keyEvent.key === 'Enter') { keyEvent.preventDefault(); run(true); } });
+    menu.append(button);
   };
   if (node.type === 'folder') {
     addAction('New note here', () => createNote(node.path));
@@ -2348,13 +2588,68 @@ function showExplorerContextMenu(event, node) {
     addAction('Copy link', () => { void window.stillnote.copyFileLink(node.path).then(() => showToast('Link copied')).catch((error) => showToast(error.message || 'Could not copy link.')); });
   }
   addAction('Rename…', () => renameExplorerEntry(node));
-  addAction('Delete…', () => deleteExplorerEntry(node), true);
+  const selectedNodes = [...state.explorerSelection].map((path) => findExplorerNode(path)).filter(Boolean);
+  const selectedRoots = selectedNodes.filter((candidate, index, all) => !all.some((parent, parentIndex) => parentIndex !== index && parent.type === 'folder' && candidate.path.startsWith(`${parent.path}/`)));
+  addAction(selectedRoots.length > 1 ? `Delete ${selectedRoots.length} selected items…` : 'Delete…', (skipConfirm) => deleteExplorerEntries(selectedRoots, skipConfirm), true);
   menu.hidden = false;
   const width = 190; const height = menu.offsetHeight;
   menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8))}px`;
   menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))}px`;
 }
-function closeExplorerContextMenu() { $('#explorer-context-menu').hidden = true; }
+let backlinkTimer;
+let backlinkRequest = 0;
+let backlinkResults = [];
+function scheduleBacklinks() {
+  clearTimeout(backlinkTimer);
+  backlinkTimer = setTimeout(() => void refreshBacklinks(), 250);
+}
+async function refreshBacklinks() {
+  const request = ++backlinkRequest, file = state.active;
+  const button = $('#backlink-count');
+  button.disabled = !file || state.home;
+  if (button.disabled) { button.textContent = '0 backlinks'; backlinkResults = []; return; }
+  try {
+    const results = await window.stillnote.getBacklinks(file);
+    if (request !== backlinkRequest || state.active !== file) return;
+    backlinkResults = results;
+    button.textContent = `${results.length} backlink${results.length === 1 ? '' : 's'}`;
+  } catch { button.textContent = 'Backlinks unavailable'; }
+}
+const backlinkPopup = document.createElement('div');
+backlinkPopup.className = 'backlink-popup'; backlinkPopup.hidden = true;
+backlinkPopup.setAttribute('role', 'dialog'); backlinkPopup.setAttribute('aria-label', 'Backlinks');
+document.body.append(backlinkPopup);
+$('#backlink-count').addEventListener('click', async () => {
+  if (!backlinkPopup.hidden) { backlinkPopup.hidden = true; return; }
+  await saveActive(); await refreshBacklinks();
+  backlinkPopup.replaceChildren();
+  const title = document.createElement('strong'); title.textContent = 'Linked from'; backlinkPopup.append(title);
+  if (!backlinkResults.length) { const empty = document.createElement('p'); empty.textContent = 'No links to this file yet.'; backlinkPopup.append(empty); }
+  for (const reference of backlinkResults) {
+    const button = document.createElement('button'); button.type = 'button';
+    const label = document.createElement('span'); label.textContent = `${reference.file} · Line ${reference.line}`;
+    const excerpt = document.createElement('small'); excerpt.textContent = reference.text;
+    button.append(label, excerpt);
+    button.addEventListener('click', () => { backlinkPopup.hidden = true; void navigateWikiTarget(`${reference.file}#L${reference.line}`); });
+    backlinkPopup.append(button);
+  }
+  backlinkPopup.hidden = false;
+});
+document.addEventListener('pointerdown', (event) => { if (!backlinkPopup.contains(event.target) && !event.target.closest('#backlink-count')) backlinkPopup.hidden = true; });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') backlinkPopup.hidden = true; });
+function showTaskContextMenu(event, listName, taskName) {
+  event.preventDefault(); event.stopPropagation();
+  const menu = $('#explorer-context-menu'); menu.replaceChildren();
+  const button = document.createElement('button'); button.className = 'context-action'; button.textContent = 'Copy link';
+  button.addEventListener('click', () => {
+    closeExplorerContextMenu();
+    void navigator.clipboard.writeText(taskReferenceSyntax(listName, taskName)).then(() => showToast('Link copied')).catch((error) => showToast(error.message || 'Could not copy link.'));
+  });
+  menu.append(button); menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - 198))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
+}
+function closeExplorerContextMenu() { $('#explorer-context-menu').hidden = true; state.contextDeleteBypass = false; }
 function requestRenameValue(currentName, type) {
   return requestNameValue(`Rename ${type}`, currentName, 'Rename');
 }
@@ -2405,23 +2700,26 @@ async function renameExplorerEntry(node) {
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
     if (node.type === 'folder' && state.collapsed.delete(sourcePath)) state.collapsed.add(renamed);
     renderFiles();
-    if (nextActive !== state.active) { state.active = null; await openNote(nextActive); }
+    if (nextActive) { state.active = null; await openNote(nextActive); }
   } catch (error) { showToast(error.message || 'Could not rename item.'); }
 }
-async function deleteExplorerEntry(node) {
-  const displayName = node.type === 'note' ? prettyName(node.name) : node.name;
-  const description = node.type === 'folder' ? 'This also deletes everything inside it.' : 'This deletes this file from the vault.';
-  if (!await confirmDelete(displayName, description)) return;
+async function deleteExplorerEntries(rawNodes, skipConfirm = false) {
+  const nodes = rawNodes.filter(Boolean).filter((node, index, all) => !all.some((parent, parentIndex) => parentIndex !== index && parent.type === 'folder' && node.path.startsWith(`${parent.path}/`)));
+  if (!nodes.length) return;
+  const displayName = nodes.length === 1 ? (nodes[0].type === 'note' ? prettyName(nodes[0].name) : nodes[0].name) : `${nodes.length} selected items`;
+  const description = nodes.length === 1 ? (nodes[0].type === 'folder' ? 'This also deletes everything inside it.' : 'This deletes this file from the vault.') : 'This permanently deletes the selected files, folders, and any files inside selected folders.';
+  if (!skipConfirm && !await confirmDelete(displayName, description)) return;
   try {
     const activePathBeforeSave = state.active;
     await saveActive();
-    const sourcePath = node.type === 'note' && activePathBeforeSave === node.path && state.active !== node.path ? state.active : node.path;
     const existingFiles = explorerFilePaths();
-    const deletedNotes = node.type === 'note' ? [sourcePath] : existingFiles.filter((file) => file.startsWith(`${sourcePath}/`));
+    const sourcePaths = nodes.map((node) => node.type === 'note' && activePathBeforeSave === node.path && state.active !== node.path ? state.active : node.path);
+    const deletedNotes = sourcePaths.flatMap((sourcePath, index) => nodes[index].type === 'note' ? [sourcePath] : existingFiles.filter((file) => file.startsWith(`${sourcePath}/`)));
     const activeDeleted = Boolean(state.active && deletedNotes.includes(state.active));
-    const nearbyIndex = activeDeleted ? existingFiles.indexOf(state.active) : existingFiles.indexOf(sourcePath);
-    await window.stillnote.deleteEntry(sourcePath);
+    const nearbyIndex = activeDeleted ? existingFiles.indexOf(state.active) : existingFiles.indexOf(sourcePaths[0]);
+    for (const sourcePath of sourcePaths) await window.stillnote.deleteEntry(sourcePath);
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    state.explorerSelection.clear();
     renderFiles();
     if (activeDeleted) {
       state.view?.destroy(); state.view = null; state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.(); state.structured = null; state.assetViewer?.destroy?.(); state.assetViewer = null; state.dirty = false; state.active = null;
@@ -2429,8 +2727,66 @@ async function deleteExplorerEntry(node) {
       const remainingFiles = explorerFilePaths();
       if (remainingFiles.length) await openNote(remainingFiles[Math.max(0, Math.min(nearbyIndex, remainingFiles.length - 1))]); else showEmptyVault();
     }
-    showToast(`${node.type === 'folder' ? 'Folder' : 'File'} deleted`);
-  } catch (error) { showToast(error.message || 'Could not delete item.'); }
+    showToast(nodes.length === 1 ? `${nodes[0].type === 'folder' ? 'Folder' : 'File'} deleted` : `${nodes.length} items deleted`);
+  } catch (error) { showToast(error.message || 'Could not delete selected items.'); }
+}
+let linkPickerView = null;
+let linkPickerSources = [];
+let activeLinkPickerSource = 'files';
+function closeLinkPicker({ focusEditor = true } = {}) {
+  $('#link-picker-overlay').hidden = true;
+  const view = linkPickerView; linkPickerView = null; linkPickerSources = [];
+  if (focusEditor && view === state.view) view.focus();
+}
+function insertPickedLink(value) {
+  const view = linkPickerView;
+  if (!view || view !== state.view) { closeLinkPicker({ focusEditor: false }); return; }
+  const selection = view.state.selection.main;
+  view.dispatch({ changes: { from: selection.from, to: selection.to, insert: value }, selection: { anchor: selection.from + value.length }, scrollIntoView: true });
+  closeLinkPicker();
+}
+function renderLinkPickerResults() {
+  const results = $('#link-picker-results'); results.replaceChildren();
+  const source = linkPickerSources.find((entry) => entry.id === activeLinkPickerSource);
+  const query = $('#link-picker-query').value.trim().toLocaleLowerCase();
+  const items = (source?.items || []).filter((item) => `${item.title} ${item.detail || ''}`.toLocaleLowerCase().includes(query));
+  if (!items.length) { const empty = document.createElement('div'); empty.className = 'link-picker-empty'; empty.textContent = query ? 'No matching items' : source?.empty || 'Nothing to link yet'; results.append(empty); return; }
+  for (const item of items) {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'link-picker-result'; row.setAttribute('role', 'option');
+    row.innerHTML = `<span class="link-picker-result-icon">${source.id === 'files' ? icons.file : icons.formatCheck}</span><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail || '')}</small></span><span class="link-picker-insert">Insert</span>`;
+    row.addEventListener('click', () => insertPickedLink(item.syntax)); results.append(row);
+  }
+}
+function selectLinkPickerSource(id) {
+  activeLinkPickerSource = id;
+  document.querySelectorAll('.link-picker-tab').forEach((tab) => { const selected = tab.dataset.source === id; tab.classList.toggle('active', selected); tab.setAttribute('aria-selected', String(selected)); });
+  const source = linkPickerSources.find((entry) => entry.id === id);
+  $('#link-picker-query').placeholder = source?.id === 'files' ? 'Filter files…' : `Filter ${source?.label || 'tasks'}…`;
+  $('#link-picker-query').value = ''; renderLinkPickerResults(); $('#link-picker-query').focus();
+}
+async function openLinkPicker() {
+  if (!state.view || !state.active?.toLocaleLowerCase().endsWith('.md')) { showToast('Open a Markdown note to insert a link.'); return; }
+  linkPickerView = state.view; activeLinkPickerSource = 'files';
+  $('#link-picker-overlay').hidden = false; $('#link-picker-tabs').innerHTML = '<button class="link-picker-tab active" type="button" role="tab" aria-selected="true" data-source="files">Files</button>'; $('#link-picker-results').innerHTML = '<div class="link-picker-empty">Loading task sheets…</div>';
+  $('#link-picker-query').value = ''; $('#link-picker-query').placeholder = 'Filter files…'; requestAnimationFrame(() => $('#link-picker-query').focus());
+  const files = explorerFilePaths().map((file) => ({ title: prettyName(file), detail: file, syntax: `<[${file}]>` }));
+  const taskSheetFiles = explorerFilePaths().filter((file) => file.toLocaleLowerCase().endsWith('.md'));
+  const sheets = (await Promise.all(taskSheetFiles.map(async (file) => {
+    try {
+      const raw = await window.stillnote.readNote(file), parsed = decodeStructured(raw);
+      if (parsed?.type !== 'tasks' || !Array.isArray(parsed.data?.tasks)) return null;
+      const label = raw.split(/\r?\n/, 1)[0].trim() || prettyName(file);
+      const tasks = parsed.data.tasks.filter((task) => task.status !== 'completed').map((task) => ({ title: task.title || 'Untitled task', detail: task.due ? `Due ${String(task.due).slice(0, 10)}` : label, syntax: taskReferenceSyntax(label, task.title || 'Untitled task') }));
+      return { id: `tasks:${file}`, label, items: tasks, empty: 'No active tasks in this sheet' };
+    } catch { return null; }
+  }))).filter(Boolean);
+  if (linkPickerView !== state.view || $('#link-picker-overlay').hidden) return;
+  linkPickerSources = [{ id: 'files', label: 'Files', items: files, empty: 'No files in this vault' }, ...sheets];
+  const tabs = $('#link-picker-tabs'); tabs.replaceChildren();
+  for (const source of linkPickerSources) {
+    const tab = document.createElement('button'); tab.type = 'button'; tab.className = `link-picker-tab${source.id === 'files' ? ' active' : ''}`; tab.dataset.source = source.id; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(source.id === 'files')); tab.textContent = source.label; tab.addEventListener('click', () => selectLinkPickerSource(source.id)); tabs.append(tab);
+  }
+  renderLinkPickerResults();
 }
 function openSearch() {
   const search = $('#topbar-search');
@@ -2453,15 +2809,17 @@ function applyTheme(theme) {
   state.structured?.desmos?.updateSettings?.({ invertedColors: false });
   document.querySelectorAll('.theme-card').forEach((option) => option.setAttribute('aria-pressed', String(option.dataset.theme === state.theme)));
 }
-function restoreWorkspace() {
+async function restoreWorkspace() {
   applyTheme(localStorage.getItem('stillnote-theme') || 'light');
-  window.stillnote.restoreSession().then(async (vault) => {
+  try {
+    const vault = await window.stillnote.restoreSession();
     if (!vault) return;
     await setVault(vault);
     if (vault.lastNote && explorerFilePaths().includes(vault.lastNote)) await openNote(vault.lastNote);
     else if (explorerFilePaths().length) await openNote(explorerFilePaths()[0]);
     else showEmptyVault();
-  }).catch((error) => console.error('Could not restore workspace:', error));
+  } catch (error) { console.error('Could not restore workspace:', error); }
+  finally { state.workspaceRestored = true; await openPendingDeepLinks(); }
 }
 function selectSettingsTab(tab) {
   document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
@@ -2498,7 +2856,7 @@ async function updateKeyStatus() {
     $('#save-ai-key').disabled = !status.secureStorageAvailable || !status.vaultOpen;
     $('#remove-ai-key').disabled = !status.vaultOpen;
     if (!status.secureStorageAvailable) label.textContent = 'Secure key storage is unavailable';
-  } catch { label.textContent = 'Could not check key status'; setSettingsHealth('ai', false, 'Could not check API key'); }
+  } catch (error) { label.textContent = error.message || 'Could not check key status'; label.className = 'key-status error'; setSettingsHealth('ai', false, 'Could not check API key'); }
 }
 async function updateDesmosKeyStatus() {
   const status = await window.stillnote.desmosKeyStatus().catch(() => ({ configured: false, vaultOpen: false, secureStorageAvailable: false }));
@@ -3052,6 +3410,9 @@ $('#rename-overlay').addEventListener('click', (event) => { if (event.target ===
 $('#delete-cancel').addEventListener('click', () => finishDeleteDialog(false));
 $('#delete-confirm').addEventListener('click', () => finishDeleteDialog(true));
 $('#delete-overlay').addEventListener('click', (event) => { if (event.target === $('#delete-overlay')) finishDeleteDialog(false); });
+$('#link-picker-close').addEventListener('click', () => closeLinkPicker());
+$('#link-picker-overlay').addEventListener('click', (event) => { if (event.target === $('#link-picker-overlay')) closeLinkPicker(); });
+$('#link-picker-query').addEventListener('input', renderLinkPickerResults);
 document.querySelectorAll('.settings-tab').forEach((button) => button.addEventListener('click', () => selectSettingsTab(button.dataset.tab)));
 $('#custom-dictionary-form').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -3068,13 +3429,24 @@ $('#save-ai-key').addEventListener('click', async () => {
   } catch (error) { $('#ai-key-status').textContent = error.message; $('#ai-key-status').className = 'key-status error'; }
 });
 $('#remove-ai-key').addEventListener('click', async () => { await window.stillnote.clearAiKey(); $('#ai-key').value = ''; await updateKeyStatus(); await loadAiModels(); });
+$('#reset-unreadable-credentials').addEventListener('click', async () => {
+  const button = $('#reset-unreadable-credentials'); button.disabled = true;
+  try {
+    await window.stillnote.resetUnreadableCredentials();
+    $('#ai-key').value = ''; $('#google-tasks-client-id').value = ''; $('#google-tasks-client-secret').value = ''; $('#desmos-api-key').value = '';
+    await Promise.all([updateKeyStatus(), updateDesmosKeyStatus(), updateGoogleTasksStatus()]);
+    await loadAiModels();
+    showToast('Unreadable credentials were archived. Enter your keys again.');
+  } catch (error) { showToast(error.message || 'Could not reset unreadable credentials.'); }
+  finally { button.disabled = false; }
+});
 $('#save-google-tasks-client').addEventListener('click', async () => {
   try { await window.stillnote.saveGoogleTasksCredentials($('#google-tasks-client-id').value, $('#google-tasks-client-secret').value); $('#google-tasks-client-secret').value = ''; await updateGoogleTasksStatus(); showToast('Google OAuth credentials saved securely'); }
   catch (error) { $('#google-tasks-status').textContent = error.message || 'Could not save client ID'; $('#google-tasks-status').className = 'key-status error'; }
 });
 $('#connect-google-tasks').addEventListener('click', async () => {
   const button = $('#connect-google-tasks'); button.disabled = true; $('#google-tasks-status').textContent = 'Waiting for Google sign-in…';
-  try { await window.stillnote.connectGoogleTasks(); await updateGoogleTasksStatus(); showToast('Google Tasks connected'); }
+  try { await window.stillnote.connectGoogleTasks(); state.taskLinkStates.clear(); scheduleTaskReferenceLinks(state.view); await updateGoogleTasksStatus(); showToast('Google Tasks connected'); }
   catch (error) {
     await updateGoogleTasksStatus();
     $('#google-tasks-status').textContent = `Connection failed: ${error.message || 'Could not connect Google Tasks'}`;
@@ -3124,13 +3496,16 @@ $('#assistant-input').addEventListener('keydown', (event) => {
   }
 });
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !$('#explorer-context-menu').hidden) state.contextDeleteBypass = true;
   const mod = event.metaKey || event.ctrlKey;
   if(state.structured?.type==='canvas'&&event.key==='Backspace'&&state.structured.deleteCanvasSelection&&!event.target.closest('input,textarea,[contenteditable="true"]')&&state.structured.data.elements.length){const hasSelection=document.querySelector('.canvas-svg .is-selected');if(hasSelection){event.preventDefault();state.structured.deleteCanvasSelection();return;}}
   if(state.structured&&mod&&event.key.toLowerCase()==='z'){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
   if(state.structured&&mod&&event.key.toLowerCase()==='y'){event.preventDefault();void applyStructuredHistory('redo');return;}
   if (event.key === 'Escape' && !$('#rename-overlay').hidden) { event.preventDefault(); finishRenameDialog(); return; }
   if (event.key === 'Escape' && !$('#delete-overlay').hidden) { event.preventDefault(); finishDeleteDialog(false); return; }
-  if (mod && event.key.toLowerCase() === 'k') { event.preventDefault(); openSearch(); }
+  if (mod && event.key.toLowerCase() === 'k') { event.preventDefault(); void openLinkPicker(); return; }
+  if (mod && event.shiftKey && event.key.toLowerCase() === 'f') { event.preventDefault(); openSearch(); return; }
+  if (event.key === 'Escape' && !$('#link-picker-overlay').hidden) { event.preventDefault(); closeLinkPicker(); return; }
   if (event.key === 'Escape' && $('#topbar-search').classList.contains('is-open')) closeSearch();
   if (event.key === 'Escape' && !$('#settings-overlay').hidden) closeSettings();
   if (event.key === 'Escape' && !$('#explorer-context-menu').hidden) closeExplorerContextMenu();
@@ -3144,5 +3519,10 @@ document.addEventListener('keydown', (event) => {
   if (mod && event.key === ',') { event.preventDefault(); openSettings(); }
   if (mod && event.shiftKey && event.key.toLowerCase() === 'a') { event.preventDefault(); setAssistantOpen(!state.assistantOpen); }
 });
+document.addEventListener('keyup', (event) => { if (event.key === 'Enter') state.contextDeleteBypass = false; });
 window.addEventListener('beforeunload', () => { state.assetViewer?.destroy?.(); if (state.dirty && state.active && state.view) window.stillnote.writeNote(state.active, state.view.state.doc.toString()); else if(state.dirty&&state.active&&state.structured)window.stillnote.writeNote(state.active,encodeStructured(state.structured.type,state.structured.title||prettyName(state.active),state.structured.data)); });
-restoreWorkspace();
+window.stillnote.onStorageRecovered((kind) => {
+  showToast(kind === 'credentials' ? 'Unreadable credentials backed up. Re-enter your API keys and reconnect Google Tasks in Settings.' : 'Unreadable personal dictionary backed up. You can add words again in Settings.');
+});
+window.stillnote.onDeepLink(queueDeepLink);
+void restoreWorkspace();

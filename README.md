@@ -57,14 +57,14 @@ npm start
 - Browse a collapsible folder tree, including empty folders, create notes, and save edits automatically.
 - Use the sidebar as a file explorer: create folders and notes from the toolbar, or right-click an item to create inside a folder, rename, or delete it.
 - Create code files in common languages from the new-file menu. Code opens in a monospace editor with line numbers, folding, bracket matching, indentation, and syntax highlighting for JavaScript/TypeScript, Python, HTML/XML, CSS, and JSON.
-- Link to any supported vault file from notes or canvas text with `<[relative/path.ext]>`; note links without an extension still resolve to Markdown notes. Existing `[[...]]` links remain supported.
+- Link to any supported vault file from notes or canvas text with `<[relative/path.ext]>`; add `#heading` or `#L24` to open a heading or exact line. Existing `[[...]]` links remain supported.
+- Type `;;List name/Task name;;` in a note to append a `stillnote://` link to that Google Task’s Details. Opening it returns to the line containing the reference in the same vault.
 - Edit with CodeMirror 6 live Markdown rendering, including unordered and ordered lists. Formatting appears on lines outside the caret, while the active line keeps its Markdown syntax visible for editing.
 - Restore the last open vault and note on launch, and choose Light, Sepia, or Dark from the settings menu.
 - Use the right-side note assistant to ask questions about the open note or request a complete Markdown edit. AI edits are previewed and applied only when you choose **Apply to note**.
 - Store an Ollama Cloud API key encrypted with Electron's OS-backed secure storage.
 - Create task sheets linked to Google Tasks lists. Tasks sync when opened or when you press **Sync**.
-- Create Geometry files for points, segments, circles, and triangles, with lengths and areas calculated from their coordinates.
-- Create 3D Calculator files to plot surfaces of the form `z = f(x, y)`. The built-in expression parser and Three.js renderer work offline; Ollama can answer questions about or edit both Geometry and 3D Calculator files.
+- Create Geometry files with the Desmos Geometry Tool and 3D Calculator files with the Desmos 3D Calculator. Their Desmos states are saved in the Markdown file; the API key must have Geometry Tool and 3D Calculator access enabled.
 - Search note titles with `⌘K` / `Ctrl+K`.
 - Electron context isolation and a narrow preload API for vault file access.
 
@@ -89,7 +89,7 @@ The installers are written to `release/`. macOS creates a universal DMG and ZIP 
 
 ## Set up API keys and accounts
 
-Open a vault before saving credentials. Stillnote encrypts API keys and Google OAuth credentials in a hidden `.stillnote-credentials.enc` file in that vault, using Electron's operating-system-backed encryption. The file can only be decrypted on the same device and operating-system account. Enter your credentials again if you move to another device.
+Open a vault before saving credentials. Stillnote encrypts API keys and Google OAuth credentials in a hidden `.stillnote-credentials.enc` file in that vault, using Electron's operating-system-backed encryption. The file can only be decrypted on the same device and operating-system account. If Stillnote reports that it cannot decrypt the file, use **Settings → AI settings → Reset unreadable credentials**; it archives the unreadable file and lets you enter new credentials.
 
 ### Ollama Cloud API key
 
@@ -105,7 +105,7 @@ Stillnote uses Ollama Cloud's `https://ollama.com/api/chat` endpoint. It sends t
 2. Follow the page to get an API key for your project, then copy the key.
 3. In Stillnote, open **Settings → Graphing**, paste the key, and click **Save key**.
 
-Stillnote loads the Desmos Graphing Calculator from Desmos, so graph previews need an internet connection.
+Stillnote loads the Desmos Graphing Calculator, Geometry Tool, and 3D Calculator from Desmos, so these tools need an internet connection. Geometry Tool and 3D Calculator access must be enabled for the API key.
 
 ### Google Tasks OAuth credentials
 

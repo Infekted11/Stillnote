@@ -2,6 +2,12 @@
   "build": {
     "appId": "com.stillnote.app",
     "productName": "Stillnote",
+    "protocols": [
+      {
+        "name": "Stillnote links",
+        "schemes": ["stillnote"]
+      }
+    ],
     "directories": {
       "output": "release"
     },
