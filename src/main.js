@@ -2474,6 +2474,7 @@ async function refreshExplorer() {
   renderFiles();
 }
 function canDropOnFolder(item, destinationPath) {
+  if (item?.items) return item.items.length > 0 && item.items.every((entry) => canDropOnFolder(entry, destinationPath));
   if (!item || item.path === destinationPath) return false;
   if (item.type === 'folder' && destinationPath.startsWith(`${item.path}/`)) return false;
   return true;
@@ -2501,7 +2502,16 @@ async function uploadDroppedFiles(event, destination = '') {
 function wireExplorerDrag(row, node) {
   row.draggable = true;
   row.addEventListener('dragstart', (event) => {
-    state.draggedItem = { path: node.path, type: node.type };
+    const selected = state.explorerSelection.has(node.path)
+      ? [...state.explorerSelection].map((path) => findExplorerNode(path)).filter(Boolean) : [node];
+    const items = selected.filter((entry) => !selected.some((parent) => parent.type === 'folder' && entry.path.startsWith(`${parent.path}/`)))
+      .map(({ path, type }) => ({ path, type }));
+    state.draggedItem = { items };
+    state.explorerSelection = new Set(selected.map((entry) => entry.path));
+    for (const element of $('#note-list').querySelectorAll('.note-row,.folder-row')) {
+      if (selected.some((entry) => entry.path === element.title)) element.classList.add('dragging');
+    }
+    event.dataTransfer.setData('application/x-stillnote-paths', JSON.stringify(items.map((entry) => entry.path)));
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/x-stillnote-path', node.path);
     event.dataTransfer.setData('application/x-stillnote-type', node.type);
@@ -2529,27 +2539,43 @@ $('#note-list').addEventListener('dragleave', (event) => { if (!$('#note-list').
 $('#note-list').addEventListener('drop', (event) => { if (hasExternalFiles(event)) void uploadDroppedFiles(event, ''); $('#note-list').classList.remove('asset-upload-target'); });
 async function moveExplorerEntry(item, destinationPath) {
   if (!item || !canDropOnFolder(item, destinationPath)) return;
+  const items = item.items || [item];
+  const moved = [];
+  let nextActive = state.active;
+  let failure = null;
   try {
     const activePathBeforeSave = state.active;
     await saveActive();
-    const oldPath = item.type === 'note' && activePathBeforeSave === item.path && state.active !== item.path ? state.active : item.path;
-    const movedPath = await window.stillnote.moveEntry(oldPath, destinationPath);
-    let nextActive = state.active;
-    if (state.active === oldPath) nextActive = movedPath;
-    else if (item.type === 'folder' && state.active?.startsWith(`${oldPath}/`)) nextActive = `${movedPath}${state.active.slice(oldPath.length)}`;
-    const collapsed = new Set();
-    for (const folderPath of state.collapsed) {
-      if (folderPath === oldPath) collapsed.add(movedPath);
-      else if (item.type === 'folder' && folderPath.startsWith(`${oldPath}/`)) collapsed.add(`${movedPath}${folderPath.slice(oldPath.length)}`);
-      else collapsed.add(folderPath);
+    if (state.dirty) throw new Error('Save changes before moving selected items.');
+    nextActive = state.active;
+    const entries = items.map((entry) => ({ ...entry, path: entry.type === 'note' && activePathBeforeSave === entry.path ? state.active : entry.path }));
+    const destination = destinationPath ? findExplorerNode(destinationPath)?.children || [] : state.tree;
+    const names = new Set();
+    for (const entry of entries) {
+      const name = entry.path.split('/').at(-1).toLowerCase();
+      if (names.has(name) || destination.some((existing) => existing.name.toLowerCase() === name && existing.path !== entry.path)) {
+        throw new Error('Selected items would have duplicate names in the destination folder.');
+      }
+      names.add(name);
     }
-    state.collapsed = collapsed;
+    for (const entry of entries) {
+      const oldPath = entry.path;
+      const movedPath = await window.stillnote.moveEntry(oldPath, destinationPath);
+      moved.push(movedPath);
+      if (nextActive === oldPath) nextActive = movedPath;
+      else if (entry.type === 'folder' && nextActive?.startsWith(`${oldPath}/`)) nextActive = `${movedPath}${nextActive.slice(oldPath.length)}`;
+      state.collapsed = new Set([...state.collapsed].map((folder) => folder === oldPath || folder.startsWith(`${oldPath}/`) ? `${movedPath}${folder.slice(oldPath.length)}` : folder));
+    }
+  } catch (error) { failure = error; }
+  if (moved.length) {
     if (destinationPath) state.collapsed.delete(destinationPath);
+    state.explorerSelection = new Set(moved);
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
     renderFiles();
     if (nextActive) { state.active = null; await openNote(nextActive); }
-    showToast('Item moved');
-  } catch (error) { showToast(error.message || 'Could not move item.'); }
+  }
+  if (failure) showToast(`${moved.length ? `${moved.length} items moved. ` : ''}${failure.message || 'Could not move selected items.'}`);
+  else showToast(`${moved.length} item${moved.length === 1 ? '' : 's'} moved`);
 }
 $('.explorer-heading').addEventListener('dragover', (event) => {
   if (!state.draggedItem || !canDropOnFolder(state.draggedItem, '')) return;
