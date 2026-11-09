@@ -1,3 +1,4 @@
+import { reorderSpreadsheet } from './spreadsheet.js';
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -197,6 +198,9 @@ const icons = {
   star: svgIcon('<path d="m12 3 2.75 5.57 6.15.89-4.45 4.33 1.05 6.12L12 17.02l-5.5 2.89 1.05-6.12L3.1 9.46l6.15-.89L12 3z"/>'),
   undo: svgIcon('<path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/>'),
   redo: svgIcon('<path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/>'),
+  code: svgIcon('<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>'),
+  geometry: svgIcon('<path d="m4 19 8-15 8 15H4zM8 19a4 4 0 0 0-2-4"/>'),
+  calculator3d: svgIcon('<path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M12 3v10"/>'),
   spreadsheet: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16M10 9v11M15 9v11"/>'),
   graph: svgIcon('<path d="M4 20V4M4 20h16"/><path d="M7 16c2-1 2-7 5-7s3 5 6 1"/>'),
   folder: svgIcon('<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
@@ -2078,14 +2082,80 @@ async function renderGraph(root, data) {
   }
 }
 function renderSpreadsheet(root, data) {
-  const toolbar = root.querySelector('.structured-toolbar'); toolbar.innerHTML = `<span>Click a cell to edit · use &lt;[Note]&gt; to link</span><button data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button><button class="sheet-add-row">Add row</button><button class="sheet-add-column">Add column</button>`;
+  const toolbar = root.querySelector('.structured-toolbar'); toolbar.innerHTML = `<span>Drag headers to reorder · Double-click a column or press F2 to rename · Alt + arrows to move</span><button data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button><button class="sheet-add-row">Add row</button><button class="sheet-add-column">Add column</button>`;
   const surface = root.querySelector('.structured-surface');
+  let draggedHeader = null;
   const render = () => {
-    let html='<table class="sheet-grid"><thead><tr><th></th>'; for(let c=0;c<data.columns;c++) html+=`<th>${columnLabel(c)}</th>`; html+='</tr></thead><tbody>';
-    for(let r=0;r<data.rows;r++){html+=`<tr><th>${r+1}</th>`;for(let c=0;c<data.columns;c++){const key=`${columnLabel(c)}${r+1}`;const value=String(data.cells[key] ?? ''); const shown=value.startsWith('=')?spreadsheetCellValue(data,key):value; html+=`<td contenteditable="true" data-cell="${key}" spellcheck="false">${sheetCellHtml(shown)}</td>`;}html+='</tr>';}
+    let html = '<table class="sheet-grid"><thead><tr><th></th>';
+    for (let c = 0; c < data.columns; c++) {
+      const letter = columnLabel(c), name = data.columnNames?.[c] || '';
+      const label = name ? `${letter}: ${name}` : letter;
+      html += `<th draggable="true" tabindex="0" scope="col" data-axis="column" data-index="${c}" aria-label="${escapeHtml(`Column ${label}. Double-click or press F2 to rename. Drag to move.`)}" title="Double-click or press F2 to rename · Drag to move">${name ? `<span class="sheet-column-letter">${letter}</span> ${escapeHtml(name)}` : letter} <span aria-hidden="true">⠿</span></th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for(let r=0;r<data.rows;r++){html+=`<tr><th draggable="true" tabindex="0" scope="row" data-axis="row" data-index="${r}" aria-label="Row ${r+1}. Drag or use Alt and up or down arrow to move." title="Drag to move row">${r+1} <span aria-hidden="true">⠿</span></th>`;for(let c=0;c<data.columns;c++){const key=`${columnLabel(c)}${r+1}`;const value=String(data.cells[key] ?? ''); const shown=value.startsWith('=')?spreadsheetCellValue(data,key):value; html+=`<td contenteditable="true" data-cell="${key}" spellcheck="false">${sheetCellHtml(shown)}</td>`;}html+='</tr>';}
     html+='</tbody></table>'; surface.innerHTML=html;
-    surface.querySelectorAll('[data-cell]').forEach(cell=>{cell.addEventListener('focus',()=>{cell.textContent=data.cells[cell.dataset.cell]||'';});cell.addEventListener('input',()=>{data.cells[cell.dataset.cell]=cell.innerText;setStructuredDirty();surface.querySelectorAll('[data-cell]').forEach(other=>{if(other===cell||document.activeElement===other)return;const raw=String(data.cells[other.dataset.cell]??'');other.innerHTML=sheetCellHtml(raw.startsWith('=')?spreadsheetCellValue(data,other.dataset.cell):raw);});});cell.addEventListener('blur',()=>{data.cells[cell.dataset.cell]=serializeLinkedText(cell);render();});});
+    surface.querySelectorAll('[data-cell]').forEach(cell=>{cell.addEventListener('focus',()=>{cell.textContent=data.cells[cell.dataset.cell]||'';});cell.addEventListener('input',()=>{data.cells[cell.dataset.cell]=cell.innerText;setStructuredDirty();surface.querySelectorAll('[data-cell]').forEach(other=>{if(other===cell||document.activeElement===other)return;const raw=String(data.cells[other.dataset.cell]??'');other.innerHTML=sheetCellHtml(raw.startsWith('=')?spreadsheetCellValue(data,other.dataset.cell):raw);});});cell.addEventListener('blur',()=>{const key=cell.dataset.cell;data.cells[key]=serializeLinkedText(cell);const raw=String(data.cells[key]??'');cell.innerHTML=sheetCellHtml(raw.startsWith('=')?spreadsheetCellValue(data,key):raw);});});
   };
+  const renameColumn = async (header) => {
+    const index = Number(header.dataset.index), owner = state.structured;
+    const name = await requestNameValue(`Rename column ${columnLabel(index)}`, data.columnNames?.[index] || '', 'Rename');
+    if (name === null || state.structured !== owner || !root.isConnected) return;
+    const next = name.trim();
+    if (next === (data.columnNames?.[index] || '')) return;
+    if (!Array.isArray(data.columnNames)) data.columnNames = [];
+    data.columnNames[index] = next;
+    owner.historyPending = false;
+    render(); setStructuredDirty();
+    surface.querySelector(`[data-axis="column"][data-index="${index}"]`)?.focus();
+  };
+  surface.addEventListener('dblclick', event => {
+    const header = event.target.closest('th[data-axis="column"]');
+    if (header) { event.preventDefault(); void renameColumn(header); }
+  });
+  surface.addEventListener('keydown', event => {
+    const header = event.target.closest('th[data-axis="column"]');
+    if (header && event.key === 'F2') { event.preventDefault(); void renameColumn(header); }
+  });
+  const clearDrop = () => surface.querySelectorAll('.sheet-drop-target,.sheet-dragging').forEach(header => header.classList.remove('sheet-drop-target', 'sheet-dragging'));
+  const move = (axis, from, to) => {
+    // End the previous edit's undo group so a move can be undone independently.
+    if (state.structured) state.structured.historyPending = false;
+    if (!reorderSpreadsheet(data, axis, from, to)) return;
+    render(); setStructuredDirty();
+    surface.querySelector(`[data-axis="${axis}"][data-index="${to}"]`)?.focus();
+  };
+  surface.addEventListener('dragstart', event => {
+    const header = event.target.closest('th[data-axis]');
+    if (!header) return;
+    draggedHeader = { axis: header.dataset.axis, from: Number(header.dataset.index) };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-stillnote-sheet-header', JSON.stringify(draggedHeader));
+    header.classList.add('sheet-dragging');
+  });
+  surface.addEventListener('dragover', event => {
+    const header = event.target.closest('th[data-axis]');
+    if (!draggedHeader || !header || header.dataset.axis !== draggedHeader.axis) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    surface.querySelectorAll('.sheet-drop-target').forEach(element => element.classList.remove('sheet-drop-target'));
+    header.classList.add('sheet-drop-target');
+  });
+  surface.addEventListener('drop', event => {
+    const header = event.target.closest('th[data-axis]');
+    if (!draggedHeader || !header || header.dataset.axis !== draggedHeader.axis) return;
+    event.preventDefault(); event.stopPropagation();
+    const { axis, from } = draggedHeader; draggedHeader = null; clearDrop();
+    move(axis, from, Number(header.dataset.index));
+  });
+  surface.addEventListener('dragend', () => { draggedHeader = null; clearDrop(); });
+  surface.addEventListener('keydown', event => {
+    const header = event.target.closest('th[data-axis]');
+    if (!header || !event.altKey) return;
+    const axis = header.dataset.axis, from = Number(header.dataset.index);
+    const delta = axis === 'row' ? { ArrowUp: -1, ArrowDown: 1 }[event.key] : { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+    if (!delta) return;
+    event.preventDefault(); move(axis, from, from + delta);
+  });
   surface.addEventListener('click',e=>{const link=e.target.closest('.sheet-wiki-link');if(link)e.preventDefault();});
   surface.addEventListener('contextmenu',e=>{const link=e.target.closest('.sheet-wiki-link');if(link){e.preventDefault();e.stopPropagation();structuredLink(link.dataset.target);}});
   toolbar.querySelector('.sheet-add-row').addEventListener('click',()=>{data.rows=Math.min(200,data.rows+1);render();setStructuredDirty();});
@@ -2452,10 +2522,38 @@ function chooseGoogleTaskList(lists) {
 }
 function showNewFileMenu(anchor, parentPath = '') {
   const menu = $('#new-file-menu'); menu.replaceChildren();
-  const options = [['New note', () => createNote(parentPath)], ['New code file…', () => createCodeFile(parentPath)], ['New canvas', () => createStructuredFile('canvas', parentPath)], ['New geometry', () => createStructuredFile('geometry', parentPath)], ['New 3D calculator', () => createStructuredFile('calculator3d', parentPath)], ['New spreadsheet', () => createStructuredFile('spreadsheet', parentPath)], ['New graph', () => createStructuredFile('graph', parentPath)], ['New task sheet', () => createTaskSheet(parentPath)]];
-  for (const [label, action] of options) { const button=document.createElement('button');button.className='context-action';button.textContent=label;button.addEventListener('click',()=>{menu.hidden=true;action();});menu.append(button); }
-  const rect=anchor.getBoundingClientRect();menu.hidden=false;
-  menu.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-205))}px`;menu.style.top=`${Math.min(rect.bottom+4,window.innerHeight-menu.offsetHeight-8)}px`;
+  const options = [
+    ['Note', 'file', () => createNote(parentPath)],
+    ['Code file', 'code', () => createCodeFile(parentPath)],
+    ['Canvas', 'canvas', () => createStructuredFile('canvas', parentPath)],
+    ['Geometry', 'geometry', () => createStructuredFile('geometry', parentPath)],
+    ['3D calculator', 'calculator3d', () => createStructuredFile('calculator3d', parentPath)],
+    ['Spreadsheet', 'spreadsheet', () => createStructuredFile('spreadsheet', parentPath)],
+    ['Graph', 'graph', () => createStructuredFile('graph', parentPath)],
+    ['Task sheet', 'tasks', () => createTaskSheet(parentPath)]
+  ];
+  menu.setAttribute('aria-label', 'Create a file');
+  anchor.setAttribute('aria-expanded', 'true');
+  anchor.setAttribute('aria-controls', menu.id);
+  for (const [label, icon, action] of options) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'new-file-type';
+    button.setAttribute('role', 'menuitem'); button.setAttribute('aria-label', label);
+    button.title = label; button.dataset.tooltip = label;
+    button.innerHTML = icons[icon];
+    button.addEventListener('click', () => { menu.hidden = true; anchor.setAttribute('aria-expanded', 'false'); action(); });
+    button.addEventListener('keydown', (event) => {
+      const index = options.findIndex(([name]) => name === label);
+      const offset = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 4, ArrowUp: -4 }[event.key];
+      if (offset !== undefined) { event.preventDefault(); menu.children[(index + offset + options.length) % options.length].focus(); }
+      if (event.key === 'Escape') { menu.hidden = true; anchor.setAttribute('aria-expanded', 'false'); anchor.focus(); }
+    });
+    menu.append(button);
+  }
+  const rect = anchor.getBoundingClientRect(); menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
+
 }
 async function createFolder(parentPath = '') {
   if (!state.vault) return chooseVault();
