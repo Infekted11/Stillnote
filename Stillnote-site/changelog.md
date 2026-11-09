@@ -4,11 +4,7 @@
 
 ### Added:
 
-- Upgraded local transcription from Whisper Small to Whisper Medium while retaining 15-second recording intervals.
-
-- Upgraded local transcription to Whisper Small and increased live transcription intervals to 15 seconds for more context. Stopping still transcribes the remaining audio.
-
-- Fixed live local transcription: speech is appended to the current note in short chunks using Whisper Tiny, with remaining audio flushed on stop or navigation. Removed the automatic cloud summary and separate transcript file.
+- Fixed live local transcription: speech is appended to the current note in short chunks using Whisper Medium in 15-second recording intervals, with remaining audio transcribed after stopping. Removed the automatic cloud summary and separate transcript file.
 
 - Images now align to the top with text wrapping along their right side across multiple lines, then returning to full width below the image.
 
