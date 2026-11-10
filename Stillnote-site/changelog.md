@@ -4,6 +4,20 @@
 
 ### Added:
 
+- Linked spreadsheets render as tables in notes with internal grid lines and stronger first-row/column separators. Previews fit populated cells by default; add a cell endpoint such as #D8 to show A1 through D8. Documented the syntax in the existing guide.
+
+- Removed canvas selection glow and soft shadows from canvas tools, text fields, and menus while preserving selection outlines and handles.
+
+- Fixed canvas text editing so clicking and selecting text preserves the caret, multiline text survives blur, pasted content stays plain, and text undo works without replacing the canvas. New text fields enter editing immediately; Alt-drag moves text fields.
+
+- Canvas image insertion now opens a link field and searchable vault image list. Vault image references follow renames and moves, including undo history, and retain a saved image if the source is deleted.
+
+- Expanded the existing syntax guide with spreadsheet formulas, calculation rules, supported logic, and error explanations.
+
+- Added an image button to canvases. Images are embedded in the canvas file behind existing elements, with support for moving, resizing, rotating, and undo/redo.
+
+- Linked canvases now render read-only previews inside notes. Added audio and video file viewing and inline playback controls for linked media.
+
 - Matched website icons to the app’s custom outline SVGs across the demo, feature cards, integrations, and workspace tools.
 
 - Changed the header title and navigation text to invert the colors behind them.

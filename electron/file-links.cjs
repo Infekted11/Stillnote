@@ -10,7 +10,7 @@ function matchesPath(target, file) {
   const clean = target.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
   return clean === file.toLowerCase() || (!/\.[^/]+$/.test(clean) && `${clean}.md` === file.toLowerCase());
 }
-function rewriteLinks(text, moves) {
+function rewritePlainLinks(text, moves) {
   const references = linksIn(text);
   for (const { match, value, target } of references.reverse()) {
     const move = moves.find(([oldPath]) => matchesPath(target, oldPath));
@@ -20,5 +20,25 @@ function rewriteLinks(text, moves) {
     text = text.slice(0, match.index) + replacement + text.slice(match.index + match[0].length);
   }
   return text;
+}
+function rewriteLinks(text, moves) {
+  // Structured documents contain JSON strings: escape renamed paths through JSON
+  // serialization so quotes and backslashes in filenames cannot corrupt a canvas.
+  const fence = /```stillnote-(canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*\n([\s\S]*?)\n```/g;
+  let offset = 0, result = '', match;
+  while ((match = fence.exec(text))) {
+    result += rewritePlainLinks(text.slice(offset, match.index), moves);
+    let replacement = match[0];
+    try {
+      const original = JSON.parse(match[2]);
+      const visit = value => typeof value === 'string' ? rewritePlainLinks(value, moves)
+        : Array.isArray(value) ? value.map(visit)
+        : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item)])) : value;
+      const updated = visit(original);
+      if (JSON.stringify(original) !== JSON.stringify(updated)) replacement = '```stillnote-' + match[1] + '\n' + JSON.stringify(updated, null, 2) + '\n```';
+    } catch { /* Leave malformed structured content intact for recovery. */ }
+    result += replacement; offset = match.index + match[0].length;
+  }
+  return result + rewritePlainLinks(text.slice(offset), moves);
 }
 module.exports = { linksIn, matchesPath, rewriteLinks };

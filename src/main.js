@@ -178,6 +178,8 @@ const icons = {
   formatCheck: svgIcon('<rect x="3.5" y="4" width="6" height="6" rx="1"/><path d="m5 7 1.4 1.4L8.5 6M13 7h7M3.5 14h6v6h-6zM13 17h7"/>'),
   tasks: svgIcon('<path d="m4 7 1.5 1.5L8 5.8M11 7h9M4 16l1.5 1.5L8 14.8M11 16h9"/>'),
   formatHighlight: svgIcon('<path d="m8 14 7-7 4 4-7 7H8zM6 20h13M13 9l4 4M5 5h3M6.5 3.5v3M18 17l2 2M19 18l2-2"/>'),
+  duplicate: svgIcon('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>'),
+  image: svgIcon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>'),
   canvas: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="m7 16 3-4 2 2 3-5 2 7"/>'),
   cursor: svgIcon('<path d="m5 3 14 10-7 1-3 7z"/>'),
   draw: svgIcon('<path d="m4 16 9-9 4 4-9 9H4zM12 8l4 4M14 6l2-2 4 4-2 2"/>'),
@@ -291,7 +293,7 @@ app.innerHTML = `
           <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
-            <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
+            <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Play audio and video</strong><code>MP4 · WebM · OGV · MOV · M4V · MP3 · WAV · OGG · M4A · AAC · FLAC · Opus (codec support varies)</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
             <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p><button class="secondary-button" id="reset-unreadable-credentials" type="button">Reset unreadable credentials</button><p class="settings-note">Use this only when Stillnote cannot decrypt credentials. It archives the unreadable credentials file so you can enter new Ollama, Desmos, and Google Tasks credentials.</p></section>
             <section class="settings-section" data-section="tasks" hidden><div class="settings-section-heading"><span class="eyebrow">GOOGLE TASKS</span><h3>Sync task sheets</h3><p>Task sheets read from and write to Google Tasks lists. Your OAuth credentials and account token are encrypted in this vault.</p></div><label class="field-label" for="google-tasks-client-id">OAuth Desktop app client ID</label><input class="settings-input" id="google-tasks-client-id" type="text" autocomplete="off" placeholder="123456789.apps.googleusercontent.com"><label class="field-label" for="google-tasks-client-secret">OAuth client secret</label><input class="settings-input" id="google-tasks-client-secret" type="password" autocomplete="new-password" placeholder="Paste the secret from the same Desktop app client"><div class="key-actions"><button class="primary-button" id="save-google-tasks-client">Save credentials</button><button class="secondary-button" id="connect-google-tasks">Connect Google account</button><button class="secondary-button" id="disconnect-google-tasks">Disconnect</button><span class="key-status" id="google-tasks-status">Checking connection…</span></div><p class="settings-note">Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”. Copy the Client ID and Client Secret, you will need these and won't be able to view them again. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.</p></section>
 
@@ -301,7 +303,7 @@ app.innerHTML = `
 
             <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
-            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write and link notes</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div></div></section>
+            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write, link, and calculate</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line. Spreadsheet formulas calculate inside spreadsheet files.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet tables in notes</h4><div class="shortcut-row"><span>All populated cells</span><kbd>&lt;[Budget.md]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A1 through D8</span><kbd>&lt;[Budget.md#D8]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A5 through D8</span><kbd>&lt;[Budget.md#A5,D8]&gt;</kbd></div><div class="shortcut-row"><span>Legacy link</span><kbd>[[Budget.md#D8]]</kbd></div><div class="shortcut-row"><span>Displayed values</span><kbd>Formula results; first row and column act as headers</kbd></div><div class="shortcut-row"><span>Edit or open</span><kbd>Edit link to change extent; right-click table to open spreadsheet</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet formulas</h4><div class="shortcut-row"><span>Start a calculation</span><kbd>Begin the cell with =</kbd></div><div class="shortcut-row"><span>Add / subtract</span><kbd>=A1+B1 · =A1-B1</kbd></div><div class="shortcut-row"><span>Multiply / divide</span><kbd>=A1*B1 · =A1/B1</kbd></div><div class="shortcut-row"><span>Powers</span><kbd>=A1^2</kbd></div><div class="shortcut-row"><span>Group calculations</span><kbd>=(A1+B1)*C1</kbd></div><div class="shortcut-row"><span>Total several cells</span><kbd>=A1+A2+A3</kbd></div><div class="shortcut-row"><span>Average several cells</span><kbd>=(A1+A2+A3)/3</kbd></div><div class="shortcut-row"><span>Percentage of a value</span><kbd>=A1*15/100</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet calculation rules</h4><div class="shortcut-row"><span>Cell addresses</span><kbd>A1, B2, AA10 (case-insensitive)</kbd></div><div class="shortcut-row"><span>Named columns</span><kbd>Use letter addresses even after renaming</kbd></div><div class="shortcut-row"><span>Blank cells</span><kbd>Count as 0 in formulas</kbd></div><div class="shortcut-row"><span>Negative numbers</span><kbd>=A1*(-2)</kbd></div><div class="shortcut-row"><span>Order of operations</span><kbd>Parentheses, powers, × / ÷, + / −</kbd></div><div class="shortcut-row"><span>Reorder rows or columns</span><kbd>References update to follow moved cells</kbd></div><div class="shortcut-row"><span>Edit a formula</span><kbd>Focus the cell to edit its source</kbd></div><div class="shortcut-row"><span>Supported logic</span><kbd>Arithmetic only; no IF, AND, OR, comparisons, ranges, or SUM</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet errors</h4><div class="shortcut-row"><span>Division by zero</span><kbd>#DIV/0! — check the divisor</kbd></div><div class="shortcut-row"><span>Circular reference</span><kbd>#CYCLE! — a formula refers back to itself</kbd></div><div class="shortcut-row"><span>Invalid value or formula</span><kbd>#VALUE! — check syntax and referenced cells</kbd></div><div class="shortcut-row"><span>Text in calculations</span><kbd>Referenced cells must contain numbers or formulas</kbd></div></div></div></section>
             <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
           </div>
         </div>
@@ -428,12 +430,79 @@ class EquationWidget extends WidgetType {
   }
   eq(other) { return other.source === this.source && other.from === this.from && other.to === this.to; }
 }
+const playableMediaExtensions = ['.mp4', '.webm', '.ogv', '.mov', '.m4v', '.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac', '.opus'];
+function createMediaPlayer(asset, file, host) {
+  const player = document.createElement(asset.mime.startsWith('video/') ? 'video' : 'audio');
+  player.className = 'asset-media-player'; player.controls = true; player.preload = 'metadata';
+  player.setAttribute('aria-label', prettyName(file));
+  if (player.tagName === 'VIDEO') player.playsInline = true;
+  player.addEventListener('error', () => {
+    let error = host.querySelector('.media-playback-error');
+    if (!error) { error = document.createElement('span'); error.className = 'media-playback-error'; host.append(error); }
+    error.textContent = 'This media format or codec cannot be played by the built-in player.';
+  });
+  player.src = asset.data;
+  return player;
+}
+function disposeMediaPlayers(host) {
+  host.querySelectorAll('audio,video').forEach(player => { player.pause(); player.removeAttribute('src'); player.load(); });
+}
+function spreadsheetPreviewSize(data, endCell = '') {
+  const address = key => {
+    const match = String(key).trim().match(/^([A-Z]+)([1-9]\d*)$/i);
+    if (!match) return null;
+    let columns = 0;
+    for (const letter of match[1].toUpperCase()) columns = columns*26 + letter.charCodeAt(0)-64;
+    return { columns, rows: Number(match[2]) };
+  };
+  let rows = 0, columns = 0, startRow = 0, startColumn = 0;
+  if (endCell) {
+    const parts = endCell.split(',');
+    const start = parts.length === 2 ? address(parts[0]) : address('A1');
+    const end = address(parts[parts.length-1]);
+    if (parts.length > 2 || !start || !end) throw new Error('Use a cell address such as #D8, or two cells such as #A5,D8.');
+    if (![start.rows, start.columns, end.rows, end.columns].every(Number.isSafeInteger)) throw new Error('This table range is too large.');
+    if (end.rows < start.rows || end.columns < start.columns) throw new Error('The second cell must be at or below and to the right of the first cell.');
+    startRow = start.rows-1; startColumn = start.columns-1;
+    rows = end.rows-startRow; columns = end.columns-startColumn;
+  } else {
+    for (const [key, value] of Object.entries(data.cells || {})) {
+      if (!String(value ?? '').trim()) continue;
+      const cell = address(key); if (!cell) continue;
+      rows = Math.max(rows, cell.rows); columns = Math.max(columns, cell.columns);
+    }
+  }
+  if (!Number.isSafeInteger(rows*columns) || rows*columns > 50000) throw new Error('This table is too large to embed. Add a smaller endpoint such as #D8.');
+  return { rows, columns, startRow, startColumn };
+}
+function renderSpreadsheetPreview(data, endCell, file) {
+  const { rows, columns, startRow, startColumn } = spreadsheetPreviewSize(data, endCell);
+  const scroll = document.createElement('span'); scroll.className = 'cm-wiki-sheet-scroll';
+  if (!rows || !columns) { scroll.textContent = 'Empty spreadsheet'; return scroll; }
+  const table = document.createElement('table'); table.className = 'cm-wiki-sheet-table'; table.setAttribute('aria-label', file);
+  const body = document.createElement('tbody');
+  for (let row = 0; row < rows; row++) {
+    const tr = document.createElement('tr');
+    for (let col = 0; col < columns; col++) {
+      const key = `${columnLabel(col+startColumn)}${row+startRow+1}`, raw = String(data.cells?.[key] ?? '');
+      const cell = document.createElement(row === 0 || col === 0 ? 'th' : 'td');
+      if (row === 0) cell.setAttribute('scope', 'col'); else if (col === 0) cell.setAttribute('scope', 'row');
+      cell.textContent = raw.startsWith('=') ? spreadsheetCellValue(data, key) : raw;
+      cell.dataset.cell = key; tr.append(cell);
+    }
+    body.append(tr);
+  }
+  table.append(body); scroll.append(table); return scroll;
+}
 class WikiMediaWidget extends WidgetType {
-  constructor(file, from, to) { super(); this.file = file; this.from = from; this.to = to; }
+  constructor(file, from, to, endCell = '') { super(); this.file = file; this.from = from; this.to = to; this.endCell = endCell; }
   toDOM(view) {
     const extension = `.${fileExtension(this.file)}`;
     const is3d = ['.obj', '.stl', '.step', '.stp'].includes(extension);
-    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
+    const isCanvas = findExplorerNode(this.file)?.format === 'canvas';
+    const isSpreadsheet = findExplorerNode(this.file)?.format === 'spreadsheet';
+    const isPlayable = playableMediaExtensions.includes(extension);
+    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${isSpreadsheet ? ' is-spreadsheet' : isCanvas ? ' is-canvas' : isPlayable ? ' is-playable' : is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'cm-wiki-media-edit'; edit.textContent = 'Edit link'; edit.title = 'Show and edit the link';
     edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
     edit.addEventListener('click', (event) => {
@@ -442,10 +511,28 @@ class WikiMediaWidget extends WidgetType {
     });
     preview.append(edit);
     const loading = document.createElement('span'); loading.className = 'cm-wiki-media-loading'; loading.textContent = 'Loading preview…'; preview.append(loading);
-    window.stillnote.readAsset(this.file).then((asset) => {
+    const source = isCanvas || isSpreadsheet ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
+    source.then((asset) => {
       if (!preview.isConnected) return;
       preview.replaceChildren(edit);
-      if (asset.mime.startsWith('image/')) {
+      if (isSpreadsheet) {
+        const sheet = decodeStructured(asset);
+        if (sheet?.type !== 'spreadsheet' || !sheet.data?.cells || typeof sheet.data.cells !== 'object') throw new Error('Invalid spreadsheet');
+        preview.append(renderSpreadsheetPreview(sheet.data, this.endCell, this.file));
+      } else if (isCanvas) {
+        const canvas = decodeStructured(asset);
+        if (canvas?.type !== 'canvas' || !Array.isArray(canvas.data?.elements)) throw new Error('Invalid canvas');
+        const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        drawing.setAttribute('viewBox', `0 0 ${canvas.data.width || 1200} ${canvas.data.height || 760}`);
+        drawing.setAttribute('role', 'img'); drawing.setAttribute('aria-label', this.file);
+        drawing.classList.add('cm-wiki-canvas-preview');
+        drawCanvasElements(drawing, canvas.data, color => state.theme === 'dark' && ['#20211e', '#353630', '#373832', '#000', '#000000'].includes(color || '#20211e') ? '#ffffff' : color || '#20211e', new Set(), true);
+        preview.append(drawing);
+      } else if (isPlayable) {
+        const player = createMediaPlayer(asset, this.file, preview);
+        player.addEventListener('loadedmetadata', () => { if (preview.isConnected) view.requestMeasure(); });
+        preview.append(player);
+      } else if (asset.mime.startsWith('image/')) {
         const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.alt = this.file; image.loading = 'lazy';
         image.addEventListener('load', () => { if (preview.isConnected) view.requestMeasure(); });
         image.src = asset.data; preview.append(image);
@@ -455,17 +542,18 @@ class WikiMediaWidget extends WidgetType {
         attachMediaResize(preview, view, `${state.vault?.path}/${state.active}:${this.file}:${this.from}`);
         void mountInlineModelPreview(viewport, this.file, asset, preview);
       }
-    }).catch(() => {
+      view.requestMeasure();
+    }).catch((problem) => {
       if (!preview.isConnected) return;
       preview.classList.add('is-error');
-      const error = document.createElement('span'); error.textContent = `Preview unavailable · ${this.file}`; preview.replaceChildren(edit, error);
+      const error = document.createElement('span'); error.textContent = `Preview unavailable · ${this.file}${isSpreadsheet ? ` · ${problem.message}` : ''}`; preview.replaceChildren(edit, error);
     });
     preview.addEventListener('pointerdown', (event) => event.stopPropagation());
     preview.addEventListener('mousedown', (event) => event.stopPropagation());
     return preview;
   }
-  destroy(dom) { dom.__disposePreview?.(); }
-  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to; }
+  destroy(dom) { disposeMediaPlayers(dom); dom.__disposePreview?.(); }
+  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to && other.endCell === this.endCell; }
 }
 const taskPreviewCache = new Map();
 function decodeTaskReferencePart(value) { try { return decodeURIComponent(value); } catch { return value; } }
@@ -628,12 +716,13 @@ function makeLiveMarkdownDecorations(view) {
       while ((wikiMatch = wikiMatcher.exec(line.text))) {
         const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
         if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
-        const target = (wikiMatch[1] || wikiMatch[2]).split('|')[0].split('#')[0].trim();
+        const reference = (wikiMatch[1] || wikiMatch[2]).split('|')[0];
+        const [target, endCell = ''] = reference.split('#').map(value => value.trim());
         const linkedFile = resolveVaultFileTarget(target);
         const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
-        const media = ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp'].includes(extension);
+        const media = ['canvas', 'spreadsheet'].includes(findExplorerNode(linkedFile)?.format) || playableMediaExtensions.includes(extension) || ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp'].includes(extension);
         const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
-        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to) }).range(from, to));
+        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, endCell) }).range(from, to));
         else decorations.push(Decoration.mark({ class: 'cm-md-wiki-link' }).range(from, to));
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
@@ -1284,6 +1373,7 @@ async function renderAssetPreview(file, navigationId) {
   const ext = `.${fileExtension(file)}`;
   state.assetPath = file; state.assetBytes = ext === '.pdf' ? bytesFromDataUrl(asset.data) : null; state.pdfText = null; state.pdfTextPromise = null;
   if (asset.mime.startsWith('image/')) { const image = document.createElement('img'); image.className = 'asset-preview-image'; image.src = asset.data; image.alt = prettyName(file); image.addEventListener('error', () => { const message = document.createElement('p'); message.className = 'asset-preview-error'; message.textContent = 'This image format cannot be decoded by the built-in preview.'; stage.replaceChildren(message); }); stage.append(image); }
+  else if (asset.mime.startsWith('audio/') || asset.mime.startsWith('video/')) { stage.append(createMediaPlayer(asset, file, stage)); state.assetViewer = { destroy() { disposeMediaPlayers(stage); } }; }
   else if (asset.mime === 'application/pdf') { const shell = document.createElement('div'); shell.className = 'asset-pdf-shell'; const frame = document.createElement('iframe'); frame.className = 'asset-preview-frame'; frame.title = prettyName(file); frame.src = asset.data; shell.append(frame); stage.append(shell); }
   else if (['.obj', '.stl', '.step', '.stp'].includes(ext)) { void mountThreeViewer(stage, file, asset, navigationId); }
   else {
@@ -1848,40 +1938,114 @@ async function renderDesmosTool(root, data, type) {
     if (state.structured === owner && root.isConnected) { setSettingsHealth('desmos', false, 'Desmos tool unavailable'); status(error.message || `Could not open ${label}.`, true); }
   }
 }
-function renderCanvas(root, data) {
-  const toolbar = root.querySelector('.structured-toolbar');
-  const colors=[['red','#d94d48'],['yellow','#d9ae23'],['green','#348562'],['blue','#397dc2'],['black','#20211e']];
-  toolbar.innerHTML = `<div class="canvas-tool-group" role="toolbar" aria-label="Canvas tools">${[['select','Select and move',icons.cursor],['draw','Pen tool',icons.draw],['shape','Shape tool',icons.shape],['line','Line tool',icons.line],['text','Insert text',icons.text]].map(([tool,label,icon])=>`<button class="canvas-tool${tool==='select'?' active':''}" data-tool="${tool}" title="${label}" aria-label="${label}" aria-pressed="${tool==='select'}">${icon}</button>`).join('')}<span class="canvas-tool-divider"></span><button class="canvas-tool" data-action="rotate" title="Rotate selected 15° clockwise" aria-label="Rotate selected 15 degrees clockwise">${icons.rotate}</button><button class="canvas-tool canvas-delete" data-tool="delete" title="Delete selected" aria-label="Delete selected">${icons.trash}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button class="canvas-tool" data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button></div>`;
-  const surface = root.querySelector('.structured-surface');
-  surface.innerHTML = `<svg class="canvas-svg" viewBox="0 0 ${data.width || 1200} ${data.height || 760}" style="width:${data.width || 1200}px;height:${data.height || 760}px;max-width:none" role="img" aria-label="Drawing canvas" xmlns="http://www.w3.org/2000/svg"></svg>`;
-  const svg = surface.querySelector('svg');
-  const palette=document.createElement('div');palette.className='canvas-color-palette';palette.setAttribute('role','group');palette.setAttribute('aria-label','Selected item colors');
-  palette.innerHTML=colors.map(([name,color])=>`<button class="canvas-color-swatch" data-color="${color}" style="--swatch:${color}" title="${name[0].toUpperCase()+name.slice(1)}" aria-label="${name[0].toUpperCase()+name.slice(1)} color" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg></button>`).join('');surface.append(palette);
-  const shapeMenu=document.createElement('div');shapeMenu.className='canvas-shape-menu';shapeMenu.setAttribute('role','group');shapeMenu.setAttribute('aria-label','Shape options');
-  shapeMenu.innerHTML=`<div class="canvas-shape-options">${[['rectangle','Rectangle',icons.rectangle],['ellipse','Ellipse',icons.ellipse],['triangle','Triangle',icons.triangle],['star','Star',icons.star],['speech','Speech bubble',icons.speech]].map(([shape,label,icon])=>`<button type="button" data-shape="${shape}" title="${label}" aria-label="${label}" aria-pressed="false">${icon}</button>`).join('')}</div><label class="canvas-star-points" hidden>Points <select aria-label="Star points">${Array.from({length:9},(_,i)=>`<option value="${i+4}"${i===1?' selected':''}>${i+4}</option>`).join('')}</select></label>`;surface.append(shapeMenu);
-  const lineMenu=document.createElement('div');lineMenu.className='canvas-line-menu';lineMenu.setAttribute('role','group');lineMenu.setAttribute('aria-label','Line endpoint styles');
-  lineMenu.innerHTML=`${[['start','Start'],['end','End']].map(([endpoint,label])=>`<div class="canvas-endpoint-menu" data-endpoint-menu="${endpoint}" role="group" aria-label="${label} endpoint style">${[['none','None',icons.markerNone],['arrow','Arrow',icons.markerArrow],['circle','Circle',icons.markerCircle],['square','Square',icons.markerSquare],['diamond','Diamond',icons.markerDiamond]].map(([style,title,icon])=>`<button type="button" data-endpoint="${endpoint}" data-style="${style}" title="${label}: ${title}" aria-label="${label}: ${title}" aria-pressed="false">${icon}</button>`).join('')}</div>`).join('')}`;surface.append(lineMenu);
-  const toolHelp=document.createElement('div');toolHelp.className='canvas-tool-help';toolHelp.setAttribute('aria-live','polite');root.append(toolHelp);
-  let tool = 'select'; let selected = new Set(); let draft = null; let interaction = null; let selectionBox = null; let selectedColor='#20211e';
-  const displayColor=color=>{const value=String(color||selectedColor).toLowerCase();return state.theme==='dark'&&['#20211e','#353630','#373832','#000','#000000'].includes(value)?'#ffffff':(color||selectedColor);};
-  const bounds = (el) => {
+function isCanvasImageFile(file) { return /\.(png|jpe?g|webp|gif|svg|bmp|heic|icns)$/i.test(file); }
+function openCanvasImagePicker(insert) {
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog'); dialog.className = 'canvas-image-dialog';
+  dialog.setAttribute('aria-labelledby', 'canvas-image-title');
+  dialog.innerHTML = `<form><header><h2 id="canvas-image-title">Add image</h2><button type="button" class="icon-button" data-close aria-label="Close">${icons.close}</button></header><label for="canvas-image-link">Image link</label><input class="settings-input" id="canvas-image-link" placeholder="Vault path, Stillnote link, or https://…" required autocomplete="off"><p class="canvas-image-hint">Vault links follow file and folder renames and moves. A saved copy keeps the image visible if its source is deleted.</p><label for="canvas-image-filter">Images in your vault</label><input class="settings-input" id="canvas-image-filter" type="search" placeholder="Filter images…"><div class="canvas-image-list"></div><p class="canvas-image-error" role="alert"></p><footer><button type="button" class="secondary-button" data-close>Cancel</button><button class="primary-button" type="submit">Add image</button></footer></form>`;
+  const input = dialog.querySelector('#canvas-image-link'), filter = dialog.querySelector('#canvas-image-filter'), list = dialog.querySelector('.canvas-image-list');
+  const files = explorerFilePaths().filter(isCanvasImageFile);
+  const render = () => {
+    list.replaceChildren();
+    const matches = files.filter(file => file.toLowerCase().includes(filter.value.toLowerCase()));
+    for (const file of matches) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'canvas-image-option';
+      button.textContent = file; button.title = file;
+      button.addEventListener('click', () => { input.value = file; input.focus(); }); list.append(button);
+    }
+    if (!matches.length) { const empty = document.createElement('p'); empty.textContent = files.length ? 'No matching images.' : 'No images found. Add images to your vault to choose them here.'; list.append(empty); }
+  };
+  filter.addEventListener('input', render); render();
+  dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => dialog.close()));
+  dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
+  dialog.addEventListener('close', () => { dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus(); });
+  dialog.querySelector('form').addEventListener('submit', async event => {
+    event.preventDefault(); const submit = dialog.querySelector('[type="submit"]'), error = dialog.querySelector('.canvas-image-error');
+    submit.disabled = true; error.textContent = '';
+    try { await insert(input.value.trim(), () => dialog.open); if (dialog.open) dialog.close(); }
+    catch (problem) { error.textContent = problem.message || 'Could not add image.'; }
+    finally { submit.disabled = false; }
+  });
+  document.body.append(dialog); dialog.showModal(); input.focus();
+}
+const canvasImageAssets = new Map();
+function canvasImageAsset(file) {
+  const key = `${state.vault?.path}/${file}`;
+  let cached = canvasImageAssets.get(key);
+  if (!cached || Date.now() - cached.time > 5000) {
+    cached = { time: Date.now(), promise: window.stillnote.readAsset(file) };
+    if (canvasImageAssets.size > 50) canvasImageAssets.clear();
+    canvasImageAssets.set(key, cached);
+  }
+  return cached.promise;
+}
+function canvasElementBounds(el) {
     if(el.type==='stroke') { const xs=el.points.map(p=>p.x),ys=el.points.map(p=>p.y);const x=Math.min(...xs),y=Math.min(...ys);return {x,y,w:Math.max(1,Math.max(...xs)-x),h:Math.max(1,Math.max(...ys)-y)}; }
     if(el.type==='line') return {x:Math.min(el.x1,el.x2),y:Math.min(el.y1,el.y2),w:Math.max(1,Math.abs(el.x2-el.x1)),h:Math.max(1,Math.abs(el.y2-el.y1))};
     if(el.type==='text') return {x:el.x,y:el.y,w:Math.max(40,el.w||220),h:Math.max(30,el.h||60)};
     return {x:Math.min(el.x,el.x+el.w),y:Math.min(el.y,el.y+el.h),w:Math.max(1,Math.abs(el.w)),h:Math.max(1,Math.abs(el.h))};
-  };
-  const selectionBounds = (indices) => {const boxes=[...indices].map(i=>bounds(data.elements[i])).filter(Boolean);if(!boxes.length)return null;const x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y)),right=Math.max(...boxes.map(b=>b.x+b.w)),bottom=Math.max(...boxes.map(b=>b.y+b.h));return {x,y,w:right-x,h:bottom-y};};
-  const rotatedPoint=(x,y,center,angle)=>({x:center.x+(x-center.x)*Math.cos(angle)-(y-center.y)*Math.sin(angle),y:center.y+(x-center.x)*Math.sin(angle)+(y-center.y)*Math.cos(angle)});
-  const rotateSelectionBy=(degrees)=>{
-    const group=selectionBounds(selected);if(!group)return;const center={x:group.x+group.w/2,y:group.y+group.h/2},angle=degrees*Math.PI/180;
-    for(const i of selected){const el=data.elements[i];if(el.type==='stroke')el.points=el.points.map(p=>rotatedPoint(p.x,p.y,center,angle));else if(el.type==='line'){const a=rotatedPoint(el.x1,el.y1,center,angle),b=rotatedPoint(el.x2,el.y2,center,angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(el),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,center,angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((el.rotation||0)+degrees)%360;}}
-    paint();setStructuredDirty();
-  };
-  const paint = () => {
-    svg.replaceChildren();
+}
+
+function canvasSelectionFrame(elements, rotation = 0) {
+  if (!elements.length) return null;
+  const angle = rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+  const points = elements.flatMap(el => {
+    if (el.type === 'stroke') return el.points;
+    if (el.type === 'line') return [{ x: el.x1, y: el.y1 }, { x: el.x2, y: el.y2 }];
+    const b = canvasElementBounds(el), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const a = (el.rotation || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return [[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]].map(([x,y]) => ({ x: cx + x*b.w*c - y*b.h*s, y: cy + x*b.w*s + y*b.h*c }));
+  }).map(p => ({ x: p.x*cos + p.y*sin, y: -p.x*sin + p.y*cos }));
+  if (!points.length) return null;
+  const left = Math.min(...points.map(p => p.x)), top = Math.min(...points.map(p => p.y));
+  const w = Math.max(1, Math.max(...points.map(p => p.x)) - left), h = Math.max(1, Math.max(...points.map(p => p.y)) - top);
+  const cx = left+w/2, cy = top+h/2, center = { x: cx*cos-cy*sin, y: cx*sin+cy*cos };
+  return { x: center.x-w/2, y: center.y-h/2, w, h, rotation, center };
+}
+function duplicateCanvasElements(data, indices, offset = 24) {
+  const copies = [...indices].sort((a,b) => a-b).filter(i => data.elements[i]).map(i => {
+    const copy = structuredClone(data.elements[i]);
+    if (copy.type === 'stroke') copy.points = copy.points.map(p => ({ x: p.x+offset, y: p.y+offset }));
+    else if (copy.type === 'line') { copy.x1+=offset; copy.y1+=offset; copy.x2+=offset; copy.y2+=offset; }
+    else { copy.x+=offset; copy.y+=offset; }
+    return copy;
+  });
+  const start = data.elements.length; data.elements.push(...copies);
+  return new Set(copies.map((_,i) => start+i));
+}
+function insertCanvasImage(data, src, width, height, name) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) throw new Error('This image has invalid dimensions.');
+  const canvasWidth = data.width || 1200, canvasHeight = data.height || 760;
+  const scale = Math.min(1, canvasWidth * .8 / width, canvasHeight * .8 / height);
+  const w = width * scale, h = height * scale;
+  const image = { type: 'image', src, name, x: (canvasWidth - w) / 2, y: (canvasHeight - h) / 2, w, h };
+  data.elements.unshift(image);
+  return image;
+}
+function drawCanvasElements(svg, data, displayColor, selected = new Set(), readOnly = false, onTextFocus = () => {}) {
     data.elements.forEach((el, i) => {
       let node;
-      if (el.type === 'stroke') { node = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); node.setAttribute('points', el.points.map(p => `${p.x},${p.y}`).join(' ')); node.setAttribute('fill','none'); node.setAttribute('stroke',displayColor(el.color)); node.setAttribute('stroke-width','3'); node.setAttribute('stroke-linecap','round'); node.setAttribute('stroke-linejoin','round'); }
+      if (el.type === 'image') {
+        node = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        node.classList.add('canvas-image');
+        node.setAttribute('x', el.x); node.setAttribute('y', el.y);
+        node.setAttribute('width', el.w); node.setAttribute('height', el.h);
+        node.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        if (/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|bmp);base64,/i.test(el.src || '')) node.setAttribute('href', el.src);
+        if (/^https?:\/\//i.test(el.url || '')) node.setAttribute('href', el.url);
+        if (el.link) {
+          const target = el.link.match(/^<\[([^\]]+)\]>$/)?.[1];
+          if (target) {
+            const imageNode = node;
+            void canvasImageAsset(target).then(asset => {
+              if (imageNode.isConnected && asset.mime.startsWith('image/')) imageNode.setAttribute('href', asset.data);
+            }).catch(() => { /* Keep the saved image when its vault source is unavailable. */ });
+          }
+        }
+        node.setAttribute('aria-label', el.name || 'Canvas image');
+      }
+      else if (el.type === 'stroke') { node = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); node.setAttribute('points', el.points.map(p => `${p.x},${p.y}`).join(' ')); node.setAttribute('fill','none'); node.setAttribute('stroke',displayColor(el.color)); node.setAttribute('stroke-width','3'); node.setAttribute('stroke-linecap','round'); node.setAttribute('stroke-linejoin','round'); }
       else if(el.type==='line'){
         node=document.createElementNS('http://www.w3.org/2000/svg','g');const line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('x1',el.x1);line.setAttribute('y1',el.y1);line.setAttribute('x2',el.x2);line.setAttribute('y2',el.y2);line.setAttribute('stroke',displayColor(el.color));line.setAttribute('stroke-width','3');line.setAttribute('stroke-linecap','round');node.append(line);
         const dx=el.x2-el.x1,dy=el.y2-el.y1,length=Math.hypot(dx,dy)||1;
@@ -1901,32 +2065,91 @@ function renderCanvas(root, data) {
       else {
         node = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
         node.setAttribute('x',el.x); node.setAttribute('y',el.y); node.setAttribute('width',Math.max(40,el.w||220)); node.setAttribute('height',Math.max(30,el.h||60));
-        node.innerHTML=`<div xmlns="http://www.w3.org/1999/xhtml" class="canvas-text-edit" contenteditable="true" spellcheck="false">${sheetCellHtml(el.text||'')}</div>`;
+        node.innerHTML=`<div xmlns="http://www.w3.org/1999/xhtml" class="canvas-text-edit" contenteditable="false" spellcheck="false">${sheetCellHtml(el.text||'')}</div>`;
         const editor=node.querySelector('.canvas-text-edit');
-        editor.addEventListener('focus',()=>{editor.textContent=el.text||'';});
-        editor.addEventListener('input',()=>{el.text=editor.innerText;setStructuredDirty();});
+        if (!readOnly) {
+          const showSource = () => { if (editor.querySelector('.sheet-wiki-link')) editor.textContent = el.text || ''; };
+          // Expand rendered links before the browser places the caret.
+          editor.addEventListener('pointerdown', () => { if (editor.contentEditable === 'true') showSource(); });
+          editor.addEventListener('focus', () => { editor.contentEditable = 'true'; showSource(); onTextFocus(i); });
+          editor.addEventListener('input', () => { el.text = editor.innerText; setStructuredDirty(); });
+          editor.addEventListener('paste', event => {
+            event.preventDefault(); event.stopPropagation();
+            document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+          });
+          editor.addEventListener('blur', () => {
+            const text = editor.innerText;
+            if (text !== (el.text || '')) { el.text = text; setStructuredDirty(); }
+            editor.contentEditable = 'false';
+            editor.innerHTML = sheetCellHtml(el.text || '');
+          });
+        }
+        editor.contentEditable = 'false';
+        if (!readOnly) editor.tabIndex = -1;
         editor.style.color=displayColor(el.color);
-        editor.addEventListener('blur',()=>{el.text=serializeLinkedText(editor);editor.innerHTML=sheetCellHtml(el.text);});
       }
-      const elementBounds=bounds(el);
+      const elementBounds=canvasElementBounds(el);
       if(el.type!=='stroke'&&el.rotation) node.setAttribute('transform',`rotate(${el.rotation} ${elementBounds.x+elementBounds.w/2} ${elementBounds.y+elementBounds.h/2})`);
       node.dataset.index = i; if (selected.has(i)) node.classList.add('is-selected'); svg.append(node);
     });
+}
+function renderCanvas(root, data) {
+  const toolbar = root.querySelector('.structured-toolbar');
+  const colors=[['red','#d94d48'],['yellow','#d9ae23'],['green','#348562'],['blue','#397dc2'],['black','#20211e']];
+  toolbar.innerHTML = `<div class="canvas-tool-group" role="toolbar" aria-label="Canvas tools">${[['select','Select and move',icons.cursor],['draw','Pen tool',icons.draw],['shape','Shape tool',icons.shape],['line','Line tool',icons.line],['text','Insert text',icons.text]].map(([tool,label,icon])=>`<button class="canvas-tool${tool==='select'?' active':''}" data-tool="${tool}" title="${label}" aria-label="${label}" aria-pressed="${tool==='select'}">${icon}</button>`).join('')}<button class="canvas-tool" data-action="image" title="Add image" aria-label="Add image">${icons.image}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-action="rotate" title="Rotate selected 15° clockwise" aria-label="Rotate selected 15 degrees clockwise">${icons.rotate}</button><button class="canvas-tool canvas-delete" data-tool="delete" title="Delete selected" aria-label="Delete selected">${icons.trash}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button class="canvas-tool" data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button></div>`;
+  const surface = root.querySelector('.structured-surface');
+  surface.innerHTML = `<svg class="canvas-svg" viewBox="0 0 ${data.width || 1200} ${data.height || 760}" style="width:${data.width || 1200}px;height:${data.height || 760}px;max-width:none" role="img" aria-label="Drawing canvas" xmlns="http://www.w3.org/2000/svg"></svg>`;
+  const svg = surface.querySelector('svg');
+  const palette=document.createElement('div');palette.className='canvas-color-palette';palette.setAttribute('role','group');palette.setAttribute('aria-label','Selected item actions');
+  palette.innerHTML=colors.map(([name,color])=>`<button class="canvas-color-swatch" data-color="${color}" style="--swatch:${color}" title="${name[0].toUpperCase()+name.slice(1)}" aria-label="${name[0].toUpperCase()+name.slice(1)} color" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg></button>`).join('') + `<button type="button" class="canvas-duplicate" aria-label="Duplicate selection" title="Duplicate selection">${icons.duplicate}</button>`;surface.append(palette);
+  const shapeMenu=document.createElement('div');shapeMenu.className='canvas-shape-menu';shapeMenu.setAttribute('role','group');shapeMenu.setAttribute('aria-label','Shape options');
+  shapeMenu.innerHTML=`<div class="canvas-shape-options">${[['rectangle','Rectangle',icons.rectangle],['ellipse','Ellipse',icons.ellipse],['triangle','Triangle',icons.triangle],['star','Star',icons.star],['speech','Speech bubble',icons.speech]].map(([shape,label,icon])=>`<button type="button" data-shape="${shape}" title="${label}" aria-label="${label}" aria-pressed="false">${icon}</button>`).join('')}</div><label class="canvas-star-points" hidden>Points <select aria-label="Star points">${Array.from({length:9},(_,i)=>`<option value="${i+4}"${i===1?' selected':''}>${i+4}</option>`).join('')}</select></label>`;surface.append(shapeMenu);
+  const lineMenu=document.createElement('div');lineMenu.className='canvas-line-menu';lineMenu.setAttribute('role','group');lineMenu.setAttribute('aria-label','Line endpoint styles');
+  lineMenu.innerHTML=`${[['start','Start'],['end','End']].map(([endpoint,label])=>`<div class="canvas-endpoint-menu" data-endpoint-menu="${endpoint}" role="group" aria-label="${label} endpoint style">${[['none','None',icons.markerNone],['arrow','Arrow',icons.markerArrow],['circle','Circle',icons.markerCircle],['square','Square',icons.markerSquare],['diamond','Diamond',icons.markerDiamond]].map(([style,title,icon])=>`<button type="button" data-endpoint="${endpoint}" data-style="${style}" title="${label}: ${title}" aria-label="${label}: ${title}" aria-pressed="false">${icon}</button>`).join('')}</div>`).join('')}`;surface.append(lineMenu);
+  const toolHelp=document.createElement('div');toolHelp.className='canvas-tool-help';toolHelp.setAttribute('aria-live','polite');root.append(toolHelp);
+  let tool = 'select'; let selected = new Set(); let draft = null; let interaction = null; let selectionBox = null; let selectedColor='#20211e';
+  const displayColor=color=>{const value=String(color||selectedColor).toLowerCase();return state.theme==='dark'&&['#20211e','#353630','#373832','#000','#000000'].includes(value)?'#ffffff':(color||selectedColor);};
+  const bounds = canvasElementBounds;
+  let selectionRotation = 0, selectionMembers = [];
+  const selectionFrame = () => {
+    const members = [...selected].map(i => data.elements[i]);
+    if (members.length !== selectionMembers.length || members.some((el, i) => el !== selectionMembers[i])) {
+      selectionRotation = members.length === 1 ? members[0].rotation || 0 : 0; selectionMembers = members;
+    }
+    return canvasSelectionFrame(members, selectionRotation);
+  };
+  const selectionBounds = indices => canvasSelectionFrame([...indices].map(i => data.elements[i]));
+  const rotatedPoint=(x,y,center,angle)=>({x:center.x+(x-center.x)*Math.cos(angle)-(y-center.y)*Math.sin(angle),y:center.y+(x-center.x)*Math.sin(angle)+(y-center.y)*Math.cos(angle)});
+  const rotateSelectionBy=(degrees)=>{
+    const group=selectionFrame();if(!group)return;const center={x:group.x+group.w/2,y:group.y+group.h/2},angle=degrees*Math.PI/180;
+    for(const i of selected){const el=data.elements[i];if(el.type==='stroke')el.points=el.points.map(p=>rotatedPoint(p.x,p.y,center,angle));else if(el.type==='line'){const a=rotatedPoint(el.x1,el.y1,center,angle),b=rotatedPoint(el.x2,el.y2,center,angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(el),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,center,angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((el.rotation||0)+degrees)%360;}}
+    selectionRotation += degrees;
+    paint();setStructuredDirty();
+  };
+  const paintSelection = () => {
+    svg.querySelector('.canvas-selection-overlay')?.remove();
+    svg.querySelectorAll('[data-index]').forEach(node => node.classList.toggle('is-selected', selected.has(Number(node.dataset.index))));
+    const overlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    overlay.classList.add('canvas-selection-overlay'); svg.append(overlay);
     const linesOnly=selected.size>0&&[...selected].every(i=>data.elements[i].type==='line');
     if(selected.size) {
-      const boxes=[...selected].map(i=>bounds(data.elements[i])).filter(Boolean);const left=Math.min(...boxes.map(b=>b.x)),top=Math.min(...boxes.map(b=>b.y)),right=Math.max(...boxes.map(b=>b.x+b.w)),bottom=Math.max(...boxes.map(b=>b.y+b.h));const b={x:left,y:top,w:right-left,h:bottom-top};
+      const b = selectionFrame();
       if(!linesOnly){
-      const outline=document.createElementNS('http://www.w3.org/2000/svg','rect');outline.setAttribute('x',b.x-4);outline.setAttribute('y',b.y-4);outline.setAttribute('width',b.w+8);outline.setAttribute('height',b.h+8);outline.setAttribute('fill','none');outline.setAttribute('stroke','#9a765a');outline.setAttribute('stroke-dasharray','5 4');outline.setAttribute('pointer-events','none');svg.append(outline);
-      for(const [name,x,y] of [['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]]) {const h=document.createElementNS('http://www.w3.org/2000/svg','rect');h.setAttribute('x',x-5);h.setAttribute('y',y-5);h.setAttribute('width',10);h.setAttribute('height',10);h.setAttribute('rx',2);h.setAttribute('fill','#fff');h.setAttribute('stroke','#9a765a');h.setAttribute('stroke-width',2);h.dataset.handle=name;h.classList.add('canvas-resize-handle');svg.append(h);}
-      const rotateX=b.x+b.w/2,rotateY=Math.max(14,b.y-24);
-      const stem=document.createElementNS('http://www.w3.org/2000/svg','line');stem.setAttribute('x1',rotateX);stem.setAttribute('x2',rotateX);stem.setAttribute('y1',b.y-4);stem.setAttribute('y2',rotateY+6);stem.setAttribute('stroke','#9a765a');stem.setAttribute('pointer-events','none');svg.append(stem);
-      const rotate=document.createElementNS('http://www.w3.org/2000/svg','circle');rotate.setAttribute('cx',rotateX);rotate.setAttribute('cy',rotateY);rotate.setAttribute('r',6);rotate.setAttribute('fill','#fff');rotate.setAttribute('stroke','#9a765a');rotate.setAttribute('stroke-width',2);rotate.dataset.handle='rotate';rotate.classList.add('canvas-rotate-handle');svg.append(rotate);
+      const frameOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      frameOverlay.setAttribute('transform', `rotate(${b.rotation} ${b.center.x} ${b.center.y})`); overlay.append(frameOverlay);
+      const outline=document.createElementNS('http://www.w3.org/2000/svg','rect');outline.setAttribute('x',b.x-4);outline.setAttribute('y',b.y-4);outline.setAttribute('width',b.w+8);outline.setAttribute('height',b.h+8);outline.setAttribute('fill','none');outline.setAttribute('stroke','#9a765a');outline.setAttribute('stroke-dasharray','5 4');outline.setAttribute('pointer-events','none');frameOverlay.append(outline);
+      for(const [name,x,y] of [['nw',b.x,b.y],['ne',b.x+b.w,b.y],['sw',b.x,b.y+b.h],['se',b.x+b.w,b.y+b.h]]) {const h=document.createElementNS('http://www.w3.org/2000/svg','rect');h.setAttribute('x',x-5);h.setAttribute('y',y-5);h.setAttribute('width',10);h.setAttribute('height',10);h.setAttribute('rx',2);h.setAttribute('fill','#fff');h.setAttribute('stroke','#9a765a');h.setAttribute('stroke-width',2);h.dataset.handle=name;h.classList.add('canvas-resize-handle');frameOverlay.append(h);}
+      const rotateX=b.x+b.w/2,rotateY=b.y-24;
+      const stem=document.createElementNS('http://www.w3.org/2000/svg','line');stem.setAttribute('x1',rotateX);stem.setAttribute('x2',rotateX);stem.setAttribute('y1',b.y-4);stem.setAttribute('y2',rotateY+6);stem.setAttribute('stroke','#9a765a');stem.setAttribute('pointer-events','none');frameOverlay.append(stem);
+      const rotate=document.createElementNS('http://www.w3.org/2000/svg','circle');rotate.setAttribute('cx',rotateX);rotate.setAttribute('cy',rotateY);rotate.setAttribute('r',6);rotate.setAttribute('fill','#fff');rotate.setAttribute('stroke','#9a765a');rotate.setAttribute('stroke-width',2);rotate.dataset.handle='rotate';rotate.classList.add('canvas-rotate-handle');frameOverlay.append(rotate);
       }
-      for(const i of selected){const el=data.elements[i];if(el.type==='shape'&&el.shape==='triangle'){const center={x:el.x+el.w/2,y:el.y+el.h/2};(el.vertices||[[.5,0],[1,1],[0,1]]).forEach(([vx,vy],pointIndex)=>{const p=rotatedPoint(el.x+vx*el.w,el.y+vy*el.h,center,(el.rotation||0)*Math.PI/180),handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',p.x);handle.setAttribute('cy',p.y);handle.setAttribute('r',5);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2);handle.dataset.pointHandle=String(pointIndex);handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');svg.append(handle);});}else if(el.type==='line'){for(const [which,x,y] of [['start',el.x1,el.y1],['end',el.x2,el.y2]]){const handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',x);handle.setAttribute('cy',y);handle.setAttribute('r',8);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2.5);handle.setAttribute('pointer-events','all');handle.dataset.pointHandle=which;handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');svg.append(handle);}}}
+      for(const i of selected){const el=data.elements[i];if(el.type==='shape'&&el.shape==='triangle'){const center={x:el.x+el.w/2,y:el.y+el.h/2};(el.vertices||[[.5,0],[1,1],[0,1]]).forEach(([vx,vy],pointIndex)=>{const p=rotatedPoint(el.x+vx*el.w,el.y+vy*el.h,center,(el.rotation||0)*Math.PI/180),handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',p.x);handle.setAttribute('cy',p.y);handle.setAttribute('r',5);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2);handle.dataset.pointHandle=String(pointIndex);handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');overlay.append(handle);});}else if(el.type==='line'){for(const [which,x,y] of [['start',el.x1,el.y1],['end',el.x2,el.y2]]){const handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',x);handle.setAttribute('cy',y);handle.setAttribute('r',8);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2.5);handle.setAttribute('pointer-events','all');handle.dataset.pointHandle=which;handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');overlay.append(handle);}}}
     }
-    if(selectionBox){const box=document.createElementNS('http://www.w3.org/2000/svg','rect');box.setAttribute('x',Math.min(selectionBox.start.x,selectionBox.current.x));box.setAttribute('y',Math.min(selectionBox.start.y,selectionBox.current.y));box.setAttribute('width',Math.abs(selectionBox.current.x-selectionBox.start.x));box.setAttribute('height',Math.abs(selectionBox.current.y-selectionBox.start.y));box.setAttribute('class','canvas-marquee');box.setAttribute('pointer-events','none');svg.append(box);}
+    if(selectionBox){const box=document.createElementNS('http://www.w3.org/2000/svg','rect');box.setAttribute('x',Math.min(selectionBox.start.x,selectionBox.current.x));box.setAttribute('y',Math.min(selectionBox.start.y,selectionBox.current.y));box.setAttribute('width',Math.abs(selectionBox.current.x-selectionBox.start.x));box.setAttribute('height',Math.abs(selectionBox.current.y-selectionBox.start.y));box.setAttribute('class','canvas-marquee');box.setAttribute('pointer-events','none');overlay.append(box);}
     const box=selected.size?selectionBounds(selected):null;
     palette.hidden=!box;
+    const showColors = [...selected].some(i => data.elements[i].type !== 'image');
+    palette.querySelectorAll('[data-color]').forEach(button => button.hidden = !showColors);
     const one=selected.size===1?data.elements[[...selected][0]]:null,shapeTarget=one?.type==='shape'||one?.type==='rect'||one?.type==='ellipse'?one:null,lineTarget=one?.type==='line'?one:null;
     shapeMenu.hidden=!shapeTarget;lineMenu.hidden=!lineTarget;
     if(shapeTarget){const shapeName=shapeTarget.shape||(shapeTarget.type==='rect'?'rectangle':shapeTarget.type==='ellipse'?'ellipse':'');shapeMenu.querySelectorAll('[data-shape]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.shape===shapeName)));shapeMenu.querySelector('.canvas-star-points').hidden=shapeName!=='star';shapeMenu.querySelector('select').value=String(shapeTarget.points||5);}
@@ -1935,30 +2158,72 @@ function renderCanvas(root, data) {
     if(lineTarget){const scale=svg.clientWidth/Math.max(1,data.width||1200);for(const [endpoint,x,y] of [['start',lineTarget.x1,lineTarget.y1],['end',lineTarget.x2,lineTarget.y2]]){const menu=lineMenu.querySelector(`[data-endpoint-menu="${endpoint}"]`),left=x*scale-menu.offsetWidth-9;menu.style.left=`${left>=2?left:x*scale+10}px`;menu.style.top=`${Math.max(2,y*scale-menu.offsetHeight/2)}px`;}}
     palette.querySelectorAll('[data-color]').forEach(swatch=>{const active=swatch.dataset.color.toLowerCase()===selectedColor.toLowerCase();swatch.classList.toggle('active',active);swatch.setAttribute('aria-pressed',String(active));});
   };
+  const paint = () => {
+    svg.replaceChildren();
+    drawCanvasElements(svg, data, displayColor, selected, false, index => {
+      selected = new Set([index]); selectedColor = data.elements[index].color || selectedColor;
+      paintSelection();
+    });
+    paintSelection();
+  };
   svg.dataset.tool=tool;
   const deleteSelected=()=>{if(!selected.size)return;for(const i of [...selected].sort((a,b)=>b-a))data.elements.splice(i,1);selected.clear();paint();setStructuredDirty();};
   state.structured.deleteCanvasSelection=deleteSelected;
   toolbar.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => { if (button.dataset.tool === 'delete') { deleteSelected(); return; } tool = button.dataset.tool; svg.dataset.tool=tool; toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(b => {const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});updateToolHelp(); }));
+  toolbar.querySelector('[data-action="image"]').addEventListener('click', () => {
+    const owner = state.structured;
+    openCanvasImagePicker(async (reference, stillOpen) => {
+      const remote = /^https?:\/\//i.test(reference);
+      const target = reference.replace(/^<\[|\]>$/g, '').replace(/^\[\[|\]\]$/g, '').split('|')[0].trim();
+      const file = remote ? null : resolveVaultFileTarget(target);
+      if (!remote && (!file || !isCanvasImageFile(file))) throw new Error('Choose an image from the vault or enter its full vault path.');
+      const asset = remote ? { data: reference } : await window.stillnote.readAsset(file);
+      const image = new Image();
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('This image could not be loaded. Check its link and format.')); image.src = asset.data; });
+      if (!stillOpen()) return;
+      if (state.structured !== owner || !root.isConnected) throw new Error('Reopen the canvas before adding an image.');
+      const element = insertCanvasImage(data, remote ? '' : asset.data, image.naturalWidth, image.naturalHeight, file || reference);
+      if (remote) element.url = reference;
+      else element.link = `<[${file}]>`;
+      selected = new Set([0]); tool = 'select'; svg.dataset.tool = tool;
+      toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button => { const active = button.dataset.tool === tool; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+      updateToolHelp(); paint(); setStructuredDirty();
+    });
+  });
   toolbar.querySelector('[data-action="rotate"]').addEventListener('click',()=>rotateSelectionBy(15));
-  palette.querySelectorAll('[data-color]').forEach(button=>button.addEventListener('click',()=>{selectedColor=button.dataset.color;for(const i of selected)data.elements[i].color=selectedColor;if(selected.size){paint();setStructuredDirty();}}));
+  palette.querySelector('.canvas-duplicate').addEventListener('click', () => {
+    if (!selected.size) return;
+    const rotation = selectionFrame()?.rotation || 0;
+    selected = duplicateCanvasElements(data, selected);
+    selectionMembers = [...selected].map(i => data.elements[i]); selectionRotation = rotation;
+    paint(); setStructuredDirty();
+  });
+  palette.querySelectorAll('[data-color]').forEach(button=>button.addEventListener('click',()=>{selectedColor=button.dataset.color;for(const i of selected)if(data.elements[i].type !== 'image')data.elements[i].color=selectedColor;if(selected.size){paint();setStructuredDirty();}}));
   shapeMenu.querySelectorAll('[data-shape]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(!['shape','rect','ellipse'].includes(target?.type))return;target.type='shape';target.shape=button.dataset.shape;if(target.shape==='triangle')target.vertices||=[[.5,0],[1,1],[0,1]];if(target.shape==='star')target.points||=5;paint();setStructuredDirty();}));
   shapeMenu.querySelector('select').addEventListener('change',event=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='shape'&&target.shape==='star'){target.points=Number(event.target.value);paint();setStructuredDirty();}});
   lineMenu.querySelectorAll('button[data-endpoint][data-style]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='line'){target[`${button.dataset.endpoint}Marker`]=button.dataset.style;paint();setStructuredDirty();}}));
   toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
   const point = e => { const p = svg.createSVGPoint(); p.x=e.clientX;p.y=e.clientY; const q=p.matrixTransform(svg.getScreenCTM().inverse()); return {x:q.x,y:q.y}; };
-  const updateToolHelp=()=>{const help={select:'Drag selected items to move them. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=help[tool]||'';toolHelp.hidden=!help[tool];};
+  const updateToolHelp=()=>{const help={select:'First click selects text for dragging; click it again to edit. Alt + drag moves selected text. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=help[tool]||'';toolHelp.hidden=!help[tool];};
   updateToolHelp();
-  svg.addEventListener('pointerdown', e => {const textEditor=e.target.closest('.canvas-text-edit');if(textEditor&&tool==='select'&&e.detail>=2)return; const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
+  svg.addEventListener('pointerdown', e => {const textEditor=e.target.closest('.canvas-text-edit');
+    if (textEditor && tool === 'select' && !e.altKey && document.activeElement === textEditor) return;
+    const textIndex = Number(textEditor?.closest('[data-index]')?.dataset.index);
+    if (textEditor && tool === 'select' && !e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && selected.size === 1 && selected.has(textIndex)) {
+      textEditor.contentEditable = 'true';
+      return;
+    }
+    if (document.activeElement?.closest('.canvas-text-edit')) document.activeElement.blur(); const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
     if(tool==='select') {
       const endpointHandle=e.target.closest('[data-point-handle]');
       if(endpointHandle&&Number.isInteger(ix)){interaction={kind:'point',index:ix,handle:endpointHandle.dataset.pointHandle,original:structuredClone(data.elements[ix])};svg.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();return;}
-      if(e.target.dataset.handle==='rotate'&&selected.size){const group=selectionBounds(selected),center={x:group.x+group.w/2,y:group.y+group.h/2},angle=Math.atan2(p.y-center.y,p.x-center.x);interaction={kind:'rotate',start:p,center,lastAngle:angle,angle:0,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])]))};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
-      if(e.target.dataset.handle && selected.size) {interaction={kind:'resize',handle:e.target.dataset.handle,start:p,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])])),group:selectionBounds(selected)};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
+      if(e.target.dataset.handle==='rotate'&&selected.size){const group=selectionFrame(),center=group.center,angle=Math.atan2(p.y-center.y,p.x-center.x);interaction={kind:'rotate',start:p,center,rotation:group.rotation,lastAngle:angle,angle:0,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])]))};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
+      if(e.target.dataset.handle && selected.size) {interaction={kind:'resize',handle:e.target.dataset.handle,start:p,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])])),group:selectionFrame()};svg.setPointerCapture(e.pointerId);e.preventDefault();return;}
       if(Number.isInteger(ix)) {if(e.shiftKey||e.metaKey||e.ctrlKey){selected.has(ix)?selected.delete(ix):selected.add(ix);}else if(!selected.has(ix))selected=new Set([ix]);if(selected.has(ix)){selectedColor=data.elements[[...selected][0]]?.color||selectedColor;interaction={kind:'move',start:p,originals:new Map([...selected].map(i=>[i,structuredClone(data.elements[i])]))};svg.setPointerCapture(e.pointerId);}paint();e.preventDefault();return;}
       if(!e.shiftKey&&!e.metaKey&&!e.ctrlKey)selected.clear();selectionBox={start:p,current:p,additive:e.shiftKey||e.metaKey||e.ctrlKey};svg.setPointerCapture(e.pointerId);paint();return;
     }
     if(tool==='erase' && Number.isInteger(ix)){data.elements.splice(ix,1);selected.clear();paint();setStructuredDirty();return;}
-    if((tool==='draw'||tool==='shape'||tool==='line') && Number.isInteger(ix)) return;
+    if((tool==='draw'||tool==='shape'||tool==='line') && Number.isInteger(ix) && data.elements[ix]?.type !== 'image') return;
     svg.setPointerCapture(e.pointerId); if(tool==='draw')draft={type:'stroke',points:[p],color:selectedColor}; else if(tool==='shape')draft={type:'shape',shape:'rectangle',x:p.x,y:p.y,w:0,h:0,color:selectedColor}; else if(tool==='line')draft={type:'line',x1:p.x,y1:p.y,x2:p.x,y2:p.y,startMarker:'none',endMarker:'arrow',color:selectedColor}; else if(tool==='text')draft={type:'text',x:p.x,y:p.y,w:0,h:0,text:'',color:selectedColor};
     if(draft){data.elements.push(draft);selected=new Set([data.elements.length-1]);setStructuredDirty();}
   });
@@ -1981,18 +2246,24 @@ function renderCanvas(root, data) {
         else if(el.type==='shape'&&el.shape==='triangle'){const center={x:original.x+original.w/2,y:original.y+original.h/2},local=rotatedPoint(p.x,p.y,center,-(original.rotation||0)*Math.PI/180);el.vertices=(original.vertices||[[.5,0],[1,1],[0,1]]).map(([x,y],index)=>index===Number(interaction.handle)?[Math.max(0,Math.min(1,(local.x-original.x)/original.w)),Math.max(0,Math.min(1,(local.y-original.y)/original.h))]:[x,y]);}
       } else if(interaction.kind==='rotate'){
         const nextAngle=Math.atan2(p.y-interaction.center.y,p.x-interaction.center.x);let step=nextAngle-interaction.lastAngle;while(step>Math.PI)step-=2*Math.PI;while(step<-Math.PI)step+=2*Math.PI;interaction.angle+=step;interaction.lastAngle=nextAngle;
+        selectionRotation = interaction.rotation + interaction.angle * 180 / Math.PI;
         for(const [i,original] of interaction.originals){const el=data.elements[i];if(el.type==='stroke')el.points=original.points.map(point=>rotatedPoint(point.x,point.y,interaction.center,interaction.angle));else if(el.type==='line'){const a=rotatedPoint(original.x1,original.y1,interaction.center,interaction.angle),b=rotatedPoint(original.x2,original.y2,interaction.center,interaction.angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(original),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,interaction.center,interaction.angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((original.rotation||0)+interaction.angle*180/Math.PI)%360;}}
       } else {
         const b=interaction.group,handle=interaction.handle;
+        const local = rotatedPoint(p.x, p.y, b.center, -b.rotation*Math.PI/180);
         const right=handle.includes('e'),bottom=handle.includes('s'),left=handle.includes('w'),top=handle.includes('n');
-        const nx=left?Math.min(b.x+b.w-4,p.x):b.x,ny=top?Math.min(b.y+b.h-4,p.y):b.y;
-        const nr=right?Math.max(b.x+4,p.x):b.x+b.w,nb=bottom?Math.max(b.y+4,p.y):b.y+b.h;
+        const nx=left?Math.min(b.x+b.w-4,local.x):b.x,ny=top?Math.min(b.y+b.h-4,local.y):b.y;
+        const nr=right?Math.max(b.x+4,local.x):b.x+b.w,nb=bottom?Math.max(b.y+4,local.y):b.y+b.h;
         const sx=(nr-nx)/Math.max(1,b.w),sy=(nb-ny)/Math.max(1,b.h);
+        const scalePoint = (x,y) => {
+          const local = rotatedPoint(x,y,b.center,-b.rotation*Math.PI/180);
+          return rotatedPoint(nx+(local.x-b.x)*sx,ny+(local.y-b.y)*sy,b.center,b.rotation*Math.PI/180);
+        };
         for(const [i,original] of interaction.originals){
           const el=data.elements[i];
-          if(el.type==='stroke')el.points=original.points.map(point=>({x:nx+(point.x-b.x)*sx,y:ny+(point.y-b.y)*sy}));
-          else if(el.type==='line'){el.x1=nx+(original.x1-b.x)*sx;el.y1=ny+(original.y1-b.y)*sy;el.x2=nx+(original.x2-b.x)*sx;el.y2=ny+(original.y2-b.y)*sy;}
-          else{const ob=bounds(original);el.x=nx+(ob.x-b.x)*sx;el.y=ny+(ob.y-b.y)*sy;el.w=ob.w*sx;el.h=ob.h*sy;}
+          if(el.type==='stroke')el.points=original.points.map(point=>scalePoint(point.x,point.y));
+          else if(el.type==='line'){const a=scalePoint(original.x1,original.y1),z=scalePoint(original.x2,original.y2);el.x1=a.x;el.y1=a.y;el.x2=z.x;el.y2=z.y;}
+          else{const ob=bounds(original),center=scalePoint(ob.x+ob.w/2,ob.y+ob.h/2);el.w=ob.w*sx;el.h=ob.h*sy;el.x=center.x-el.w/2;el.y=center.y-el.h/2;}
         }
       }
       paint();return;
@@ -2023,7 +2294,7 @@ function renderCanvas(root, data) {
         draft.h=Math.max(draft.type==='text'?60:4,draft.h);
       }
       draft=null;
-      if(draftedType==='shape'||draftedType==='line'){tool='select';svg.dataset.tool=tool;toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button=>{const active=button.dataset.tool===tool;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});updateToolHelp();}
+      if(draftedType==='shape'||draftedType==='line'||draftedType==='text'){tool='select';svg.dataset.tool=tool;toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button=>{const active=button.dataset.tool===tool;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});updateToolHelp();}
       setStructuredDirty();paint();
       if(focusText){const textIndex=[...selected][0];const textEditor=svg.querySelector('[data-index=\"'+textIndex+'\"] .canvas-text-edit');requestAnimationFrame(()=>textEditor?.focus());}
     }
@@ -2748,6 +3019,13 @@ window.stillnote.onFileLinksUpdated?.((moves) => {
     }
   };
   updateData(state.structured?.data);
+  if (state.structured) {
+    for (const key of ['undoStack', 'redoStack']) state.structured[key] = state.structured[key].map(snapshot => {
+      const value = JSON.parse(snapshot); updateData(value); return JSON.stringify(value);
+    });
+    if (state.structured.historySnapshot) { const value = JSON.parse(state.structured.historySnapshot); updateData(value); state.structured.historySnapshot = JSON.stringify(value); }
+    state.structured.refreshCanvas?.();
+  }
   scheduleBacklinks();
 });
 let backlinkTimer;
@@ -3617,7 +3895,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !$('#explorer-context-menu').hidden) state.contextDeleteBypass = true;
   const mod = event.metaKey || event.ctrlKey;
   if(state.structured?.type==='canvas'&&event.key==='Backspace'&&state.structured.deleteCanvasSelection&&!event.target.closest('input,textarea,[contenteditable="true"]')&&state.structured.data.elements.length){const hasSelection=document.querySelector('.canvas-svg .is-selected');if(hasSelection){event.preventDefault();state.structured.deleteCanvasSelection();return;}}
-  if(state.structured&&mod&&event.key.toLowerCase()==='z'){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
+  if(state.structured&&mod&&event.key.toLowerCase()==='z'&&!event.target.closest('.canvas-text-edit')){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
   if(state.structured&&mod&&event.key.toLowerCase()==='y'){event.preventDefault();void applyStructuredHistory('redo');return;}
   if (event.key === 'Escape' && !$('#rename-overlay').hidden) { event.preventDefault(); finishRenameDialog(); return; }
   if (event.key === 'Escape' && !$('#delete-overlay').hidden) { event.preventDefault(); finishDeleteDialog(false); return; }

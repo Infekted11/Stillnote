@@ -220,7 +220,7 @@ function isMarkdown(filePath) {
   return /\.md$/i.test(filePath);
 }
 const codeFileExtensions = new Set(['.js', '.cjs', '.mjs', '.jsx', '.ts', '.tsx', '.py', '.html', '.css', '.json', '.java', '.c', '.h', '.cpp', '.hpp', '.rs', '.go', '.sql', '.sh', '.xml', '.yaml', '.yml', '.toml', '.swift', '.kt', '.rb', '.php']);
-const supportedAssetExtensions = new Set([...codeFileExtensions, '.jar', '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp']);
+const supportedAssetExtensions = new Set([...codeFileExtensions, '.mp4', '.webm', '.ogv', '.mov', '.m4v', '.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac', '.opus', '.gif', '.bmp', '.jar', '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp']);
 const editableTextExtensions = new Set([...codeFileExtensions, '.jar']);
 function isSupportedFile(filePath) { return isMarkdown(filePath) || supportedAssetExtensions.has(path.extname(filePath).toLowerCase()); }
 function isEditableTextFile(filePath) { return isMarkdown(filePath) || editableTextExtensions.has(path.extname(filePath).toLowerCase()); }
@@ -760,7 +760,7 @@ function registerIpc() {
     if (['.icns', '.heic'].includes(extension)) {
       try { const image = nativeImage.createFromBuffer(data); if (!image.isEmpty()) return { data: image.toDataURL(), mime: 'image/png', converted: true }; } catch {}
     }
-    const mime = ({ '.pdf':'application/pdf', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.heic':'image/heic', '.icns':'image/icns', '.svg':'image/svg+xml', '.obj':'model/obj', '.stl':'model/stl', '.step':'model/step', '.stp':'model/step' })[extension] || 'application/octet-stream';
+    const mime = ({ '.mp4':'video/mp4', '.webm':'video/webm', '.ogv':'video/ogg', '.mov':'video/quicktime', '.m4v':'video/mp4', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg', '.oga':'audio/ogg', '.m4a':'audio/mp4', '.aac':'audio/aac', '.flac':'audio/flac', '.opus':'audio/ogg', '.gif':'image/gif', '.bmp':'image/bmp', '.pdf':'application/pdf', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.heic':'image/heic', '.icns':'image/icns', '.svg':'image/svg+xml', '.obj':'model/obj', '.stl':'model/stl', '.step':'model/step', '.stp':'model/step' })[extension] || 'application/octet-stream';
     return { data: `data:${mime};base64,${data.toString('base64')}`, mime, converted: false };
   });
   ipcMain.handle('asset:occt-wasm', async () => {
