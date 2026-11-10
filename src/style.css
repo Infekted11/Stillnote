@@ -502,3 +502,37 @@ body:has(.app-shell[data-theme="dark"]) .canvas-image-option{border-color:#484a4
 .app-shell[data-theme="dark"] .cm-wiki-media-preview.is-spreadsheet,.app-shell[data-theme="sepia"] .cm-wiki-media-preview.is-spreadsheet{border:0;background:transparent}
 .app-shell[data-theme="dark"] .cm-wiki-sheet-table tr+tr>*,.app-shell[data-theme="dark"] .cm-wiki-sheet-table tr>*+*{border-color:#4c4e45}
 .app-shell[data-theme="dark"] .cm-wiki-sheet-table tr:nth-child(2)>*,.app-shell[data-theme="dark"] .cm-wiki-sheet-table tr>*:nth-child(2){border-color:#818174}
+
+.stillnote-player{--media-paper:#f7f6f2;--media-line:#dedbd2;--media-ink:#53534a;--media-accent:#947357;display:flex;flex-direction:column;width:100%;overflow:hidden;border:1px solid var(--media-line);border-radius:8px;background:var(--media-paper);color:var(--media-ink);font:12px/1.4 'DM Sans',sans-serif}
+.stillnote-player.is-audio>audio{display:none}.stillnote-player.is-video>video{display:block;width:100%;max-height:65vh;margin:0;background:#171814;object-fit:contain;cursor:pointer}
+.media-player-title{display:block;padding:12px 14px 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:600}
+.media-player-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 12px}
+.media-player-button{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;padding:5px;border:0;border-radius:5px;background:transparent;color:inherit;cursor:pointer}.media-player-button:hover{background:#9485741c}.media-player-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.media-player-time{font:10px 'DM Mono',monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.media-player-seek,.media-player-volume{height:18px;margin:0;accent-color:var(--media-accent);cursor:pointer}.media-player-seek{flex:1;min-width:65px;width:90px}.media-player-volume{width:55px;flex-shrink:0}
+.media-player-speed{width:54px;border:1px solid var(--media-line);border-radius:4px;padding:4px 1px;background:var(--media-paper);color:inherit;font:10px 'DM Sans',sans-serif;cursor:pointer}
+.stillnote-player button:focus-visible,.stillnote-player input:focus-visible,.stillnote-player select:focus-visible,.stillnote-player:focus-visible{outline:2px solid var(--media-accent);outline-offset:2px}
+.stillnote-player button:disabled,.stillnote-player input:disabled{opacity:.45;cursor:default}
+.asset-preview-stage>.stillnote-player{width:min(100%,1000px);margin:auto}.asset-preview-stage>.stillnote-player.is-audio{max-width:620px}
+.cm-wiki-media-preview.is-playable{border:0;background:transparent;overflow:visible;padding-top:26px}
+.app-shell[data-theme="dark"] .stillnote-player{--media-paper:#292a26;--media-line:#484a42;--media-ink:#dbdcd3;--media-accent:#c09b7c}
+.app-shell[data-theme="sepia"] .stillnote-player{--media-paper:#f5eedf;--media-line:#ded2bd;--media-ink:#5e5345}
+.app-shell[data-theme="dark"] .cm-wiki-media-preview.is-playable,.app-shell[data-theme="sepia"] .cm-wiki-media-preview.is-playable{border:0;background:transparent}
+.stillnote-player:fullscreen{justify-content:center;max-width:none;border:0;border-radius:0;background:#171814}.stillnote-player:fullscreen>video{flex:1;min-height:0;max-height:calc(100vh - 100px)}.stillnote-player:fullscreen .media-player-title,.stillnote-player:fullscreen .media-player-controls{background:var(--media-paper)}
+
+/* Embedded audio keeps its compact height with a filename above the controls. */
+.stillnote-player.is-audio.is-embedded>.media-player-title{display:block;box-sizing:border-box;height:22px;flex-shrink:0;padding:3px 8px 1px;font-size:14px;line-height:18px}
+.stillnote-player.is-audio.is-embedded>.media-player-controls{gap:6px;padding:0 8px;flex-wrap:nowrap}
+.stillnote-player.is-audio.is-embedded .media-player-button{width:24px;height:24px;padding:4px}
+.stillnote-player.is-audio.is-embedded .media-player-button svg{width:16px;height:16px}
+.stillnote-player.is-audio.is-embedded .media-player-seek{min-width:35px}
+.stillnote-player.is-audio.is-embedded .media-player-volume{width:42px}
+.media-player-settings{display:block;padding:0 12px 10px;color:var(--media-ink);font:11px/1.5 'DM Sans',sans-serif}
+.media-player-settings summary{cursor:pointer;padding:4px 0;user-select:none}
+.media-player-settings label{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 0;border-top:1px solid var(--media-line)}
+
+/* Hidden error messages must not reserve padding beneath the transport. */
+.media-playback-error[hidden]{display:none}
+.stillnote-player.is-embedded>.media-player-title{font-size:14px}
+
+.stillnote-player.is-audio{padding:6px 8px}

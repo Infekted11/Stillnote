@@ -4,8 +4,9 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+const mediaSource = await readFile(new URL('../src/media-player.js', import.meta.url), 'utf8');
 class Element {
-  constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {}; this.dataset = {}; this.style = {}; this.listeners = {}; this.isConnected = true; this.classList = { add() {} }; }
+  constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {}; this.dataset = {}; this.style = {}; this.listeners = {}; this.isConnected = true; this.classList = { add() {} }; if (['AUDIO','VIDEO'].includes(this.tagName)) { this.paused = true; this.currentTime = 0; this.volume = 1; this.muted = false; this.playbackRate = 1; this.duration = NaN; } }
   setAttribute(key, value) { this.attributes[key] = String(value); }
   removeAttribute(key) { delete this.attributes[key]; if (key === 'src') this.src = ''; }
   append(...children) { this.children.push(...children); }
@@ -15,7 +16,8 @@ class Element {
     if (selector === '.canvas-text-edit') return this.editor ||= new Element('div');
     return this.children.find(child => `.${child.className}` === selector);
   }
-  querySelectorAll() { return this.children.filter(child => ['AUDIO', 'VIDEO'].includes(child.tagName)); }
+  querySelectorAll() { return this.children.flatMap(child => [...(['AUDIO','VIDEO'].includes(child.tagName) ? [child] : []), ...child.querySelectorAll()]); }
+  async play() { this.paused = false; this.listeners.play?.(); }
   pause() { this.paused = true; }
   load() { this.reloaded = true; }
 }
@@ -37,7 +39,7 @@ function harness({ canvas = false, fail = false } = {}) {
       readAsset: async () => { if (fail) throw new Error('Missing'); return { mime: 'video/mp4', data: 'data:video/mp4;base64,AAAA' }; },
     } },
   });
-  vm.runInContext(source.slice(source.indexOf('const playableMediaExtensions'), source.indexOf('const taskPreviewCache')) +
+  vm.runInContext(mediaSource.replace(/export /g, '') + '\n' + source.slice(source.indexOf('const playableMediaExtensions'), source.indexOf('const taskPreviewCache')) +
     source.slice(source.indexOf('function decodeStructured'), source.indexOf('function canvasDefaults')) +
     source.slice(source.indexOf('function spreadsheetCellValue('), source.indexOf('function sheetCellHtml(')) +
     source.slice(source.indexOf('function isCanvasImageFile'), source.indexOf('function renderCanvas(')) +
@@ -63,11 +65,11 @@ test('linked canvas renders its shapes, strokes, arrows and rotated text without
 test('linked video has controls and releases playback when the widget is destroyed', async () => {
   const context = harness(); const widget = new context.Widget('Clip.mp4', 0, 12);
   const preview = widget.toDOM({ requestMeasure() {} }); await flush();
-  const player = preview.children[1];
-  assert.equal(player.tagName, 'VIDEO'); assert.equal(player.controls, true);
+  const shell = preview.children[1], player = shell.media;
+  assert.equal(player.tagName, 'VIDEO'); assert.equal(player.controls, false);
   assert.equal(player.preload, 'metadata'); assert.equal(player.playsInline, true);
   player.listeners.error();
-  assert.match(preview.children[2].textContent, /codec/);
+  assert.match(shell.children.at(-1).textContent, /codec/);
   widget.destroy(preview);
   assert.equal(player.paused, true); assert.equal(player.src, ''); assert.equal(player.reloaded, true);
 });
@@ -77,10 +79,10 @@ test('missing canvas shows a useful error and preserves the edit link button', a
   assert.equal(preview.children[0].textContent, 'Edit link');
   assert.match(preview.children[1].textContent, /Preview unavailable/);
 });
-test('audio player uses audio controls without autoplay', () => {
+test('audio player uses custom controls without autoplay', () => {
   const context = harness(); const host = new Element('span');
   const player = context.createMediaPlayer({ mime: 'audio/mpeg', data: 'data:audio/mpeg;base64,AAAA' }, 'Song.mp3', host);
-  assert.equal(player.tagName, 'AUDIO'); assert.equal(player.controls, true); assert.equal(player.autoplay, undefined);
+  assert.equal(player.media.tagName, 'AUDIO'); assert.equal(player.media.controls, false); assert.equal(player.media.autoplay, undefined);
 });
 
 test('canvas images start at the bottom, fit the canvas, and survive save/reload', () => {
@@ -288,4 +290,77 @@ test('two-cell spreadsheet ranges support a single cell, offset columns, and whi
   const single = context.spreadsheetPreviewSize({ cells: {} }, 'C7,C7');
   assert.equal(single.rows, 1); assert.equal(single.columns, 1);
   for (const range of ['D8,A5','A8,D5','A5,','A5,D8,E9']) assert.throws(() => context.spreadsheetPreviewSize({ cells: {} }, range));
+});
+
+test('custom player plays, pauses, seeks, adjusts volume, and changes speed', async () => {
+  const context = harness(), shell = context.createMediaPlayer({ mime: 'video/mp4', data: 'data:video/mp4;base64,AAAA' }, 'Clip.mp4');
+  const media = shell.media, controls = shell.children[2];
+  const [play,time,seek,mute,volume] = controls.children;
+  const speed = shell.children[3].children[1].children[0];
+  assert.equal(seek.disabled, true);
+  media.duration = 125; media.listeners.loadedmetadata();
+  assert.equal(seek.disabled, false); assert.equal(time.textContent, '0:00 / 2:05');
+  await play.listeners.click(); assert.equal(media.paused, false); assert.equal(play.attributes['aria-label'], 'Pause');
+  play.listeners.click(); assert.equal(media.paused, true);
+  seek.value = 60; seek.listeners.input(); assert.equal(media.currentTime, 60);
+  assert.equal(time.textContent, '1:00 / 2:05');
+  mute.listeners.click(); assert.equal(media.muted, true); assert.equal(mute.attributes['aria-pressed'], 'true');
+  volume.value = .5; volume.listeners.input(); assert.equal(media.volume, .5); assert.equal(media.muted, false);
+  speed.value = '1.5'; speed.listeners.change(); assert.equal(media.playbackRate, 1.5);
+});
+test('custom player reports failed playback and unsupported media without native controls', async () => {
+  const context = harness(), shell = context.createMediaPlayer({ mime: 'audio/mpeg', data: 'bad' }, 'Track.mp3');
+  shell.media.play = async () => { throw new Error('Unsupported'); };
+  await shell.children[2].children[0].listeners.click();
+  assert.equal(shell.children.at(-1).hidden, false);
+  assert.match(shell.children.at(-1).textContent, /Playback could not start/);
+  assert.equal(shell.media.controls, false);
+});
+test('custom media time supports hours and unknown durations', () => {
+  const context = harness();
+  assert.equal(context.mediaTime(3665), '1:01:05'); assert.equal(context.mediaTime(NaN), '0:00');
+});
+
+test('custom player keyboard seeking clamps to the media duration and ignores form controls', () => {
+  const context = harness(), shell = context.createMediaPlayer({ mime: 'audio/mpeg', data: 'data:audio/mpeg;base64,AAAA' }, 'Song.mp3');
+  shell.media.duration = 10; shell.media.currentTime = 8;
+  const event = { key: 'ArrowRight', target: { closest: () => null }, preventDefault() {}, stopPropagation() {} };
+  shell.listeners.keydown(event); assert.equal(shell.media.currentTime, 10);
+  event.key = 'ArrowLeft'; shell.listeners.keydown(event); assert.equal(shell.media.currentTime, 5);
+  event.target.closest = () => ({}); shell.listeners.keydown(event); assert.equal(shell.media.currentTime, 5);
+});
+test('video fullscreen control toggles the complete custom player', async () => {
+  const context = harness(), shell = context.createMediaPlayer({ mime: 'video/mp4', data: 'data:video/mp4;base64,AAAA' }, 'Clip.mp4');
+  let entered = 0, exited = 0;
+  shell.requestFullscreen = async () => { entered++; context.document.fullscreenElement = shell; };
+  context.document.exitFullscreen = async () => { exited++; context.document.fullscreenElement = null; };
+  const button = shell.children[2].children.at(-1);
+  await button.listeners.click(); await button.listeners.click();
+  assert.equal(entered, 1); assert.equal(exited, 1);
+});
+
+test('embedded audio and video omit speed settings and load the per-file playback speed', () => {
+  const context = harness();
+  context.localStorage = { getItem: key => key === 'stillnote-media-speed:Vault/Song.mp3' ? '1.5' : '2' };
+  for (const mime of ['audio/mpeg','video/mp4']) {
+    const shell = context.createMediaPlayer({ mime, data: 'data:media;base64,AAAA' }, 'Song.mp3', { embedded: true, settingsKey: 'Vault/Song.mp3' });
+    assert.match(shell.className, /is-embedded/);
+    assert.equal(shell.children.some(child => child.className === 'media-player-settings'), false);
+    assert.equal(shell.children[2].children.some(child => child.tagName === 'SELECT'), false);
+    assert.equal(shell.media.playbackRate, 1.5);
+  }
+});
+test('file playback settings persist speed for subsequent note embeds', () => {
+  const context = harness(), saved = new Map();
+  context.localStorage = { getItem: key => saved.get(key), setItem: (key,value) => saved.set(key,value) };
+  const asset = { mime: 'audio/mpeg', data: 'data:audio/mpeg;base64,AAAA' };
+  const shell = context.createMediaPlayer(asset, 'Song.mp3', { settingsKey: 'Vault/Song.mp3' });
+  const settings = shell.children[3], speed = settings.children[1].children[0];
+  assert.equal(settings.tagName, 'DETAILS');
+  speed.value = '1.25'; speed.listeners.change();
+  assert.equal(saved.get('stillnote-media-speed:Vault/Song.mp3'), '1.25');
+  const embed = context.createMediaPlayer(asset, 'Song.mp3', { embedded: true, settingsKey: 'Vault/Song.mp3' });
+  assert.equal(embed.media.playbackRate, 1.25);
+  const other = context.createMediaPlayer(asset, 'Song.mp3', { embedded: true, settingsKey: 'Other/Song.mp3' });
+  assert.equal(other.media.playbackRate, 1);
 });

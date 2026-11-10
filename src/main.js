@@ -1,3 +1,5 @@
+import { preparePdfContent } from './pdf-content.js';
+import { createMediaPlayer, disposeMediaPlayers } from './media-player.js';
 import { attachMediaResize } from './media-resize.js';
 import { reorderSpreadsheet } from './spreadsheet.js';
 import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -431,22 +433,6 @@ class EquationWidget extends WidgetType {
   eq(other) { return other.source === this.source && other.from === this.from && other.to === this.to; }
 }
 const playableMediaExtensions = ['.mp4', '.webm', '.ogv', '.mov', '.m4v', '.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac', '.opus'];
-function createMediaPlayer(asset, file, host) {
-  const player = document.createElement(asset.mime.startsWith('video/') ? 'video' : 'audio');
-  player.className = 'asset-media-player'; player.controls = true; player.preload = 'metadata';
-  player.setAttribute('aria-label', prettyName(file));
-  if (player.tagName === 'VIDEO') player.playsInline = true;
-  player.addEventListener('error', () => {
-    let error = host.querySelector('.media-playback-error');
-    if (!error) { error = document.createElement('span'); error.className = 'media-playback-error'; host.append(error); }
-    error.textContent = 'This media format or codec cannot be played by the built-in player.';
-  });
-  player.src = asset.data;
-  return player;
-}
-function disposeMediaPlayers(host) {
-  host.querySelectorAll('audio,video').forEach(player => { player.pause(); player.removeAttribute('src'); player.load(); });
-}
 function spreadsheetPreviewSize(data, endCell = '') {
   const address = key => {
     const match = String(key).trim().match(/^([A-Z]+)([1-9]\d*)$/i);
@@ -529,8 +515,8 @@ class WikiMediaWidget extends WidgetType {
         drawCanvasElements(drawing, canvas.data, color => state.theme === 'dark' && ['#20211e', '#353630', '#373832', '#000', '#000000'].includes(color || '#20211e') ? '#ffffff' : color || '#20211e', new Set(), true);
         preview.append(drawing);
       } else if (isPlayable) {
-        const player = createMediaPlayer(asset, this.file, preview);
-        player.addEventListener('loadedmetadata', () => { if (preview.isConnected) view.requestMeasure(); });
+        const player = createMediaPlayer(asset, this.file, { embedded: true, settingsKey: `${state.vault?.path}/${this.file}` });
+        player.media.addEventListener('loadedmetadata', () => { if (preview.isConnected) view.requestMeasure(); });
         preview.append(player);
       } else if (asset.mime.startsWith('image/')) {
         const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.alt = this.file; image.loading = 'lazy';
@@ -982,7 +968,7 @@ function inlineMarkdownForPdf(value) {
     .replace(/~~(.+?)~~/g, '<del>$1</del>');
   return text.replace(/@@CODE(\d+)@@/g, (_match, index) => code[Number(index)]);
 }
-function renderMarkdownForPdf(markdownText, title) {
+function renderMarkdownForPdf(markdownText, title, replacements = new Map()) {
   const source = String(markdownText).split(/\r?\n/);
   if (source.length && source[0].trim().replace(/^#{1,6}\s+/, '').toLocaleLowerCase() === title.toLocaleLowerCase()) source.shift();
   const blocks = []; let listType = null; let inCode = false; let codeLines = [];
@@ -1015,13 +1001,90 @@ function renderMarkdownForPdf(markdownText, title) {
     closeList();
     const paragraph = [line];
     while (index + 1 < source.length && source[index + 1].trim() && !isBlockStart(source[index + 1])) paragraph.push(source[++index]);
-    blocks.push(`<p>${paragraph.map(inlineMarkdownForPdf).join('<br>')}</p>`);
+    blocks.push(`<div class="pdf-paragraph">${paragraph.map(inlineMarkdownForPdf).join('<br>')}</div>`);
   }
   if (inCode) blocks.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
   closeList();
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+  let html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
     *{box-sizing:border-box}body{margin:0;color:#292a27;font:12pt/1.65 Georgia,'Times New Roman',serif}h1{margin:0 0 28pt;font:26pt/1.15 Georgia,'Times New Roman',serif;letter-spacing:-.03em}h2{margin:24pt 0 9pt;font-size:18pt}h3{margin:20pt 0 8pt;font-size:14pt}h4,h5,h6{margin:16pt 0 6pt}p{margin:0 0 12pt}ul,ol{margin:0 0 14pt;padding-left:24pt}li{padding-left:3pt;margin:3pt 0}li.task{list-style:none;margin-left:-17pt}blockquote{margin:12pt 0;padding:2pt 0 2pt 12pt;border-left:2px solid #b8a18b;color:#5d5b54}hr{margin:20pt 0;border:0;border-top:1px solid #c9c5bb}pre{margin:12pt 0;padding:10pt;background:#f2f1ed;border-radius:4pt;white-space:pre-wrap;overflow-wrap:anywhere;font:9pt/1.5 Menlo,monospace}code{padding:1pt 3pt;background:#f0eee9;border-radius:2pt;font:9pt Menlo,monospace}a,.wiki-link{color:#725b49;text-decoration:underline}strong{font-weight:bold}em{font-style:italic}
+    .pdf-paragraph{margin:0 0 12pt}.pdf-embed{display:block;margin:10pt 0;max-width:100%;break-inside:avoid}.pdf-embed img,.pdf-embed svg{display:block;max-width:100%;height:auto;max-height:8in;object-fit:contain}.pdf-embed svg{width:100%}.pdf-embed .canvas-text-edit{font:20px/1.4 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}.pdf-embed .canvas-image{clip-path:inset(0 round 8px) fill-box}.cm-wiki-sheet-table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:100%;font:10pt/1.4 Georgia,serif}.cm-wiki-sheet-table tr{break-inside:avoid}.cm-wiki-sheet-table th,.cm-wiki-sheet-table td{padding:5pt 7pt;border:0;text-align:left;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}.cm-wiki-sheet-table tr+tr>*{border-top:0.5pt solid #b9b6ad}.cm-wiki-sheet-table tr>*+*{border-left:0.5pt solid #b9b6ad}.cm-wiki-sheet-table tr:nth-child(2)>*{border-top-width:1.2pt}.cm-wiki-sheet-table tr>*:nth-child(2){border-left-width:1.2pt}.pdf-task{border:0.5pt solid #d5d0c6;border-radius:5pt;padding:8pt 10pt}.pdf-task small{display:block;color:#777}.pdf-task-details{white-space:pre-wrap}mark{background:#f3e7a9;color:inherit}math{font-size:1.1em}audio,video{display:none!important}
     </style></head><body><main><h1>${escapeHtml(title)}</h1>${blocks.join('\n')}</main></body></html>`;
+  for (const [token, rendered] of replacements) html = html.split(token).join(rendered);
+  return html;
+}
+async function prepareNotePdf(markdownText) {
+  const cache = new Map();
+  const unavailable = (file, error) => `<span class="pdf-embed">Preview unavailable: ${escapeHtml(file)} · ${escapeHtml(error.message || 'Could not render')}</span>`;
+  const imageHtml = (src, alt) => `<span class="pdf-embed"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"></span>`;
+  const renderLink = async target => {
+    const [path, extent = ''] = target.split('#'), file = resolveVaultFileTarget(path);
+    if (!file) return undefined;
+    const extension = `.${fileExtension(file)}`, format = findExplorerNode(file)?.format;
+    if (playableMediaExtensions.includes(extension)) return '';
+    if (format === 'canvas' || format === 'spreadsheet') {
+      const parsed = decodeStructured(await window.stillnote.readNote(file));
+      if (!parsed?.data) throw new Error('Invalid structured document');
+      if (format === 'spreadsheet') return `<span class="pdf-embed">${renderSpreadsheetPreview(parsed.data, extent, file).outerHTML}</span>`;
+      const data = structuredClone(parsed.data);
+      await Promise.all(data.elements.filter(el => el.type === 'image' && el.link).map(async el => {
+        const path = el.link.match(/^<\[([^\]]+)\]>$/)?.[1];
+        if (path) { try { el.src = (await window.stillnote.readAsset(path)).data; } catch {} }
+        delete el.link;
+      }));
+      const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      drawing.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); drawing.setAttribute('viewBox', `0 0 ${data.width || 1200} ${data.height || 760}`);
+      drawCanvasElements(drawing, data, color => color || '#20211e', new Set(), true);
+      return `<span class="pdf-embed">${drawing.outerHTML}</span>`;
+    }
+    if (['.png','.jpg','.jpeg','.webp','.gif','.bmp','.heic','.icns','.svg'].includes(extension)) return imageHtml((await window.stillnote.readAsset(file)).data, file);
+    if (['.obj','.stl','.step','.stp'].includes(extension)) return imageHtml(await modelSnapshotForPdf(file, await window.stillnote.readAsset(file)), file);
+    return undefined;
+  };
+  return preparePdfContent(markdownText, {
+    escape: escapeHtml,
+    link: target => {
+      if (!cache.has(target)) cache.set(target, renderLink(target).catch(error => unavailable(target,error)));
+      return cache.get(target);
+    },
+    image: async (target, label) => {
+      try {
+        if (/^https?:\/\//i.test(target)) return imageHtml(target, label);
+        const file = resolveVaultFileTarget(target);
+        if (!file) throw new Error('Image not found');
+        const asset = await window.stillnote.readAsset(file);
+        if (!asset.mime.startsWith('image/')) throw new Error('Not an image');
+        return imageHtml(asset.data, label || file);
+      } catch(error) { return unavailable(target,error); }
+    },
+    equation: source => { const math = mathNode('math'); math.setAttribute('display','inline'); math.append(parseMath(source)); return math.outerHTML; },
+    task: async (listName, taskName) => {
+      try {
+        const { list, task } = await resolveTaskReference(decodeTaskReferencePart(listName),decodeTaskReferencePart(taskName));
+        if (task.status === 'completed') return '';
+        const notes = String(task.notes || '').split(/\r?\n/).filter(line => !/^Stillnote note:\s+stillnote:\/\/open\?/i.test(line.trim())).join('\n').trim();
+        return `<span class="pdf-embed pdf-task"><strong>☐ ${escapeHtml(task.title || taskName)}</strong><small>${escapeHtml(list.title || listName)}</small>${notes ? `<span class="pdf-task-details">${escapeHtml(notes)}</span>` : ''}</span>`;
+      } catch(error) { return unavailable(taskName,error); }
+    },
+  });
+}
+async function modelSnapshotForPdf(file, asset) {
+  let renderer, group;
+  try {
+    ({ group } = await createThreeModel(file, asset));
+    const scene = new THREE.Scene(); scene.background = new THREE.Color('#f4f4f1'); scene.add(group);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x77736a,2.2));
+    const light = new THREE.DirectionalLight(0xffffff,2.7); light.position.set(4,7,8); scene.add(light);
+    const fill = new THREE.DirectionalLight(0xffffff,1.1); fill.position.set(-6,2,-5); scene.add(fill);
+    const bounds = new THREE.Box3().setFromObject(group), center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
+    const dimension = Math.max(size.x,size.y,size.z,.001), radius = dimension*.5;
+    const camera = new THREE.PerspectiveCamera(42,1000/650,Math.max(dimension/10000,.00001),dimension*1000);
+    camera.position.set(radius*3.2,radius*2.5,radius*3.2); camera.lookAt(center);
+    renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true }); renderer.setSize(1000,650); renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png');
+  } finally {
+    group?.traverse(part => { part.geometry?.dispose(); if (part.material) for (const material of Array.isArray(part.material) ? part.material : [part.material]) material.dispose(); });
+    renderer?.dispose();
+  }
 }
 async function exportPdf(notePath = state.active) {
   if (!state.vault || !notePath) { showToast('Open a note before exporting a PDF.'); return; }
@@ -1030,7 +1093,8 @@ async function exportPdf(notePath = state.active) {
     if (notePath === state.active && state.view) { await saveActive(); markdownText = state.view.state.doc.toString(); }
     else markdownText = await window.stillnote.readNote(notePath);
     const title = prettyName(notePath);
-    const result = await window.stillnote.exportPdf(notePath, renderMarkdownForPdf(markdownText, title));
+    const prepared = await prepareNotePdf(markdownText);
+    const result = await window.stillnote.exportPdf(notePath, renderMarkdownForPdf(prepared.markdown, title, prepared.replacements));
     if (result) showToast('PDF exported');
   } catch (error) { showToast(error.message || 'Could not export PDF.'); }
 }
@@ -1373,7 +1437,7 @@ async function renderAssetPreview(file, navigationId) {
   const ext = `.${fileExtension(file)}`;
   state.assetPath = file; state.assetBytes = ext === '.pdf' ? bytesFromDataUrl(asset.data) : null; state.pdfText = null; state.pdfTextPromise = null;
   if (asset.mime.startsWith('image/')) { const image = document.createElement('img'); image.className = 'asset-preview-image'; image.src = asset.data; image.alt = prettyName(file); image.addEventListener('error', () => { const message = document.createElement('p'); message.className = 'asset-preview-error'; message.textContent = 'This image format cannot be decoded by the built-in preview.'; stage.replaceChildren(message); }); stage.append(image); }
-  else if (asset.mime.startsWith('audio/') || asset.mime.startsWith('video/')) { stage.append(createMediaPlayer(asset, file, stage)); state.assetViewer = { destroy() { disposeMediaPlayers(stage); } }; }
+  else if (asset.mime.startsWith('audio/') || asset.mime.startsWith('video/')) { stage.append(createMediaPlayer(asset, file, { settingsKey: `${state.vault?.path}/${file}` })); state.assetViewer = { destroy() { disposeMediaPlayers(stage); } }; }
   else if (asset.mime === 'application/pdf') { const shell = document.createElement('div'); shell.className = 'asset-pdf-shell'; const frame = document.createElement('iframe'); frame.className = 'asset-preview-frame'; frame.title = prettyName(file); frame.src = asset.data; shell.append(frame); stage.append(shell); }
   else if (['.obj', '.stl', '.step', '.stp'].includes(ext)) { void mountThreeViewer(stage, file, asset, navigationId); }
   else {

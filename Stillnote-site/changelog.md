@@ -4,6 +4,12 @@
 
 ### Added:
 
+- PDF export now includes rendered images, canvases, spreadsheet ranges, 3D model snapshots, equations, task references, and highlights. Audio/video embeds and links are omitted. Export waits for images and fonts and supports larger illustrated notes.
+
+- Made embedded audio players more compact and moved playback speed into each audio/video file’s playback settings. Speed is remembered per file and applied to note embeds.
+
+- Replaced native audio/video controls with custom players for note embeds and file previews, including seeking, volume, playback speed, keyboard controls, and video fullscreen.
+
 - Linked spreadsheets render as tables in notes with internal grid lines and stronger first-row/column separators. Previews fit populated cells by default; add a cell endpoint such as #D8 to show A1 through D8. Documented the syntax in the existing guide.
 
 - Removed canvas selection glow and soft shadows from canvas tools, text fields, and menus while preserving selection outlines and handles.

@@ -793,13 +793,17 @@ function registerIpc() {
       buttonLabel: 'Export PDF', filters: [{ name: 'PDF document', extensions: ['pdf'] }],
     });
     if (result.canceled || !result.filePath) return null;
-    if (typeof html !== 'string' || html.length > 2_000_000) throw new Error('The rendered note is too large to export.');
+    if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > 100 * 1024 * 1024) throw new Error('The rendered note is too large to export.');
     const tempFile = path.join(os.tmpdir(), `stillnote-pdf-${crypto.randomUUID()}.html`);
     let printWindow;
     try {
       await fs.writeFile(tempFile, html, 'utf8');
       printWindow = new BrowserWindow({ show: false, backgroundColor: '#ffffff', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false } });
       await printWindow.loadFile(tempFile);
+      await printWindow.webContents.executeJavaScript(`Promise.race([
+        Promise.all([document.fonts.ready, ...Array.from(document.images, image => image.decode())]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('An image could not finish loading for PDF export.')), 20000))
+      ]).then(() => true)`);
       const pdf = await printWindow.webContents.printToPDF({ printBackground: true, pageSize: 'Letter', margins: { top: 0.6, bottom: 0.6, left: 0.7, right: 0.7 } });
       await fs.writeFile(result.filePath, pdf);
       return result.filePath;
@@ -858,18 +862,17 @@ app.whenReady().then(() => {
   // Register IPC before initializing permissions or creating the renderer so
   // every preload invocation has a handler as soon as the window is available.
   registerIpc();
-  const isTrustedAppOrigin = (origin) => origin.startsWith('file://') || origin.startsWith('http://127.0.0.1:5173/');
+  const isTrustedAppOrigin = (origin) => origin.startsWith('file://') || /^http:\/\/127\.0\.0\.1:5173(?:\/|$)/.test(origin);
   // Chromium checks both the permission request and the permission state for
-  // getUserMedia. Handle both so microphone access works consistently in the
-  // packaged file:// app and the local Vite app.
+  // getUserMedia and fullscreen. Allow both for the packaged and local app.
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    return permission === 'media' && isTrustedAppOrigin(requestingOrigin || webContents?.getURL() || '');
+    return (permission === 'media' || permission === 'fullscreen') && isTrustedAppOrigin(requestingOrigin || webContents?.getURL() || '');
   });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = details.requestingUrl || webContents.getURL();
     const trustedAppPage = isTrustedAppOrigin(origin);
     const audioOnly = !Array.isArray(details.mediaTypes) || details.mediaTypes.includes('audio');
-    callback(permission === 'media' && audioOnly && trustedAppPage);
+    callback(trustedAppPage && (permission === 'fullscreen' || (permission === 'media' && audioOnly)));
   });
   if (process.platform === 'win32') {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
