@@ -2,12 +2,13 @@ const linkPattern = /<\[([^\]\r\n]+)\]>|\[\[([^\]\r\n]+)\]\]/g;
 function linksIn(text) {
   return [...text.matchAll(linkPattern)].map((match) => {
     const value = match[1] ?? match[2];
-    const target = value.split('|')[0].split('#')[0].trim();
+    const rawTarget = value.split('|')[0].split('#')[0].trim();
+    const target = rawTarget.replace(/^!!!/, '').trim();
     return { match, value, target, line: text.slice(0, match.index).split('\n').length };
   });
 }
 function matchesPath(target, file) {
-  const clean = target.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  const clean = target.trim().replace(/^!!!/, '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
   return clean === file.toLowerCase() || (!/\.[^/]+$/.test(clean) && `${clean}.md` === file.toLowerCase());
 }
 function rewritePlainLinks(text, moves) {
@@ -16,7 +17,8 @@ function rewritePlainLinks(text, moves) {
     const move = moves.find(([oldPath]) => matchesPath(target, oldPath));
     if (!move) continue;
     const suffix = value.slice(value.split('|')[0].split('#')[0].length);
-    const replacement = match[1] !== undefined ? `<[${move[1]}${suffix}]>` : `[[${move[1]}${suffix}]]`;
+    const prefix = value.trimStart().startsWith('!!!') ? '!!!' : '';
+    const replacement = match[1] !== undefined ? `<[${prefix}${move[1]}${suffix}]>` : `[[${prefix}${move[1]}${suffix}]]`;
     text = text.slice(0, match.index) + replacement + text.slice(match.index + match[0].length);
   }
   return text;

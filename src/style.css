@@ -536,3 +536,52 @@ body:has(.app-shell[data-theme="dark"]) .canvas-image-option{border-color:#484a4
 .stillnote-player.is-embedded>.media-player-title{font-size:14px}
 
 .stillnote-player.is-audio{padding:6px 8px}
+
+.home-topline{display:flex;height:auto;min-height:42px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:16px}
+.home-mode-toggle{display:inline-flex;gap:4px;padding:4px;border:1px solid #dedbd2;border-radius:9px;background:#f5f3ed}
+.home-mode-toggle button{padding:7px 18px;border:0;border-radius:6px;background:transparent;color:#868377;font:600 12px 'DM Sans',sans-serif;cursor:pointer}
+.home-mode-toggle button[aria-pressed="true"]{background:#e9e1d5;color:#5c4939}.home-mode-toggle button:disabled{cursor:default;opacity:.65}.home-mode-toggle button:focus-visible{outline:2px solid #a8876c;outline-offset:1px}
+.home-run-progress{margin:16px 0;padding:14px 18px;border:1px solid #dedbd2;border-radius:8px;color:#77766b;font:12px/1.6 'DM Sans',sans-serif}.home-run-progress strong{color:#6f5844}.home-run-progress ol{padding-left:20px;margin:8px 0}.home-run-progress small{display:block;color:#99978b}
+.home-stop{align-self:center;padding:6px 14px;border:1px solid #cbb9a3;border-radius:6px;background:transparent;color:#866b53;font:12px 'DM Sans',sans-serif;cursor:pointer}.home-stop[hidden]{display:none}
+.home-question-label{display:block;margin-bottom:8px;color:#977254;font:600 11px 'DM Sans',sans-serif}.home-action-log{margin-top:12px;border-top:1px solid #ddd8cd;padding-top:8px;font:11px/1.6 'DM Sans',sans-serif}.home-action-log summary{cursor:pointer}.home-action-log ul{padding-left:16px;white-space:normal}
+.app-shell[data-theme="dark"] .home-mode-toggle{background:#292a26;border-color:#484a42}.app-shell[data-theme="dark"] .home-mode-toggle button[aria-pressed="true"]{background:#454038;color:#e3c5a5}.app-shell[data-theme="dark"] .home-run-progress{border-color:#484a42;color:#aaa99e}.app-shell[data-theme="dark"] .home-run-progress strong{color:#ceb08f}.app-shell[data-theme="dark"] .home-action-log{border-color:#484a42}
+
+.home-chat-main>.home-mode-toggle{align-self:flex-start;flex:none;margin:0 0 8px}
+.home-topline{justify-content:flex-end}
+
+/* Keep cosmetic type suffixes visible when a filename is shortened. */
+.note-row > .file-name,.search-result > .file-name{display:flex;align-items:baseline;min-width:0;overflow:hidden;text-overflow:clip}
+.file-name-base{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-type-extension{flex-shrink:0;opacity:.65;white-space:nowrap}
+
+/* App search panel: shared by Markdown and code editors. */
+.cm-panels:has(.find-replace-panel){background:transparent;color:inherit;border:0}
+.find-replace-panel{--find-bg:#fbfbf8;--find-field:#fff;--find-border:#e1dfd7;--find-text:#54554c;--find-muted:#92938a;--find-active:#eee6db;--find-accent:#9b7758;display:grid;gap:8px;margin:12px 18px;padding:10px;border:1px solid var(--find-border);border-radius:8px;background:var(--find-bg);color:var(--find-text);font:11px/1.4 'DM Sans',sans-serif}
+.find-row,.find-replace-row{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.find-field{display:flex;align-items:center;flex:1 1 160px;gap:7px;min-width:120px;padding:0 9px;border:1px solid var(--find-border);border-radius:5px;background:var(--find-field)}
+.find-field:focus-within{border-color:var(--find-accent)}
+.find-icon{display:flex;flex:none;color:var(--find-muted)}.find-icon svg{width:14px;height:14px}
+.find-input,.find-replacement{height:29px;min-width:0;border:0;outline:0;background:transparent;color:var(--find-text);font:12px 'DM Sans',sans-serif}
+.find-input{width:100%}.find-input::placeholder,.find-replacement::placeholder{color:var(--find-muted);opacity:1}
+.find-status{min-width:60px;color:var(--find-muted);font:10px 'DM Mono',monospace;text-align:center;white-space:nowrap}.find-status.is-error{color:#b56859}
+.find-options,.find-navigation{display:flex;align-items:center;gap:3px}
+.find-button{display:inline-flex;height:28px;min-width:28px;align-items:center;justify-content:center;padding:0 7px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--find-text);font:11px 'DM Sans',sans-serif;cursor:pointer}
+.find-button:hover:not(:disabled),.find-button[aria-pressed="true"]{border-color:var(--find-border);background:var(--find-active);color:var(--find-accent)}
+.find-button:focus-visible{outline:1px solid var(--find-accent);outline-offset:1px}.find-button:disabled{opacity:.35;cursor:default}.find-button svg{width:15px;height:15px}.find-previous svg{transform:rotate(180deg)}.find-wholeWord{text-decoration:underline;text-underline-offset:3px}.find-regexp{font-family:'DM Mono',monospace}
+.find-replacement{flex:1 1 180px;height:30px;min-width:120px;padding:0 9px;border:1px solid var(--find-border);border-radius:5px;background:var(--find-field)}.find-replacement:focus{border-color:var(--find-accent)}
+.find-replace-one,.find-replace-all{border-color:var(--find-border);background:var(--find-field)}.find-replace-row[hidden]{display:none}
+.app-shell[data-theme="sepia"] .find-replace-panel{--find-bg:#faf6ed;--find-field:#fffaf1;--find-border:#dfd4c2;--find-text:#625443;--find-muted:#9a8b77;--find-active:#ebe0cf;--find-accent:#93704e}
+.app-shell[data-theme="dark"] .find-replace-panel{--find-bg:#2b2d27;--find-field:#242621;--find-border:#484b41;--find-text:#dbddd1;--find-muted:#a0a495;--find-active:#414035;--find-accent:#d2ac83}
+.cm-editor .cm-searchMatch{background:#e5d5b688;outline:1px solid #bea27a66;border-radius:2px}.cm-editor .cm-searchMatch-selected{background:#d8b783aa;outline:1px solid #ae8556}
+.app-shell[data-theme="dark"] .cm-searchMatch{background:#8d70494d;outline-color:#b6936155}.app-shell[data-theme="dark"] .cm-searchMatch-selected{background:#ad854d80;outline-color:#d5ad78}
+@media(max-width:600px){.find-replace-panel{margin:8px;padding:8px}.find-field{flex-basis:calc(100% - 80px)}.find-navigation{margin-left:auto}}
+
+/* Broken file references stay editable instead of showing stale previews. */
+.cm-md-wiki-link.is-broken,.sheet-wiki-link.is-broken,.home-file-link.is-broken,.cm-wiki-media-preview.is-error{color:#bd4943!important;text-decoration-color:currentColor!important}
+.sheet-wiki-link.is-broken,.cm-md-wiki-link.is-broken{text-decoration:underline;text-decoration-style:dashed;text-underline-offset:3px}
+.app-shell[data-theme="dark"] .cm-md-wiki-link.is-broken,.app-shell[data-theme="dark"] .sheet-wiki-link.is-broken,.app-shell[data-theme="dark"] .home-file-link.is-broken,.app-shell[data-theme="dark"] .cm-wiki-media-preview.is-error{color:#ed8e85!important}
+.canvas-image-missing text{font-family:'DM Sans',sans-serif;pointer-events:none}
+
+.cm-wiki-media-preview.is-graph{display:block;float:none;clear:both;width:min(100%,640px);max-width:100%;padding:0;overflow:hidden;border-radius:8px}
+.cm-wiki-graph-preview{display:block;width:100%;height:340px;min-width:0;overflow:hidden;pointer-events:none;border-radius:8px;background:#fff}
+.cm-wiki-graph-preview .dcg-exppanel-container,.cm-wiki-graph-preview .dcg-expressions-header{display:none!important}

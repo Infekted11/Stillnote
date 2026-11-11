@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+const graphSource = await readFile(new URL('../src/graph-preview.js', import.meta.url), 'utf8');
+const { createGraphPreview } = await import(`data:text/javascript;base64,${Buffer.from(graphSource).toString('base64')}`);
 const mediaSource = await readFile(new URL('../src/media-player.js', import.meta.url), 'utf8');
 class Element {
   constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.attributes = {}; this.dataset = {}; this.style = {}; this.listeners = {}; this.isConnected = true; this.classList = { add() {} }; if (['AUDIO','VIDEO'].includes(this.tagName)) { this.paused = true; this.currentTime = 0; this.volume = 1; this.muted = false; this.playbackRate = 1; this.duration = NaN; } }
@@ -29,7 +31,7 @@ function harness({ canvas = false, fail = false } = {}) {
     { type: 'text', x: 5, y: 6, text: 'Hello' },
   ] };
   const context = vm.createContext({
-    structuredClone,
+    structuredClone, createGraphPreview, refreshExplorer: async () => {}, resolveVaultFileTarget: file => fail ? null : file,
     document: { createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag) },
     WidgetType: class {}, fileExtension: file => file.split('.').pop(), prettyName: file => file,
     findExplorerNode: () => ({ format: canvas ? 'canvas' : 'asset' }), state: { theme: 'light' },
@@ -122,12 +124,14 @@ test('vault image references follow file and folder moves in saved canvas data',
   assert.equal(decoded.data.elements[0].link, '<[Pictures/Garden.png]>');
   assert.equal(decoded.data.elements[0].src, canvas.elements[0].src);
 });
-test('linked canvas images retain their saved copy if the original is deleted', async () => {
+test('linked canvas images show a broken reference instead of a saved image after deletion', async () => {
   const context = harness({ fail: true }); const drawing = new Element('svg');
   const src = 'data:image/png;base64,AAAA';
   context.drawCanvasElements(drawing, { elements: [{ type: 'image', link: '<[Deleted.png]>', src, x: 0, y: 0, w: 100, h: 50 }] }, color => color, new Set(), true);
   await flush();
-  assert.equal(drawing.children[0].attributes.href, src);
+  assert.equal(drawing.children[0].tagName, 'G');
+  assert.equal(drawing.children[0].attributes.href, undefined);
+  assert.equal(drawing.children[0].children[1].textContent, '<[Deleted.png]>');
 });
 test('linked canvas images resolve their latest vault source', async () => {
   const context = harness();
@@ -363,4 +367,21 @@ test('file playback settings persist speed for subsequent note embeds', () => {
   assert.equal(embed.media.playbackRate, 1.25);
   const other = context.createMediaPlayer(asset, 'Song.mp3', { embedded: true, settingsKey: 'Other/Song.mp3' });
   assert.equal(other.media.playbackRate, 1);
+});
+test('destroyed previews discard late assets and changed vault revisions invalidate widget reuse',async()=>{
+  const context=harness();let deliver;
+  context.window.stillnote.readAsset=()=>new Promise(resolve=>{deliver=resolve;});
+  const widget=new context.Widget('Image.png',0,13,'',1),preview=widget.toDOM({requestMeasure(){throw new Error('Destroyed preview measured');}});
+  widget.destroy(preview);deliver({mime:'image/png',data:'data:image/png;base64,OLD'});await flush();assert.equal(preview.__disposed,true);assert.equal(preview.children[1].textContent,'Loading preview…');
+  assert.equal(widget.eq(new context.Widget('Image.png',0,13,'',1)),true);assert.equal(widget.eq(new context.Widget('Image.png',0,13,'',2)),false);
+});
+test('linked graph widgets load saved graph state without equation lists and destroy their calculator',async()=>{
+  for(const [format,factory] of [['graph','GraphingCalculator'],['geometry','Geometry'],['calculator3d','Calculator3D']]){
+    const context=harness();let destroyed=0,received;
+    context.findExplorerNode=()=>({format});context.window.stillnote.getDesmosKey=async()=> 'key';
+    context.window.stillnote.readNote=async()=>`Graph\n<!-- stillnote:type=${format} -->\n\`\`\`stillnote-${format}\n${JSON.stringify({state:{expressions:{list:[{latex:'y=x^2'}]}}})}\n\`\`\``;
+    context.loadDesmosApi=async()=>({[factory]:(_host,options)=>{received=options;return {setState(){},updateSettings(){},destroy(){destroyed++;}};}});
+    const widget=new context.Widget('Graph.md',0,12),preview=widget.toDOM({requestMeasure(){}});await flush();
+    assert.equal(preview.children[1].className,'cm-wiki-graph-preview');assert.equal(received.expressions,false);assert.equal(received.keypad,false);widget.destroy(preview);assert.equal(destroyed,1);
+  }
 });

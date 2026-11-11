@@ -13,7 +13,9 @@ export async function preparePdfContent(markdown, render) {
     let html;
     if (match[1] !== undefined || match[2] !== undefined) {
       const reference = match[1] ?? match[2], target = reference.split('|')[0].trim();
-      if (mediaExtension.test(target)) html = '';
+      const linkOnly = target.startsWith('!!!'), clean = linkOnly ? target.slice(3) : target;
+      if (mediaExtension.test(clean)) html = '';
+      else if (linkOnly) html = `<span class="wiki-link">${render.escape(reference.includes('|') ? reference.slice(reference.indexOf('|')+1) : clean)}</span>`;
       else html = await render.link(target);
     } else if (match[5] !== undefined) {
       const target = match[5].trim();

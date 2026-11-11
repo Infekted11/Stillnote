@@ -1,3 +1,8 @@
+import { parseVaultLink, shouldRenderFileLink } from './vault-links.js';
+import { createGraphPreview } from './graph-preview.js';
+import { findReplaceExtension } from './find-replace.js';
+import { fileDisplayName, fileDisplayParts } from './file-labels.js';
+import { runHomeAgent } from './home-agent.js';
 import { preparePdfContent } from './pdf-content.js';
 import { createMediaPlayer, disposeMediaPlayers } from './media-player.js';
 import { attachMediaResize } from './media-resize.js';
@@ -12,7 +17,7 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { Strikethrough, TaskList } from '@lezer/markdown';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree, bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language';
 import { animate } from 'animejs';
 import * as THREE from 'three';
@@ -24,6 +29,8 @@ import './window-controls.css';
 
 const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
 
+const refreshFileLinksEffect = StateEffect.define();
+let vaultRenderRevision = 0, vaultCatalogSignature = null;
 const spellingDecorationsEffect = StateEffect.define();
 const spellingDecorationsField = StateField.define({
   create: () => Decoration.none,
@@ -284,7 +291,7 @@ app.innerHTML = `
       <aside class="assistant-drawer" id="assistant-drawer" aria-label="AI assistant">
         <div class="assistant-panel">
           <div class="assistant-messages" id="assistant-messages"><div class="assistant-welcome"><div class="assistant-welcome-icon">${icons.assistant}</div><strong>What would you like to do?</strong><p>Ask a question about this note, or ask me to edit it.</p></div></div>
-          <form class="assistant-composer" id="assistant-form"><div class="assistant-modes"><button type="button" class="assistant-mode active" data-mode="ask">Ask</button><button type="button" class="assistant-mode" data-mode="edit">Edit note</button></div><div class="assistant-input-wrap"><textarea id="assistant-input" rows="3" placeholder="Ask about this note…"></textarea><button type="submit" class="send-button" id="assistant-send" aria-label="Send question">${icons.send}</button></div><div class="assistant-footnote">The open file is sent to Ollama Cloud with your request.</div></form>
+          <form class="assistant-composer" id="assistant-form"><div class="assistant-modes"><button type="button" class="assistant-mode active" data-mode="ask">Ask</button><button type="button" class="assistant-mode" data-mode="edit">Edit note</button></div><div class="assistant-input-wrap"><textarea id="assistant-input" rows="3" placeholder="Ask about this note…"></textarea><button type="submit" class="send-button" id="assistant-send" aria-label="Send question">${icons.send}</button></div><div class="assistant-footnote">The open file and directly linked files are sent to your selected AI provider.</div></form>
         </div>
       </aside>
     </div>
@@ -296,7 +303,14 @@ app.innerHTML = `
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
             <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Play audio and video</strong><code>MP4 · WebM · OGV · MOV · M4V · MP3 · WAV · OGG · M4A · AAC · FLAC · Opus (codec support varies)</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
-            <section class="settings-section" data-section="ai" hidden><div class="settings-section-heading"><span class="eyebrow">OLLAMA CLOUD</span><h3>AI assistant</h3><p>Ask questions about your current note or request a complete Markdown edit.</p></div><label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save an API key to load available models.</p><label class="field-label" for="ai-key">API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Ollama Cloud API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div><p class="settings-note">Your key is encrypted and stored in a hidden file in this vault. It is sent only to Ollama Cloud when you use the assistant. The encrypted file can only be opened on this device.</p><button class="secondary-button" id="reset-unreadable-credentials" type="button">Reset unreadable credentials</button><p class="settings-note">Use this only when Stillnote cannot decrypt credentials. It archives the unreadable credentials file so you can enter new Ollama, Desmos, and Google Tasks credentials.</p></section>
+            <section class="settings-section" data-section="ai" hidden>
+              <div class="settings-section-heading"><span class="eyebrow">CLOUD AI</span><h3>AI assistant</h3><p>Ask questions about your current note or request an edit. On Home, Ask compares files and their connections; Work handles multi-step requests across files and tasks.</p></div>
+              <label class="field-label" for="ai-provider">Provider</label><select class="settings-input" id="ai-provider" aria-describedby="ai-provider-info"><option value="groq">Groq — free daily limits</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option></select><p class="settings-note" id="ai-provider-info"></p>
+              <label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save a Groq API key to load available models.</p>
+              <label class="field-label" for="ai-key" id="ai-key-label">Groq API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Groq API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div>
+              <p class="settings-note" id="ai-key-help"></p><p class="settings-note">Keys are encrypted in this vault and can only be opened on this device. Each provider has its own key and model preference.</p>
+              <button class="secondary-button" id="reset-unreadable-credentials" type="button">Reset unreadable credentials</button><p class="settings-note">Use this only when Stillnote cannot decrypt credentials. It archives the unreadable credentials file so you can enter new AI, Desmos, and Google Tasks credentials.</p>
+            </section>
             <section class="settings-section" data-section="tasks" hidden><div class="settings-section-heading"><span class="eyebrow">GOOGLE TASKS</span><h3>Sync task sheets</h3><p>Task sheets read from and write to Google Tasks lists. Your OAuth credentials and account token are encrypted in this vault.</p></div><label class="field-label" for="google-tasks-client-id">OAuth Desktop app client ID</label><input class="settings-input" id="google-tasks-client-id" type="text" autocomplete="off" placeholder="123456789.apps.googleusercontent.com"><label class="field-label" for="google-tasks-client-secret">OAuth client secret</label><input class="settings-input" id="google-tasks-client-secret" type="password" autocomplete="new-password" placeholder="Paste the secret from the same Desktop app client"><div class="key-actions"><button class="primary-button" id="save-google-tasks-client">Save credentials</button><button class="secondary-button" id="connect-google-tasks">Connect Google account</button><button class="secondary-button" id="disconnect-google-tasks">Disconnect</button><span class="key-status" id="google-tasks-status">Checking connection…</span></div><p class="settings-note">Go to Google Cloud Console (console.cloud.google.com/). Create a Project and go to that project's dashboard. Click "Library" in the left sidebar, search for "Google Tasks api", and enable it. Back in the dashboard, click on credentials, then create credentials, then OAUTH Client ID. Set the application type to: “Desktop app”. Copy the Client ID and Client Secret, you will need these and won't be able to view them again. Under OAuth 2.0 Client IDs, find the one you created an click on it. Go to "Audience" and scroll down until you find "test users". Add the Gmail you intend to use as a test user. Paste the Client ID and Client Secret into StillNote. Click save, then click "Connect Google Accout". Click on the Gmail that you added as a test user and click confirm. The app requests access only to your Google Tasks.</p></section>
 
             <section class="settings-section" data-section="desmos" hidden><div class="settings-section-heading"><span class="eyebrow">DESMOS TOOLS</span><h3>Connect Desmos</h3><p>Graph, Geometry, and 3D Calculator files save their Desmos state inside the Markdown file.</p></div><label class="field-label" for="desmos-api-key">Desmos API key</label><input class="settings-input" id="desmos-api-key" type="password" autocomplete="off" placeholder="Enter your Desmos API key"><div class="key-actions"><button class="primary-button" id="save-desmos-key">Save key</button><button class="secondary-button" id="remove-desmos-key">Remove key</button></div><p class="settings-note">Get an API key at desmos.com/my-api. Geometry Tool and 3D Calculator access must be enabled for your key. Desmos loads from the internet.</p></section>
@@ -305,8 +319,8 @@ app.innerHTML = `
 
             <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
-            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write, link, and calculate</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line. Spreadsheet formulas calculate inside spreadsheet files.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet tables in notes</h4><div class="shortcut-row"><span>All populated cells</span><kbd>&lt;[Budget.md]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A1 through D8</span><kbd>&lt;[Budget.md#D8]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A5 through D8</span><kbd>&lt;[Budget.md#A5,D8]&gt;</kbd></div><div class="shortcut-row"><span>Legacy link</span><kbd>[[Budget.md#D8]]</kbd></div><div class="shortcut-row"><span>Displayed values</span><kbd>Formula results; first row and column act as headers</kbd></div><div class="shortcut-row"><span>Edit or open</span><kbd>Edit link to change extent; right-click table to open spreadsheet</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet formulas</h4><div class="shortcut-row"><span>Start a calculation</span><kbd>Begin the cell with =</kbd></div><div class="shortcut-row"><span>Add / subtract</span><kbd>=A1+B1 · =A1-B1</kbd></div><div class="shortcut-row"><span>Multiply / divide</span><kbd>=A1*B1 · =A1/B1</kbd></div><div class="shortcut-row"><span>Powers</span><kbd>=A1^2</kbd></div><div class="shortcut-row"><span>Group calculations</span><kbd>=(A1+B1)*C1</kbd></div><div class="shortcut-row"><span>Total several cells</span><kbd>=A1+A2+A3</kbd></div><div class="shortcut-row"><span>Average several cells</span><kbd>=(A1+A2+A3)/3</kbd></div><div class="shortcut-row"><span>Percentage of a value</span><kbd>=A1*15/100</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet calculation rules</h4><div class="shortcut-row"><span>Cell addresses</span><kbd>A1, B2, AA10 (case-insensitive)</kbd></div><div class="shortcut-row"><span>Named columns</span><kbd>Use letter addresses even after renaming</kbd></div><div class="shortcut-row"><span>Blank cells</span><kbd>Count as 0 in formulas</kbd></div><div class="shortcut-row"><span>Negative numbers</span><kbd>=A1*(-2)</kbd></div><div class="shortcut-row"><span>Order of operations</span><kbd>Parentheses, powers, × / ÷, + / −</kbd></div><div class="shortcut-row"><span>Reorder rows or columns</span><kbd>References update to follow moved cells</kbd></div><div class="shortcut-row"><span>Edit a formula</span><kbd>Focus the cell to edit its source</kbd></div><div class="shortcut-row"><span>Supported logic</span><kbd>Arithmetic only; no IF, AND, OR, comparisons, ranges, or SUM</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet errors</h4><div class="shortcut-row"><span>Division by zero</span><kbd>#DIV/0! — check the divisor</kbd></div><div class="shortcut-row"><span>Circular reference</span><kbd>#CYCLE! — a formula refers back to itself</kbd></div><div class="shortcut-row"><span>Invalid value or formula</span><kbd>#VALUE! — check syntax and referenced cells</kbd></div><div class="shortcut-row"><span>Text in calculations</span><kbd>Referenced cells must contain numbers or formulas</kbd></div></div></div></section>
-            <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
+            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write, link, and calculate</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line. Spreadsheet formulas calculate inside spreadsheet files.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet tables in notes</h4><div class="shortcut-row"><span>All populated cells</span><kbd>&lt;[Budget.md]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A1 through D8</span><kbd>&lt;[Budget.md#D8]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A5 through D8</span><kbd>&lt;[Budget.md#A5,D8]&gt;</kbd></div><div class="shortcut-row"><span>Legacy link</span><kbd>[[Budget.md#D8]]</kbd></div><div class="shortcut-row"><span>Displayed values</span><kbd>Formula results; first row and column act as headers</kbd></div><div class="shortcut-row"><span>Edit or open</span><kbd>Edit link to change extent; right-click table to open spreadsheet</kbd></div></div><div class="shortcut-group"><h4>Link previews</h4><div class="shortcut-row"><span>Render a linked file</span><kbd>&lt;[Image.png]&gt;</kbd></div><div class="shortcut-row"><span>Link without a preview</span><kbd>&lt;[!!!Image.png]&gt;</kbd></div><div class="shortcut-row"><span>Graph-only previews</span><kbd>Link graph, geometry, or 3D calculator .md files</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet formulas</h4><div class="shortcut-row"><span>Start a calculation</span><kbd>Begin the cell with =</kbd></div><div class="shortcut-row"><span>Add / subtract</span><kbd>=A1+B1 · =A1-B1</kbd></div><div class="shortcut-row"><span>Multiply / divide</span><kbd>=A1*B1 · =A1/B1</kbd></div><div class="shortcut-row"><span>Powers</span><kbd>=A1^2</kbd></div><div class="shortcut-row"><span>Group calculations</span><kbd>=(A1+B1)*C1</kbd></div><div class="shortcut-row"><span>Total several cells</span><kbd>=A1+A2+A3</kbd></div><div class="shortcut-row"><span>Average several cells</span><kbd>=(A1+A2+A3)/3</kbd></div><div class="shortcut-row"><span>Percentage of a value</span><kbd>=A1*15/100</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet calculation rules</h4><div class="shortcut-row"><span>Cell addresses</span><kbd>A1, B2, AA10 (case-insensitive)</kbd></div><div class="shortcut-row"><span>Named columns</span><kbd>Use letter addresses even after renaming</kbd></div><div class="shortcut-row"><span>Blank cells</span><kbd>Count as 0 in formulas</kbd></div><div class="shortcut-row"><span>Negative numbers</span><kbd>=A1*(-2)</kbd></div><div class="shortcut-row"><span>Order of operations</span><kbd>Parentheses, powers, × / ÷, + / −</kbd></div><div class="shortcut-row"><span>Reorder rows or columns</span><kbd>References update to follow moved cells</kbd></div><div class="shortcut-row"><span>Edit a formula</span><kbd>Focus the cell to edit its source</kbd></div><div class="shortcut-row"><span>Supported logic</span><kbd>Arithmetic only; no IF, AND, OR, comparisons, ranges, or SUM</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet errors</h4><div class="shortcut-row"><span>Division by zero</span><kbd>#DIV/0! — check the divisor</kbd></div><div class="shortcut-row"><span>Circular reference</span><kbd>#CYCLE! — a formula refers back to itself</kbd></div><div class="shortcut-row"><span>Invalid value or formula</span><kbd>#VALUE! — check syntax and referenced cells</kbd></div><div class="shortcut-row"><span>Text in calculations</span><kbd>Referenced cells must contain numbers or formulas</kbd></div></div></div></section>
+            <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant; otherwise go Home from a file</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Find and replace in file</span><kbd>⌘ / Ctrl F</kbd></div><div class="shortcut-row"><span>Next / previous match</span><kbd>Enter / ${icons.shift} Enter</kbd></div><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
           </div>
         </div>
       </section>
@@ -326,7 +340,13 @@ app.innerHTML = `
     <div class="toast" id="toast" hidden></div>
   </div>`;
 
-const state = { vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
+const AI_PROVIDERS = {
+  groq: { name: 'Groq', defaultModel: 'openai/gpt-oss-120b' },
+  openai: { name: 'OpenAI', defaultModel: 'gpt-6.1-sol' },
+  anthropic: { name: 'Anthropic', defaultModel: 'claude-sonnet-5-5' },
+};
+function resolveAiProvider(value) { return Object.hasOwn(AI_PROVIDERS, value) ? value : 'groq'; }
+const state = { aiProvider: resolveAiProvider(localStorage.getItem('stillnote-ai-provider')), vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, homeMode: localStorage.getItem('stillnote-home-mode') === 'work' ? 'work' : 'ask', homeRun: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
 {
   const workspaceShortcuts = [...document.querySelectorAll('.shortcut-group')].find((group) => group.querySelector('h4')?.textContent === 'Workspace');
   const firstRow = workspaceShortcuts?.querySelector('.shortcut-row');
@@ -341,7 +361,7 @@ function loadToolbarPositions() {
   return { notes: ['left', 'right', 'bottom', 'hidden'].includes(notePosition) ? notePosition : 'right', canvas: ['left', 'right', 'bottom'].includes(canvasPosition) ? canvasPosition : 'right' };
 }
 function loadHomeChats() { try { const saved = JSON.parse(localStorage.getItem('stillnote-home-chats') || '[]'); return Array.isArray(saved) ? saved.slice(0, 3) : []; } catch { return []; } }
-function persistHomeChat() { if (!state.homeSession) return; state.homeSession.updatedAt = Date.now(); state.homeChats = [state.homeSession, ...state.homeChats.filter((chat) => chat.id !== state.homeSession.id)].slice(0, 3); localStorage.setItem('stillnote-home-chats', JSON.stringify(state.homeChats)); }
+function persistHomeChat() { if (!state.homeSession) return; state.homeSession.updatedAt = Date.now(); state.homeChats = [state.homeSession, ...state.homeChats.filter((chat) => chat.id !== state.homeSession.id)].slice(0, 3); try { localStorage.setItem('stillnote-home-chats', JSON.stringify(state.homeChats)); } catch { try { localStorage.setItem('stillnote-home-chats', JSON.stringify(state.homeChats.map(({aiContext,...chat})=>chat))); } catch {} } }
 let resolveRenameDialog = null;
 let resolveDeleteDialog = null;
 const $ = (selector) => document.querySelector(selector);
@@ -481,14 +501,16 @@ function renderSpreadsheetPreview(data, endCell, file) {
   table.append(body); scroll.append(table); return scroll;
 }
 class WikiMediaWidget extends WidgetType {
-  constructor(file, from, to, endCell = '') { super(); this.file = file; this.from = from; this.to = to; this.endCell = endCell; }
+  constructor(file, from, to, endCell = '', revision = 0) { super(); this.file = file; this.from = from; this.to = to; this.endCell = endCell; this.revision = revision; }
   toDOM(view) {
     const extension = `.${fileExtension(this.file)}`;
     const is3d = ['.obj', '.stl', '.step', '.stp'].includes(extension);
-    const isCanvas = findExplorerNode(this.file)?.format === 'canvas';
+    const format = findExplorerNode(this.file)?.format;
+    const isGraph = ['graph','geometry','calculator3d'].includes(format);
+    const isCanvas = format === 'canvas';
     const isSpreadsheet = findExplorerNode(this.file)?.format === 'spreadsheet';
     const isPlayable = playableMediaExtensions.includes(extension);
-    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${isSpreadsheet ? ' is-spreadsheet' : isCanvas ? ' is-canvas' : isPlayable ? ' is-playable' : is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
+    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${isGraph ? ' is-graph' : isSpreadsheet ? ' is-spreadsheet' : isCanvas ? ' is-canvas' : isPlayable ? ' is-playable' : is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'cm-wiki-media-edit'; edit.textContent = 'Edit link'; edit.title = 'Show and edit the link';
     edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
     edit.addEventListener('click', (event) => {
@@ -497,11 +519,19 @@ class WikiMediaWidget extends WidgetType {
     });
     preview.append(edit);
     const loading = document.createElement('span'); loading.className = 'cm-wiki-media-loading'; loading.textContent = 'Loading preview…'; preview.append(loading);
-    const source = isCanvas || isSpreadsheet ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
-    source.then((asset) => {
-      if (!preview.isConnected) return;
+    const source = isCanvas || isSpreadsheet || isGraph ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
+    source.then(async (asset) => {
+      if (!preview.isConnected || preview.__disposed) return;
       preview.replaceChildren(edit);
-      if (isSpreadsheet) {
+      if (isGraph) {
+        const graph = decodeStructured(asset);
+        if (graph?.type !== format) throw new Error('Invalid graph document');
+        const host = document.createElement('span'); host.className = 'cm-wiki-graph-preview'; host.setAttribute('role','img'); host.setAttribute('aria-label',this.file);preview.append(host);
+        const instance = createGraphPreview(host,format,graph.data,{getKey:()=>window.stillnote.getDesmosKey(),loadApi:loadDesmosApi,isCurrent:()=>preview.isConnected&&!preview.__disposed,onResize:()=>view.requestMeasure()});
+        preview.__disposePreview = instance.destroy;
+        await instance.ready;
+        if(!preview.isConnected||preview.__disposed)return;
+      } else if (isSpreadsheet) {
         const sheet = decodeStructured(asset);
         if (sheet?.type !== 'spreadsheet' || !sheet.data?.cells || typeof sheet.data.cells !== 'object') throw new Error('Invalid spreadsheet');
         preview.append(renderSpreadsheetPreview(sheet.data, this.endCell, this.file));
@@ -530,16 +560,17 @@ class WikiMediaWidget extends WidgetType {
       }
       view.requestMeasure();
     }).catch((problem) => {
-      if (!preview.isConnected) return;
+      if (!preview.isConnected || preview.__disposed) return;
       preview.classList.add('is-error');
-      const error = document.createElement('span'); error.textContent = `Preview unavailable · ${this.file}${isSpreadsheet ? ` · ${problem.message}` : ''}`; preview.replaceChildren(edit, error);
+      const error = document.createElement('span'); error.textContent = `Preview unavailable · ${this.file}${isSpreadsheet || isGraph ? ` · ${problem.message}` : ''}`; preview.replaceChildren(edit, error);
+      void refreshExplorer().catch(() => {});
     });
     preview.addEventListener('pointerdown', (event) => event.stopPropagation());
     preview.addEventListener('mousedown', (event) => event.stopPropagation());
     return preview;
   }
-  destroy(dom) { disposeMediaPlayers(dom); dom.__disposePreview?.(); }
-  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to && other.endCell === this.endCell; }
+  destroy(dom) { dom.__disposed = true; disposeMediaPlayers(dom); dom.__disposePreview?.(); }
+  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to && other.endCell === this.endCell && other.revision === this.revision; }
 }
 const taskPreviewCache = new Map();
 function decodeTaskReferencePart(value) { try { return decodeURIComponent(value); } catch { return value; } }
@@ -580,7 +611,7 @@ class TaskReferenceWidget extends WidgetType {
     preview.innerHTML = `<span class="cm-task-preview-status"></span><span class="cm-task-preview-copy"><strong>${escapeHtml(this.taskName)}</strong><small>${escapeHtml(this.listName)} · Loading task…</small></span>`;
     const stop = (event) => event.stopPropagation(); preview.addEventListener('pointerdown', stop); preview.addEventListener('mousedown', stop); preview.addEventListener('click', stop);
     resolveTaskReference(this.listName, this.taskName).then(({ list, task }) => {
-      if (!preview.isConnected) return;
+      if (!preview.isConnected || preview.__disposed) return;
       if (task.status === 'completed') { replaceTaskReferenceInEditor(view, this.source, this.from, this.to, ''); return; }
       preview.className = 'cm-task-preview'; preview.replaceChildren();
       const complete = document.createElement('input'); complete.type = 'checkbox'; complete.className = 'cm-task-preview-complete'; complete.setAttribute('aria-label', `Complete ${task.title}`);
@@ -706,10 +737,10 @@ function makeLiveMarkdownDecorations(view) {
         const [target, endCell = ''] = reference.split('#').map(value => value.trim());
         const linkedFile = resolveVaultFileTarget(target);
         const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
-        const media = ['canvas', 'spreadsheet'].includes(findExplorerNode(linkedFile)?.format) || playableMediaExtensions.includes(extension) || ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.icns', '.svg', '.obj', '.stl', '.step', '.stp'].includes(extension);
+        const media = shouldRenderFileLink(reference,findExplorerNode(linkedFile)?.format,extension);
         const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
-        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, endCell) }).range(from, to));
-        else decorations.push(Decoration.mark({ class: 'cm-md-wiki-link' }).range(from, to));
+        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, endCell, vaultRenderRevision) }).range(from, to));
+        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: isBrokenVaultLink(reference) ? 'Linked file not found' : target } }).range(from, to));
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
       const highlightMatcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
@@ -831,7 +862,7 @@ function jumpToNoteIndex(view, position) {
 const liveMarkdown = ViewPlugin.fromClass(class {
   constructor(view) { this.decorations = makeLiveMarkdownDecorations(view); }
   update(update) {
-    if (update.docChanged || update.selectionSet || update.viewportChanged) this.decorations = makeLiveMarkdownDecorations(update.view);
+    if (update.docChanged || update.selectionSet || update.viewportChanged || update.transactions.some(transaction => transaction.effects.some(effect => effect.is(refreshFileLinksEffect)))) this.decorations = makeLiveMarkdownDecorations(update.view);
   }
 }, { decorations: (plugin) => plugin.decorations });
 
@@ -937,8 +968,18 @@ function showToast(message) {
   clearTimeout(showToast.timer); showToast.timer = setTimeout(() => { toast.hidden = true; }, 2400);
 }
 function prettyName(path) { return path.split('/').at(-1).replace(/\.md$/i, ''); }
+function fileLabel(path, format = findExplorerNode(path)?.format) { return fileDisplayName(path, format); }
+function fileLabelPath(path) {
+  const parts = path.split('/'); parts[parts.length - 1] = fileLabel(path);
+  return parts.join(' / ');
+}
+function fileLabelHtml(path, format = findExplorerNode(path)?.format) {
+  const { name, extension } = fileDisplayParts(path, format);
+  return `<span class="file-name"><span class="file-name-base">${escapeHtml(name)}</span>${extension ? `<span class="file-type-extension">${escapeHtml(extension)}</span>` : ''}</span>`;
+}
+
 const codeFileTypes = [
-  ['JavaScript', '.js'], ['CommonJS JavaScript', '.cjs'], ['ES module JavaScript', '.mjs'], ['TypeScript', '.ts'], ['React JSX', '.jsx'], ['React TypeScript', '.tsx'],
+  ['Plain text', '.txt'], ['CSV data', '.csv'], ['TSV data', '.tsv'], ['JavaScript', '.js'], ['CommonJS JavaScript', '.cjs'], ['ES module JavaScript', '.mjs'], ['TypeScript', '.ts'], ['React JSX', '.jsx'], ['React TypeScript', '.tsx'],
   ['Python', '.py'], ['HTML', '.html'], ['CSS', '.css'], ['JSON', '.json'], ['Java', '.java'], ['C', '.c'], ['C header', '.h'], ['C++', '.cpp'], ['C++ header', '.hpp'],
   ['Rust', '.rs'], ['Go', '.go'], ['SQL', '.sql'], ['Shell script', '.sh'], ['XML', '.xml'], ['YAML', '.yaml'], ['YAML', '.yml'], ['TOML', '.toml'], ['Swift', '.swift'], ['Kotlin', '.kt'], ['Ruby', '.rb'], ['PHP', '.php'],
 ];
@@ -1021,6 +1062,10 @@ async function prepareNotePdf(markdownText) {
     if (!file) return undefined;
     const extension = `.${fileExtension(file)}`, format = findExplorerNode(file)?.format;
     if (playableMediaExtensions.includes(extension)) return '';
+    if (['graph','geometry','calculator3d'].includes(format)) {
+      const parsed=decodeStructured(await window.stillnote.readNote(file));
+      return imageHtml(await graphSnapshotForPdf(parsed),file);
+    }
     if (format === 'canvas' || format === 'spreadsheet') {
       const parsed = decodeStructured(await window.stillnote.readNote(file));
       if (!parsed?.data) throw new Error('Invalid structured document');
@@ -1028,8 +1073,8 @@ async function prepareNotePdf(markdownText) {
       const data = structuredClone(parsed.data);
       await Promise.all(data.elements.filter(el => el.type === 'image' && el.link).map(async el => {
         const path = el.link.match(/^<\[([^\]]+)\]>$/)?.[1];
-        if (path) { try { el.src = (await window.stillnote.readAsset(path)).data; } catch {} }
-        delete el.link;
+        if (path) { try { el.src = (await window.stillnote.readAsset(path)).data; } catch { el.src = ''; el.missing = true; } }
+        if (!el.missing) delete el.link;
       }));
       const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       drawing.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); drawing.setAttribute('viewBox', `0 0 ${data.width || 1200} ${data.height || 760}`);
@@ -1067,6 +1112,12 @@ async function prepareNotePdf(markdownText) {
     },
   });
 }
+async function graphSnapshotForPdf(parsed) {
+  if(!parsed)throw new Error('Invalid graph file');
+  const host=document.createElement('div');host.style.cssText='position:fixed;left:-2000px;top:0;width:1000px;height:650px';document.body.append(host);
+  const instance=createGraphPreview(host,parsed.type,parsed.data,{getKey:()=>window.stillnote.getDesmosKey(),loadApi:loadDesmosApi});
+  try { return await instance.screenshot(); } finally { instance.destroy();host.remove(); }
+}
 async function modelSnapshotForPdf(file, asset) {
   let renderer, group;
   try {
@@ -1098,7 +1149,32 @@ async function exportPdf(notePath = state.active) {
     if (result) showToast('PDF exported');
   } catch (error) { showToast(error.message || 'Could not export PDF.'); }
 }
+function isBrokenVaultLink(target) {
+  const reference = parseVaultLink(target).target, file = parseVaultLink(target).path;
+  return file ? !resolveVaultFileTarget(file) : !reference.startsWith('#') || !state.active;
+}
+function invalidateVaultLinkRendering() {
+  vaultRenderRevision++;
+  canvasImageAssets.clear();
+  state.view?.dispatch({ effects: refreshFileLinksEffect.of(null) });
+  const canvasEditor = document.activeElement?.closest?.('.canvas-text-edit');
+  if(canvasEditor)canvasEditor.addEventListener('blur',()=>state.structured?.refreshCanvas?.(),{once:true});
+  else state.structured?.refreshCanvas?.();
+  document.querySelectorAll('.canvas-image[data-file-target]').forEach(image=>{if(!resolveVaultFileTarget(image.dataset.fileTarget))image.removeAttribute('href');});
+  document.querySelectorAll('.sheet-wiki-link').forEach(link => {
+    const broken = isBrokenVaultLink(link.dataset.target);
+    link.classList.toggle('is-broken', broken); link.setAttribute('aria-invalid', String(broken));
+    link.title = broken ? 'Linked file not found' : link.dataset.target;
+  });
+  if (state.home && state.homeSession) renderHomeTranscript();
+}
+function refreshVaultLinksIfChanged() {
+  const entries=[];const visit=nodes=>{for(const node of nodes)if(node.type==='folder')visit(node.children||[]);else entries.push([node.path,node.format]);};visit(state.tree);
+  const signature=JSON.stringify([state.vault?.path,entries]);
+  if(signature!==vaultCatalogSignature){vaultCatalogSignature=signature;invalidateVaultLinkRendering();}
+}
 function renderFiles() {
+  refreshVaultLinksIfChanged();
   scheduleBacklinks();
   list.innerHTML = '';
   if (!state.files.length) {
@@ -1121,7 +1197,7 @@ function renderFiles() {
         const row = document.createElement('button');
         row.className = `note-row${node.path === state.active || state.explorerSelection.has(node.path) ? ' selected' : ''}`;
         row.style.setProperty('--depth', depth);
-        row.innerHTML = `${icons[node.format] || icons.file}<span>${escapeHtml(prettyName(node.name))}</span>`;
+        row.innerHTML = `${icons[node.format] || icons.file}${fileLabelHtml(node.name, node.format)}`;
         row.title = node.path; row.addEventListener('click', (event) => { if (selectExplorerNode(node, event.shiftKey)) return; void openNote(node.path); });
         row.addEventListener('contextmenu', (event) => showExplorerContextMenu(event, node)); wireExplorerDrag(row, node); parent.append(row);
       }
@@ -1159,6 +1235,7 @@ function setExplorerFoldersExpanded(expanded) {
   visit(state.tree); renderFiles();
 }
 async function setVault(vault) {
+  if (state.vault?.path !== vault.path) stopHomeRun();
   if (state.vault?.path && state.vault.path !== vault.path) { state.view?.destroy(); state.view = null; state.active = null; $('#editor-content').replaceChildren(); }
   state.vault = vault; state.files = vault.files; state.tree = vault.tree; state.collapsed.clear();
   $('.vault-name').textContent = vault.name; $('.vault-mark').textContent = vault.name.charAt(0).toUpperCase();
@@ -1203,7 +1280,7 @@ function renderHomeTranscript() {
   transcript.replaceChildren();
   if (!state.homeSession.messages.length) {
     const empty = document.createElement('section'); empty.className = 'home-empty-state';
-    empty.innerHTML = `<div class="home-empty-mark">${icons.assistant}</div><div class="eyebrow">A THOUGHTFUL START</div><h2>What can I help you untangle?</h2><p>Ask a question, explore an idea, or find something across your notes.</p><div class="home-prompt-suggestions"><button type="button" data-home-prompt="Summarize the ideas I’ve been collecting lately">Summarize my recent ideas</button><button type="button" data-home-prompt="Help me find a note about ">Find a note about…</button><button type="button" data-home-prompt="Explain this concept in a simple way: ">Explain a concept</button></div>`;
+    empty.innerHTML = `<div class="home-empty-mark">${icons.assistant}</div><div class="eyebrow">A THOUGHTFUL START</div><h2>${state.homeMode === 'work' ? 'What would you like to get done?' : 'What connects your notes?'}</h2><p>${state.homeMode === 'work' ? 'Plan a project, connect files, analyze data, or create linked tasks. I’ll ask when I need more detail.' : 'Summarize files, compare ideas, and explore their relationships.'}</p><div class="home-prompt-suggestions">${state.homeMode === 'work' ? '<button type="button" data-home-prompt="Help me plan a project using my notes. Ask me what you need before creating files or tasks.">Plan a project</button><button type="button" data-home-prompt="Analyze my data files and identify their relationships. Ask which files and questions to focus on.">Analyze my data</button>' : ''}<button type="button" data-home-prompt="Summarize the ideas I’ve been collecting lately">Summarize my recent ideas</button><button type="button" data-home-prompt="Help me find a note about ">Find a note about…</button><button type="button" data-home-prompt="Explain this concept in a simple way: ">Explain a concept</button></div>`;
     transcript.append(empty);
   }
   for (const message of state.homeSession.messages) {
@@ -1214,9 +1291,9 @@ function renderHomeTranscript() {
       const match = part.match(/^(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])$/);
       if (!match) { bubble.append(document.createTextNode(part)); continue; }
       const ref = (match[1] || match[2]).trim();
-      const found = resolveVaultFileTarget(ref.split('#')[0]);
-      if (!found) { bubble.append(document.createTextNode(ref)); continue; }
-      const link = document.createElement('button'); link.type = 'button'; link.className = 'home-file-link'; link.textContent = prettyName(found); link.title = `Right-click to open ${found}`;
+      const found = resolveVaultFileTarget(ref.split('|')[0].split('#')[0]);
+      if (!found) { const broken = document.createElement('span'); broken.className = 'home-file-link is-broken'; broken.textContent = ref; broken.title = 'Linked file not found'; bubble.append(broken); continue; }
+      const link = document.createElement('button'); link.type = 'button'; link.className = 'home-file-link'; link.textContent = fileLabel(found); link.title = `Right-click to open ${found}`;
       link.addEventListener('click', (event) => event.preventDefault());
       link.addEventListener('contextmenu', async (event) => {
         event.preventDefault();
@@ -1228,41 +1305,66 @@ function renderHomeTranscript() {
       });
       bubble.append(link);
     }
+    if (message.kind === 'question') { const label = document.createElement('strong'); label.className = 'home-question-label'; label.textContent = 'A question before continuing'; bubble.prepend(label); }
+    if (message.events?.length) {
+      const details = document.createElement('details'); details.className = 'home-action-log';
+      const summary = document.createElement('summary'); summary.textContent = `${message.events.filter(event=>event.status === 'done').length} completed steps`; details.append(summary);
+      const list = document.createElement('ul');
+      for (const event of message.events) { const item = document.createElement('li'); item.textContent = `${event.status === 'done' ? '✓' : event.status === 'error' ? '!' : '…'} ${event.label}${event.summary ? ' — '+event.summary : ''}`; list.append(item); }
+      details.append(list); bubble.append(details);
+    }
     transcript.append(bubble);
   }
   transcript.scrollTop = transcript.scrollHeight;
 }
 function startHomeSession(session = null) {
-  state.homeSession = session ? JSON.parse(JSON.stringify(session)) : { id: crypto.randomUUID(), title: 'New conversation', updatedAt: Date.now(), messages: [] };
-  renderHomeTranscript(); renderHomeHistory();
+  if (state.homeRun) { showToast('Stop the current request before switching chats.'); return; }
+  if (session?.vaultPath && session.vaultPath !== state.vault?.path) return;
+  state.homeSession = session ? JSON.parse(JSON.stringify(session)) : { id: crypto.randomUUID(), title: 'New conversation', updatedAt: Date.now(), messages: [], mode:state.homeMode, vaultPath:state.vault?.path };
+  state.homeMode = state.homeSession.mode === 'work' ? 'work' : 'ask';
+  renderHomeTranscript(); renderHomeHistory(); updateHomeMode();
 }
 function renderHomeHistory() {
   const history = $('#home-history'); if (!history) return;
   history.replaceChildren();
   if (!state.homeChats.length) { const empty = document.createElement('p'); empty.className = 'home-history-empty'; empty.textContent = 'Your conversations will appear here.'; history.append(empty); return; }
-  for (const chat of state.homeChats) {
+  for (const chat of state.homeChats.filter(chat => !chat.vaultPath || chat.vaultPath === state.vault?.path)) {
     const button = document.createElement('button'); button.type = 'button'; button.className = `home-history-item${state.homeSession?.id === chat.id ? ' active' : ''}`;
     button.textContent = chat.title || chat.messages?.find((item) => item.role === 'user')?.content?.slice(0, 48) || 'Conversation';
     button.addEventListener('click', () => startHomeSession(chat)); history.append(button);
   }
 }
 async function openHome() {
+  if (state.home && state.homeRun) return;
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
   try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
+  state.assetViewer?.destroy?.(); state.assetViewer = null; state.assetPath = null; state.assetBytes = null; state.pdfText = null; state.pdfTextPromise = null;
   if (state.view) { state.view.destroy(); state.view = null; }
   state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
   state.structured = null; updateAssistantModeCopy(); state.active = null; state.home = true; state.dirty = false;
   state.assistantOpen = false; $('.workspace').classList.remove('assistant-open');
-  $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><div class="home-footnote">Relevant notes are selected on this device before they’re sent with your request.</div></div></div></section>`;
+  $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><div class="home-mode-toggle" role="group" aria-label="Home assistant mode"><button type="button" data-home-mode="ask" aria-pressed="true">Ask</button><button type="button" data-home-mode="work" aria-pressed="false">Work</button></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><button type="button" class="home-stop" id="home-stop" hidden>Stop</button><div class="home-footnote" id="home-mode-note"></div></div></div></section>`;
   $('#note-editor').hidden = false; $('#welcome').hidden = true;
   $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault?.name || 'Workspace')}</span><span class="crumb-slash">/</span><strong>Home</strong>`;
   $('.location-note').textContent = 'Home'; $('#save-state').textContent = '';
   $('#word-count').textContent = ''; $('#assistant-toggle').disabled = true; $('#assistant-toggle').setAttribute('aria-disabled', 'true'); $('#assistant-toggle').setAttribute('aria-pressed', 'false');
   await window.stillnote.rememberNote(null).catch(() => {}); renderFiles();
-  startHomeSession();
+  if (state.homeRun) { renderHomeTranscript(); renderHomeHistory(); updateHomeMode(); } else startHomeSession();
   $('#home-form').addEventListener('submit', submitHomeMessage);
+  $('#home-input').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      if (!state.homeRun) $('#home-form').requestSubmit();
+    }
+  });
+  document.querySelectorAll('[data-home-mode]').forEach(button => button.addEventListener('click', () => {
+    if (state.homeRun) return;
+    state.homeMode = button.dataset.homeMode; state.homeSession.mode = state.homeMode;
+    localStorage.setItem('stillnote-home-mode',state.homeMode); updateHomeMode(); renderHomeTranscript(); persistHomeChat();
+  }));
+  $('#home-stop').addEventListener('click',stopHomeRun);
   $('#home-new-chat').addEventListener('click', () => { startHomeSession(); $('#home-input').focus(); });
   $('#home-history-toggle').addEventListener('click', (event) => {
     const button = event.currentTarget, view = $('.home-view'), history = $('.home-history');
@@ -1280,25 +1382,74 @@ async function openHome() {
   });
   $('#home-transcript').addEventListener('click', (event) => { const suggestion = event.target.closest('[data-home-prompt]'); if (!suggestion) return; const input = $('#home-input'); input.value = suggestion.dataset.homePrompt; input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
 }
+function updateHomeMode() {
+  const busy = !!state.homeRun;
+  document.querySelectorAll('[data-home-mode]').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.homeMode === state.homeMode)); button.disabled = busy; });
+  if ($('#home-input')) { $('#home-input').disabled = busy; $('#home-input').placeholder = state.homeMode === 'work' ? 'Describe what you want to accomplish…' : 'Ask about your notes, files, and their connections…'; }
+  if ($('#home-send')) { $('#home-send').disabled = busy; $('#home-send').setAttribute('aria-label',state.homeMode === 'work' ? 'Start work' : 'Ask question'); }
+  if ($('#home-new-chat')) $('#home-new-chat').disabled = busy;
+  if ($('#home-stop')) $('#home-stop').hidden = !busy;
+  if ($('#home-mode-note')) $('#home-mode-note').textContent = state.homeMode === 'work' ? 'Work can create and update files and Google Tasks. It asks for details when needed.' : 'Ask reads relevant files and relationships. It does not change your workspace.';
+}
+function stopHomeRun() {
+  const run = state.homeRun; if (!run) return;
+  run.stopped = true; void window.stillnote.cancelHome(run.id).catch(() => {});
+  if ($('#home-stop')) { $('#home-stop').disabled = true; $('#home-stop').textContent = 'Stopping…'; }
+}
+async function homeReadTool(name,args,mode,vault) {
+  const result = await window.stillnote.homeTool({ tool:name,args,mode,vault });
+  if (name !== 'read_file' || result.kind !== 'pdf') return result;
+  if (state.vault?.path !== vault) throw new Error('The active vault changed.');
+  if (result.bytes > 20*1024*1024) throw new Error('This PDF exceeds the 20 MB Home reading limit.');
+  const asset = await window.stillnote.readAsset(args.path), { getDocument } = await getPdfJs();
+  const pdf = await getDocument({data:bytesFromDataUrl(asset.data),isEvalSupported:false,useSystemFonts:true}).promise;
+  try {
+    const pages=[];let total=0;
+    for(let number=1;number<=pdf.numPages&&total<130000;number++) { const content=await (await pdf.getPage(number)).getTextContent();const line=`Page ${number}\n${content.items.map(item=>item.str||'').join(' ')}`;pages.push(line);total+=line.length; }
+    const text=pages.join('\n\n');
+    if (!text.replace(/Page \d+/g,'').trim()) throw new Error('This PDF has no selectable text. OCR is not available.');
+    const offset=Math.max(0,Number(args.offset)||0),length=Math.min(50000,Math.max(1,Number(args.length)||30000));
+    return {path:args.path,text:text.slice(offset,offset+length),totalCharacters:text.length,truncated:offset+length<text.length||total>=130000,note:'Selectable PDF text only; images and layout are not analyzed.'};
+  } finally { await pdf.destroy(); }
+}
 async function submitHomeMessage(event) {
   event.preventDefault();
-  const input = $('#home-input'), prompt = input.value.trim(); if (!prompt) return;
-  let keyStatus;
-  try { keyStatus = await window.stillnote.aiKeyStatus(); } catch (error) { showToast(error.message || 'Could not check Ollama key status.'); return; }
-  if (!keyStatus.configured) { openSettings('ai'); return; }
-  const matches = await window.stillnote.findRelevantNotes(prompt);
-  const sources = matches.map(({ path, title, excerpt }) => `FILE: ${path}\nTITLE: ${title}\nCONTENT:\n${excerpt}`).join('\n\n---\n\n');
-  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
-  state.homeSession.messages.push({ role: 'user', content: prompt });
-  if (state.homeSession.messages.filter((item) => item.role === 'user').length === 1) state.homeSession.title = prompt.slice(0, 58);
-  input.value = ''; const send = $('#home-send'); send.disabled = true;
-  renderHomeTranscript(); const loading = document.createElement('div'); loading.className = 'home-bubble assistant loading'; loading.textContent = 'Thinking…'; $('#home-transcript').append(loading);
+  const input = $('#home-input'), prompt = input?.value.trim(); if (!prompt || state.homeRun) return;
+  const session = state.homeSession, mode = state.homeMode, vault = state.vault?.path, provider = state.aiProvider, model = selectedAiModel(provider);
+  const run = {id:crypto.randomUUID(),stopped:false}; state.homeRun = run; updateHomeMode();
+  let progress;
   try {
-    const history = state.homeSession.messages.slice(0, -1).slice(-8);
-    const result = await window.stillnote.askAi({ mode: 'ask', model, noteName: state.vault?.name || 'Workspace', documentType: 'vault', document: sources, prompt, history });
-    loading.remove(); state.homeSession.messages.push({ role: 'assistant', content: result.text }); persistHomeChat(); renderHomeTranscript(); renderHomeHistory();
-  } catch (error) { loading.remove(); const fail = document.createElement('div'); fail.className = 'home-bubble assistant error'; fail.textContent = error.message || 'The assistant could not respond.'; $('#home-transcript').append(fail); }
-  finally { if ($('#home-send')) $('#home-send').disabled = false; }
+    const keyStatus = await window.stillnote.aiKeyStatus(provider);
+    if (!keyStatus.configured) { openSettings('ai'); return; }
+    if(run.stopped)return;
+    const history=session.messages.slice(-12);
+    session.messages.push({role:'user',content:prompt});
+    if(session.messages.filter(item=>item.role==='user').length===1)session.title=prompt.slice(0,58);
+    input.value='';renderHomeTranscript();persistHomeChat();
+    progress=document.createElement('section');progress.className='home-run-progress';progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');$('#home-transcript').append(progress);
+    const result=await runHomeAgent({mode,prompt,history,context:session.aiContext?.[mode]||[],
+      stopped:()=>run.stopped||state.vault?.path!==vault,
+      modelStep:request=>window.stillnote.homeStep({...request,provider,model,vault,requestId:run.id}),
+      tool:(name,args)=>homeReadTool(name,args,mode,vault),
+      onProgress:({label,plan,events})=>{
+        if(!progress.isConnected)return; progress.replaceChildren();
+        const status=document.createElement('strong');status.textContent=label;progress.append(status);
+        if(plan.length){const list=document.createElement('ol');for(const step of plan){const item=document.createElement('li');item.textContent=step;list.append(item);}progress.append(list);}
+        const count=document.createElement('small');count.textContent=`${events.filter(event=>event.status==='done').length} steps completed`;progress.append(count);
+      },
+    });
+    session.aiContext ||= {};session.aiContext[mode]=result.context;
+    session.messages.push({role:'assistant',content:result.text,kind:result.kind,events:result.events,mode});
+    if(state.vault?.path===vault){[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();}
+    if(state.homeSession===session){persistHomeChat();if(state.home){renderHomeTranscript();renderHomeHistory();}}
+  } catch(error) {
+    session.messages.push({role:'assistant',content:error.message||'The request could not finish.',kind:'error'});
+    if(state.homeSession===session){persistHomeChat();if(state.home)renderHomeTranscript();}
+  } finally {
+    progress?.remove();if(state.homeRun===run)state.homeRun=null;
+    if($('#home-stop')){$('#home-stop').disabled=false;$('#home-stop').textContent='Stop';}
+    updateHomeMode();if(state.home)$('#home-input')?.focus();
+  }
 }
 function bytesFromDataUrl(dataUrl) {
   const binary = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
@@ -1307,7 +1458,7 @@ function bytesFromDataUrl(dataUrl) {
 function renderAssetTextEditor(file, contents, navigationId) {
   const theme = EditorView.theme({ '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '13px', height: '100%' }, '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '1.65', overflow: 'auto' }, '.cm-content': { maxWidth: 'none', padding: '28px 28px 90px', caretColor: '#a7795d' }, '.cm-gutters': { backgroundColor: '#f5f4f0', borderRight: '1px solid #e6e4dd', color: '#9a9a91' }, '.cm-activeLineGutter': { backgroundColor: '#ebe8e1', color: '#55564f' }, '.cm-activeLine': { backgroundColor: '#f8f7f3' }, '.cm-foldGutter .cm-gutterElement': { cursor: 'pointer' }, '&.cm-focused': { outline: 'none' }, '.cm-selectionBackground, ::selection': { backgroundColor: '#e7ded4 !important' }, '.cm-cursor': { borderLeftColor: '#a7795d' } }, { dark: false });
   state.active = file;
-  state.view = new EditorView({ state: EditorState.create({ doc: contents, extensions: [lineNumbers(), highlightActiveLineGutter(), foldGutter(), highlightActiveLine(), drawSelection(), dropCursor(), rectangularSelection(), history(), bracketMatching(), indentOnInput(), indentUnit.of('  '), codeLanguage(file), syntaxHighlighting(defaultHighlightStyle), EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off' }), keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged && navigationId === state.navigationId) onEdit(); })] }), parent: $('#editor-content') });
+  state.view = new EditorView({ state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), lineNumbers(), highlightActiveLineGutter(), foldGutter(), highlightActiveLine(), drawSelection(), dropCursor(), rectangularSelection(), history(), bracketMatching(), indentOnInput(), indentUnit.of('  '), codeLanguage(file), syntaxHighlighting(defaultHighlightStyle), EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off' }), keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged && navigationId === state.navigationId) onEdit(); })] }), parent: $('#editor-content') });
 }
 let occtPromise = null;
 let pdfjsPromise = null;
@@ -1450,6 +1601,7 @@ async function renderAssetPreview(file, navigationId) {
   }
 }
 async function openNote(file) {
+  stopHomeRun();
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   if (meetingStarting) cancelMeetingRecording();
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
@@ -1533,7 +1685,7 @@ async function openNote(file) {
     }, { dark: false });
     if (state.view) { state.view.destroy(); state.view = null; }
     state.view = new EditorView({
-      state: EditorState.create({ doc: contents, extensions: [spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
+      state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
       parent: $('#editor-content'),
     });
     state.view.scrollDOM.addEventListener('scroll', () => updateNoteIndexCurrent(state.view), { passive: true });
@@ -1549,8 +1701,8 @@ async function openNote(file) {
     if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
     $('#welcome').hidden = true; $('#note-editor').hidden = false;
     renderNoteIndexes(state.view);
-    $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(file.split('/').map(prettyName).join(' / '))}</strong>`;
-    $('.location-note').textContent = prettyName(file); renderFiles();
+    $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(file))}</strong>`;
+    $('.location-note').textContent = fileLabel(file); renderFiles();
   } catch (error) { showToast(error.message || 'Could not open note.'); }
 }
 $('#editor-content').addEventListener('contextmenu', (event) => {
@@ -1656,7 +1808,7 @@ function structuredLink(target) {
   void navigateWikiTarget(String(target || '').split('|')[0].trim());
 }
 async function navigateWikiTarget(target) {
-  const clean = String(target || '').trim();
+  const clean = parseVaultLink(target).target;
   const hashIndex = clean.indexOf('#');
   const fileTarget = hashIndex < 0 ? clean : clean.slice(0, hashIndex).trim();
   const fragment = hashIndex < 0 ? '' : clean.slice(hashIndex + 1).trim();
@@ -1788,7 +1940,7 @@ async function openPendingDeepLinks() {
   for (const link of links) await navigateWikiTarget(`${link.file}#L${link.line}`);
 }
 function resolveVaultFileTarget(target) {
-  const clean = String(target || '').trim().replace(/\\/g, '/').replace(/^\.\//, '').toLocaleLowerCase();
+  const clean = parseVaultLink(target).path.replace(/\\/g, '/').replace(/^\.\//, '').toLocaleLowerCase();
   if (!clean) return null;
   const files = explorerFilePaths();
   const exact = files.find((file) => file.toLocaleLowerCase() === clean);
@@ -1889,8 +2041,8 @@ function renderStructured(type, rawData, file, title) {
   return root;
 }
 function updateStructuredLocation(file) {
-  $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(file.split('/').map(prettyName).join(' / '))}</strong>`;
-  $('.location-note').textContent = prettyName(file);
+  $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(file))}</strong>`;
+  $('.location-note').textContent = fileLabel(file);
 }
 function renderGeometry(root, data) {
   void renderDesmosTool(root, data, 'geometry');
@@ -2091,23 +2243,25 @@ function drawCanvasElements(svg, data, displayColor, selected = new Set(), readO
     data.elements.forEach((el, i) => {
       let node;
       if (el.type === 'image') {
-        node = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-        node.classList.add('canvas-image');
-        node.setAttribute('x', el.x); node.setAttribute('y', el.y);
-        node.setAttribute('width', el.w); node.setAttribute('height', el.h);
-        node.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        if (/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|bmp);base64,/i.test(el.src || '')) node.setAttribute('href', el.src);
-        if (/^https?:\/\//i.test(el.url || '')) node.setAttribute('href', el.url);
-        if (el.link) {
-          const target = el.link.match(/^<\[([^\]]+)\]>$/)?.[1];
+        const target = el.link?.match(/^<\[([^\]]+)\]>$/)?.[1];
+        if (el.link && (!target || !resolveVaultFileTarget(target) || el.missing)) {
+          node = document.createElementNS('http://www.w3.org/2000/svg', 'g'); node.classList.add('canvas-image-missing');
+          const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          for(const [key,value] of Object.entries({x:el.x,y:el.y,width:el.w,height:el.h,rx:8,fill:'none',stroke:'#c24f49','stroke-dasharray':'5 4'}))box.setAttribute(key,value);
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');label.setAttribute('x',el.x+8);label.setAttribute('y',el.y+22);label.setAttribute('fill','#c24f49');label.setAttribute('font-size',14);label.textContent=el.link;
+          node.append(box,label);node.setAttribute('aria-label',`Missing image: ${target || el.link}`);
+        } else {
+          node = document.createElementNS('http://www.w3.org/2000/svg', 'image'); node.classList.add('canvas-image');
+          node.setAttribute('x', el.x); node.setAttribute('y', el.y); node.setAttribute('width', el.w); node.setAttribute('height', el.h);node.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+          if (!el.link && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml|bmp);base64,/i.test(el.src || '')) node.setAttribute('href', el.src);
+          if (!el.link && /^https?:\/\//i.test(el.url || '')) node.setAttribute('href', el.url);
           if (target) {
-            const imageNode = node;
-            void canvasImageAsset(target).then(asset => {
-              if (imageNode.isConnected && asset.mime.startsWith('image/')) imageNode.setAttribute('href', asset.data);
-            }).catch(() => { /* Keep the saved image when its vault source is unavailable. */ });
+            const imageNode=node; imageNode.dataset.fileTarget=target;
+            void canvasImageAsset(target).then(asset => { if(imageNode.isConnected && resolveVaultFileTarget(target) && asset.mime.startsWith('image/'))imageNode.setAttribute('href',asset.data); })
+              .catch(() => { if(imageNode.isConnected){imageNode.removeAttribute('href');void refreshExplorer().catch(()=>{});} });
           }
+          node.setAttribute('aria-label', el.name || 'Canvas image');
         }
-        node.setAttribute('aria-label', el.name || 'Canvas image');
       }
       else if (el.type === 'stroke') { node = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); node.setAttribute('points', el.points.map(p => `${p.x},${p.y}`).join(' ')); node.setAttribute('fill','none'); node.setAttribute('stroke',displayColor(el.color)); node.setAttribute('stroke-width','3'); node.setAttribute('stroke-linecap','round'); node.setAttribute('stroke-linejoin','round'); }
       else if(el.type==='line'){
@@ -2685,8 +2839,8 @@ function sheetCellHtml(value) {
   let html = '', offset = 0, match;
   while ((match = matcher.exec(source))) {
     html += escapeHtml(source.slice(offset, match.index));
-    const target = (match[1] || match[3]).trim(), label = match[2] || match[4] || target;
-    html += `<a class="sheet-wiki-link" href="#" data-target="${escapeHtml(target)}">${escapeHtml(label)}</a>`;
+    const target = (match[1] || match[3]).trim(), label = match[2] || match[4] || parseVaultLink(target).target;
+    html += `<a class="sheet-wiki-link${isBrokenVaultLink(target) ? ' is-broken' : ''}" href="#" data-target="${escapeHtml(target)}" aria-invalid="${isBrokenVaultLink(target)}">${escapeHtml(label)}</a>`;
     offset = match.index + match[0].length;
   }
   return html + escapeHtml(source.slice(offset));
@@ -2697,7 +2851,7 @@ function serializeLinkedText(element) {
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     if (node.matches('a.sheet-wiki-link')) {
       const target = node.dataset.target || '', label = node.textContent || target;
-      return `<[${target}${label !== target ? `|${label}` : ''}]>`;
+      return `<[${target}${label !== parseVaultLink(target).target ? `|${label}` : ''}]>`;
     }
     return [...node.childNodes].map(read).join('');
   };
@@ -2758,8 +2912,8 @@ async function saveActive() {
         state.active = savedPath;
         [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
         renderFiles();
-        $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(savedPath.split('/').map(prettyName).join(' / '))}</strong>`;
-        $('.location-note').textContent = prettyName(savedPath);
+        $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(savedPath))}</strong>`;
+        $('.location-note').textContent = fileLabel(savedPath);
         void window.stillnote.rememberNote(savedPath).catch((error) => console.error('Could not save active note:', error));
       }
       if (state.view === view && state.active === savedPath) {
@@ -2859,6 +3013,7 @@ function chooseGoogleTaskList(lists) {
     overlay.querySelector('[data-choice="create"]').addEventListener('click', () => finish({ create: true }));
     overlay.querySelector('[data-choice="use"]').addEventListener('click', () => finish({ list: lists.find((list) => list.id === select.value) }));
     overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(null); });
+    overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(null); } });
   });
 }
 function showNewFileMenu(anchor, parentPath = '') {
@@ -2887,7 +3042,7 @@ function showNewFileMenu(anchor, parentPath = '') {
       const index = options.findIndex(([name]) => name === label);
       const offset = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 4, ArrowUp: -4 }[event.key];
       if (offset !== undefined) { event.preventDefault(); menu.children[(index + offset + options.length) % options.length].focus(); }
-      if (event.key === 'Escape') { menu.hidden = true; anchor.setAttribute('aria-expanded', 'false'); anchor.focus(); }
+      if (event.key === 'Escape') { event.preventDefault(); menu.hidden = true; anchor.setAttribute('aria-expanded', 'false'); anchor.focus(); }
     });
     menu.append(button);
   }
@@ -2907,11 +3062,20 @@ async function createFolder(parentPath = '') {
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]); renderFiles();
   } catch (error) { showToast(error.message || 'Could not create folder.'); }
 }
-async function refreshExplorer() {
+let explorerRefreshRequest = 0;
+async function refreshExplorer({ paths = [], forceLinks = false } = {}) {
   if (!state.vault) return;
-  [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
-  renderFiles();
+  const vault = state.vault, request = ++explorerRefreshRequest;
+  const [files, tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+  if (state.vault !== vault || request !== explorerRefreshRequest) return;
+  state.files = files; state.tree = tree;
+  const revision = vaultRenderRevision; renderFiles();
+  if (revision === vaultRenderRevision && (forceLinks || paths.some(path => !path || path !== state.active))) invalidateVaultLinkRendering();
 }
+window.stillnote.onVaultChanged?.(change => {
+  if (change.vault === state.vault?.path) void refreshExplorer(change).catch(error => console.warn('Could not refresh vault:', error.message));
+});
+window.addEventListener('focus', () => { void refreshExplorer({forceLinks:true}).catch(() => {}); });
 function canDropOnFolder(item, destinationPath) {
   if (item?.items) return item.items.length > 0 && item.items.every((entry) => canDropOnFolder(entry, destinationPath));
   if (!item || item.path === destinationPath) return false;
@@ -3065,10 +3229,10 @@ function showExplorerContextMenu(event, node) {
 window.stillnote.onFileLinksUpdated?.((moves) => {
   const rewrite = (text) => text.replace(/<\[([^\]\r\n]+)\]>|\[\[([^\]\r\n]+)\]\]/g, (source, modern, legacy) => {
     const value = modern ?? legacy, raw = value.split('|')[0].split('#')[0];
-    const target = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+    const target = parseVaultLink(raw).path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
     const move = moves.find(([oldPath]) => target === oldPath.toLowerCase() || (!/\.[^/]+$/.test(target) && `${target}.md` === oldPath.toLowerCase()));
     if (!move) return source;
-    const valueUpdated = move[1] + value.slice(raw.length);
+    const valueUpdated = (parseVaultLink(raw).linkOnly ? '!!!' : '') + move[1] + value.slice(raw.length);
     return modern !== undefined ? `<[${valueUpdated}]>` : `[[${valueUpdated}]]`;
   });
   if (state.view) {
@@ -3123,7 +3287,7 @@ $('#backlink-count').addEventListener('click', async () => {
   if (!backlinkResults.length) { const empty = document.createElement('p'); empty.textContent = 'No links to this file yet.'; backlinkPopup.append(empty); }
   for (const reference of backlinkResults) {
     const button = document.createElement('button'); button.type = 'button';
-    const label = document.createElement('span'); label.textContent = `${reference.file} · Line ${reference.line}`;
+    const label = document.createElement('span'); label.textContent = `${fileLabelPath(reference.file)} · Line ${reference.line}`;
     const excerpt = document.createElement('small'); excerpt.textContent = reference.text;
     button.append(label, excerpt);
     button.addEventListener('click', () => { backlinkPopup.hidden = true; void navigateWikiTarget(`${reference.file}#L${reference.line}`); });
@@ -3132,7 +3296,7 @@ $('#backlink-count').addEventListener('click', async () => {
   backlinkPopup.hidden = false;
 });
 document.addEventListener('pointerdown', (event) => { if (!backlinkPopup.contains(event.target) && !event.target.closest('#backlink-count')) backlinkPopup.hidden = true; });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') backlinkPopup.hidden = true; });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !backlinkPopup.hidden) { event.preventDefault(); backlinkPopup.hidden = true; } });
 function showTaskContextMenu(event, listName, taskName) {
   event.preventDefault(); event.stopPropagation();
   const menu = $('#explorer-context-menu'); menu.replaceChildren();
@@ -3202,7 +3366,7 @@ async function renameExplorerEntry(node) {
 async function deleteExplorerEntries(rawNodes, skipConfirm = false) {
   const nodes = rawNodes.filter(Boolean).filter((node, index, all) => !all.some((parent, parentIndex) => parentIndex !== index && parent.type === 'folder' && node.path.startsWith(`${parent.path}/`)));
   if (!nodes.length) return;
-  const displayName = nodes.length === 1 ? (nodes[0].type === 'note' ? prettyName(nodes[0].name) : nodes[0].name) : `${nodes.length} selected items`;
+  const displayName = nodes.length === 1 ? (nodes[0].type === 'note' ? fileLabel(nodes[0].path, nodes[0].format) : nodes[0].name) : `${nodes.length} selected items`;
   const description = nodes.length === 1 ? (nodes[0].type === 'folder' ? 'This also deletes everything inside it.' : 'This deletes this file from the vault.') : 'This permanently deletes the selected files, folders, and any files inside selected folders.';
   if (!skipConfirm && !await confirmDelete(displayName, description)) return;
   try {
@@ -3265,7 +3429,7 @@ async function openLinkPicker() {
   linkPickerView = state.view; activeLinkPickerSource = 'files';
   $('#link-picker-overlay').hidden = false; $('#link-picker-tabs').innerHTML = '<button class="link-picker-tab active" type="button" role="tab" aria-selected="true" data-source="files">Files</button>'; $('#link-picker-results').innerHTML = '<div class="link-picker-empty">Loading task sheets…</div>';
   $('#link-picker-query').value = ''; $('#link-picker-query').placeholder = 'Filter files…'; requestAnimationFrame(() => $('#link-picker-query').focus());
-  const files = explorerFilePaths().map((file) => ({ title: prettyName(file), detail: file, syntax: `<[${file}]>` }));
+  const files = explorerFilePaths().map((file) => ({ title: fileLabel(file), detail: fileLabelPath(file), syntax: `<[${file}]>` }));
   const taskSheetFiles = explorerFilePaths().filter((file) => file.toLocaleLowerCase().endsWith('.md'));
   const sheets = (await Promise.all(taskSheetFiles.map(async (file) => {
     try {
@@ -3306,6 +3470,7 @@ function applyTheme(theme) {
   document.querySelectorAll('.theme-card').forEach((option) => option.setAttribute('aria-pressed', String(option.dataset.theme === state.theme)));
 }
 async function restoreWorkspace() {
+  syncAiProviderSettings();
   applyTheme(localStorage.getItem('stillnote-theme') || 'light');
   try {
     const vault = await window.stillnote.restoreSession();
@@ -3342,17 +3507,41 @@ function setToolbarPosition(type, position) {
     if (state.structured?.type === 'canvas') document.querySelector('.canvas-editor').dataset.toolbarPosition = position;
   }
 }
+function aiModelStorageKey(provider = state.aiProvider) { return `stillnote-${provider}-model`; }
+function selectedAiModel(provider = state.aiProvider) {
+  const select = $('#ai-model');
+  return (select.dataset.provider === provider && select.value.trim()) || localStorage.getItem(aiModelStorageKey(provider)) || AI_PROVIDERS[provider].defaultModel;
+}
+function syncAiProviderSettings() {
+  const provider = state.aiProvider, config = AI_PROVIDERS[provider];
+  $('#ai-provider').value = provider;
+  $('#ai-key').value = '';
+  $('#ai-key').placeholder = `Paste your ${config.name} API key`;
+  $('#ai-key-label').textContent = `${config.name} API key`;
+  $('#ai-provider-info').textContent = provider === 'groq'
+    ? 'Groq has a free API tier with daily and per-minute limits. Exact limits depend on your model and account. Stay on the Free plan for free usage; Stillnote does not upgrade your plan or switch providers automatically.'
+    : provider === 'anthropic' ? 'Anthropic API usage is billed separately from Claude subscriptions.'
+    : 'OpenAI API usage is billed separately from ChatGPT subscriptions.';
+  $('#ai-key-help').textContent = provider === 'groq'
+    ? 'Create a key at console.groq.com/keys, save it here, then choose a model. Your prompts and relevant file content are sent directly to Groq when you use the assistant. Existing FreeModel keys cannot be used with Groq.'
+    : provider === 'anthropic' ? 'Create a key at platform.claude.com/settings/keys, save it here, then choose a Claude model. Your prompts and relevant file content are sent directly to Anthropic when you use the assistant.'
+    : 'Create a key at platform.openai.com/api-keys. Your prompts and relevant file content are sent to OpenAI when you use the assistant.';
+  $('.assistant-footnote').textContent = `The open file and directly linked files are sent to ${config.name}.`;
+}
+let aiKeyStatusRequest = 0;
 async function updateKeyStatus() {
-  const label = $('#ai-key-status');
+  const label = $('#ai-key-status'), provider = state.aiProvider, vault = state.vault?.path, request = ++aiKeyStatusRequest;
+  const current = () => request === aiKeyStatusRequest && provider === state.aiProvider && vault === state.vault?.path;
   try {
-    const status = await window.stillnote.aiKeyStatus();
+    const status = await window.stillnote.aiKeyStatus(provider);
+    if (!current()) return;
     label.textContent = !status.vaultOpen ? 'Open a vault to save keys' : status.configured ? 'Key saved in this vault' : 'No key saved';
     label.className = `key-status${status.configured ? ' configured' : ''}`;
     setSettingsHealth('ai', status.configured, status.configured ? 'API key saved' : 'API key missing');
     $('#save-ai-key').disabled = !status.secureStorageAvailable || !status.vaultOpen;
     $('#remove-ai-key').disabled = !status.vaultOpen;
     if (!status.secureStorageAvailable) label.textContent = 'Secure key storage is unavailable';
-  } catch (error) { label.textContent = error.message || 'Could not check key status'; label.className = 'key-status error'; setSettingsHealth('ai', false, 'Could not check API key'); }
+  } catch (error) { if (current()) { label.textContent = error.message || 'Could not check key status'; label.className = 'key-status error'; setSettingsHealth('ai', false, 'Could not check API key'); } }
 }
 async function updateDesmosKeyStatus() {
   const status = await window.stillnote.desmosKeyStatus().catch(() => ({ configured: false, vaultOpen: false, secureStorageAvailable: false }));
@@ -3383,7 +3572,7 @@ async function openSettings(tab = 'theme') {
   $('#directory-name').textContent = state.vault?.name || 'No folder open';
   $('#directory-path').textContent = state.vault?.path || 'Choose a folder to see its location.';
   setSettingsHealth('directory', Boolean(state.vault), state.vault ? 'Folder open' : 'No folder open');
-  $('#ai-model').value = localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  syncAiProviderSettings();
   $('#desmos-api-key').value = state.vault ? await window.stillnote.getDesmosKey().catch(() => '') : '';
   await updateDesmosKeyStatus();
   $('#notes-toolbar-position').value = state.toolbarPositions.notes;
@@ -3416,22 +3605,29 @@ async function updateGoogleTasksStatus(loadClientId = false) {
     setSettingsHealth('tasks', false, 'Google Tasks connection not working');
   }
 }
+let aiModelsRequest = 0;
 async function loadAiModels() {
-  const select = $('#ai-model'); const status = $('#ai-model-status'); const selected = localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
+  const select = $('#ai-model'), status = $('#ai-model-status'), provider = state.aiProvider, config = AI_PROVIDERS[provider], vault = state.vault?.path, request = ++aiModelsRequest;
+  const selected = localStorage.getItem(aiModelStorageKey(provider)) || config.defaultModel;
+  const current = () => request === aiModelsRequest && provider === state.aiProvider && vault === state.vault?.path;
+  const fallback = document.createElement('option'); fallback.value = selected; fallback.textContent = selected;
+  select.replaceChildren(fallback); select.value = selected; select.dataset.provider = provider;
   select.disabled = true; status.textContent = 'Loading available models…';
   try {
-    const models = await window.stillnote.listAiModels();
+    const models = await window.stillnote.listAiModels(provider);
+    if (!current()) return;
+    const choices = [...new Set(models)];
+    if (!choices.length) throw new Error('No compatible chat models were returned for this account.');
     setSettingsHealth('ai', true, 'AI API key working');
-    const choices = [...new Set([selected, ...models].filter(Boolean))];
     select.replaceChildren(...choices.map((model) => { const option = document.createElement('option'); option.value = model; option.textContent = model; return option; }));
-    select.value = choices.includes(selected) ? selected : (models[0] || selected);
-    localStorage.setItem('stillnote-ai-model', select.value);
-    status.textContent = models.length ? `${models.length} models available from Ollama Cloud.` : 'No models were returned for this account.';
+    select.value = choices.includes(selected) ? selected : (choices.includes(config.defaultModel) ? config.defaultModel : choices[0]);
+    localStorage.setItem(aiModelStorageKey(provider), select.value);
+    status.textContent = `${choices.length} models available from ${config.name}.`;
   } catch (error) {
+    if (!current()) return;
     setSettingsHealth('ai', false, 'AI API key not working');
-    const fallback = document.createElement('option'); fallback.value = selected; fallback.textContent = `${selected} (saved selection)`; select.replaceChildren(fallback); select.value = selected;
     status.textContent = error.message || 'Save a valid API key to load available models.';
-  } finally { select.disabled = false; }
+  } finally { if (current()) select.disabled = false; }
 }
 function closeSettings() {
   const overlay = $('#settings-overlay'), modal = $('.settings-modal'), animation = ++settingsAnimation;
@@ -3528,17 +3724,17 @@ function updateAssistantModeCopy() {
 }
 async function addAiTasksToSheet(specs, notePath, originalDocument) {
   const owner = state.structured;
-  if (!owner || owner.type !== 'tasks' || state.active !== notePath || activeDocumentText() !== originalDocument) throw new Error('The task sheet changed while Ollama was working. Please try again.');
+  if (!owner || owner.type !== 'tasks' || state.active !== notePath || activeDocumentText() !== originalDocument) throw new Error('The task sheet changed while the assistant was working. Please try again.');
   if (!Array.isArray(specs) || !specs.length) return 0;
-  if (specs.length > 30) throw new Error('Ollama returned too many tasks to add at once.');
+  if (specs.length > 30) throw new Error('The assistant returned too many tasks to add at once.');
   const additions = specs.map((item) => {
     const title = String(item?.title || '').trim();
     const notes = String(item?.notes || '').trim();
     const due = String(item?.due || '').trim();
     const parentTitle = String(item?.parentTitle || '').trim();
-    if (!title || title.length > 1024) throw new Error('Ollama returned a task with an invalid title.');
+    if (!title || title.length > 1024) throw new Error('The assistant returned a task with an invalid title.');
     if (notes.length > 8192) throw new Error(`Details for “${title}” are too long.`);
-    if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(`${due}T00:00:00Z`)))) throw new Error(`Ollama returned an invalid due date for “${title}”.`);
+    if (due && (!/^\d{4}-\d{2}-\d{2}$/.test(due) || Number.isNaN(Date.parse(`${due}T00:00:00Z`)))) throw new Error(`The assistant returned an invalid due date for “${title}”.`);
     return { title, notes, due, parentTitle };
   });
   const taskByTitle = new Map(owner.data.tasks.map((task) => [task.title.toLocaleLowerCase(), task]));
@@ -3604,28 +3800,63 @@ function appendAppliedEdit(container, text, notePath, originalDocument) {
   $('#assistant-messages').scrollTop = $('#assistant-messages').scrollHeight;
   return true;
 }
+async function readLinkedPdfContext(file, limit, current) {
+  if(!current())throw new Error('The active file or vault changed.');
+  const asset=await window.stillnote.readAsset(file);
+  if(!current())throw new Error('The active file or vault changed.');
+  if(asset.data.length>28*1024*1024)throw new Error('PDF exceeds the 20 MB reading limit.');
+  const {getDocument}=await getPdfJs();
+  const pdf=await getDocument({data:bytesFromDataUrl(asset.data),isEvalSupported:false,useSystemFonts:true}).promise;
+  try{
+    const pages=[];let length=0,page=1;
+    for(;page<=pdf.numPages&&page<=50&&length<limit;page++){
+      if(!current())throw new Error('The active file or vault changed.');
+      const content=await (await pdf.getPage(page)).getTextContent();
+      const text=content.items.map(item=>item.str||'').filter(Boolean).join(' ');
+      if(text){const chunk=`Page ${page}\n${text}`;pages.push(chunk.slice(0,limit-length));length+=chunk.length+2;}
+    }
+    if(!pages.length)throw new Error('No selectable PDF text was found; OCR is not available.');
+    return {text:pages.join('\n\n'),truncated:page<=pdf.numPages||length>limit};
+  }finally{await pdf.destroy();}
+}
+async function loadLinkedAssistantContext(request, current) {
+  const context=await window.stillnote.linkedAiContext(request);
+  for(const file of context.files){
+    if(!current())throw new Error('The active file or vault changed.');
+    if(file.kind!=='pdf'||file.error||!file.textBudget)continue;
+    try{Object.assign(file,await readLinkedPdfContext(file.path,file.textBudget,current));delete file.note;}
+    catch(error){file.error=error.message;delete file.text;}
+    delete file.textBudget;
+  }
+  if(!current())throw new Error('The active file or vault changed.');
+  return context;
+}
 async function submitAssistantMessage(event) {
   event.preventDefault();
   const prompt = $('#assistant-input').value.trim();
   if (!prompt) return;
-  const notePath = state.active, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
+  const notePath = state.active, vault = state.vault?.path, navigation = state.navigationId, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
   if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, geometry, 3D calculator, spreadsheet, graph, or task sheet before using the assistant.'); return; }
+  const provider = state.aiProvider, model = selectedAiModel(provider);
   let keyStatus;
-  try { keyStatus = await window.stillnote.aiKeyStatus(); }
-  catch (error) { showToast(error.message || 'Could not check Ollama key status.'); return; }
+  try { keyStatus = await window.stillnote.aiKeyStatus(provider); }
+  catch (error) { showToast(error.message || 'Could not check AI key status.'); return; }
   if (!keyStatus.configured) { openSettings('ai'); return; }
   const mode = isPdf ? 'ask' : state.assistantMode;
   const documentType = isPdf ? 'pdf' : state.structured?.type || (isEditableAsset(notePath) ? 'code' : 'markdown');
-  const model = $('#ai-model').value.trim() || localStorage.getItem('stillnote-ai-model') || 'glm-4.6';
-  localStorage.setItem('stillnote-ai-model', model);
+  localStorage.setItem(aiModelStorageKey(provider), model);
   const welcome = $('.assistant-welcome'); if (welcome) welcome.remove();
   appendChatBubble('user', prompt);
   const loading = appendChatBubble('assistant loading', 'Thinking…');
   $('#assistant-input').value = ''; $('#assistant-send').disabled = true;
   try {
     const documentText = isPdf ? await extractActivePdfText(notePath) : activeDocumentText();
-    if (state.active !== notePath) throw new Error('The active file changed before the assistant request started. Please send it again.');
-    const result = await window.stillnote.askAi({ mode, model, noteName: prettyName(notePath), documentType, document: documentText, prompt, history: state.chatHistory });
+    const current = () => state.active === notePath && state.vault?.path === vault && state.navigationId === navigation;
+    if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
+    loading.textContent = 'Reading linked files…';
+    const linkedContext = await loadLinkedAssistantContext({ provider, vault, notePath, document: documentText }, current);
+    loading.textContent = 'Thinking…';
+    const result = await window.stillnote.askAi({ provider, vault, notePath, mode, model, noteName: prettyName(notePath), documentType, document: documentText, linkedContext, prompt, history: state.chatHistory });
     loading.remove();
     if (documentType === 'tasks' && result.kind === 'tasks') {
       const added = await addAiTasksToSheet(result.tasks, notePath, documentText);
@@ -3839,10 +4070,10 @@ $('#meeting-notes-trigger').addEventListener('click', () => {
 function renderSearch(query) {
   const results = $('#search-results'); results.innerHTML = '';
   if (!query.trim()) { results.innerHTML = '<div class="search-hint">Type to find a note by title</div>'; return; }
-  const matches = state.files.filter((file) => prettyName(file).toLowerCase().includes(query.toLowerCase()));
+  const matches = state.files.filter((file) => fileLabel(file).toLowerCase().includes(query.toLowerCase()));
   if (!matches.length) { results.innerHTML = '<div class="search-hint">No matching notes</div>'; return; }
   for (const file of matches.slice(0, 8)) {
-    const row = document.createElement('button'); row.className = 'search-result'; row.innerHTML = `${icons.file}<span>${escapeHtml(prettyName(file))}</span><small>${escapeHtml(file.includes('/') ? file.split('/').slice(0, -1).join('/') : 'Notes')}</small>`;
+    const row = document.createElement('button'); row.className = 'search-result'; row.innerHTML = `${icons[findExplorerNode(file)?.format] || icons.file}${fileLabelHtml(file)}<small>${escapeHtml(file.includes('/') ? file.split('/').slice(0, -1).join('/') : 'Notes')}</small>`;
     row.addEventListener('click', () => { closeSearch(); openNote(file); }); results.append(row);
   }
 }
@@ -3854,7 +4085,7 @@ document.addEventListener('click', (event) => { if (!event.target.closest('#new-
 $('.search-trigger').addEventListener('click', openSearch);
 $('#search-input').addEventListener('input', (event) => renderSearch(event.target.value));
 document.addEventListener('click', (event) => { if ($('#topbar-search').classList.contains('is-open') && !$('#topbar-search').contains(event.target)) closeSearch(); });
-$('#refresh-notes').addEventListener('click', async () => { await refreshExplorer(); });
+$('#refresh-notes').addEventListener('click', async () => { await refreshExplorer({forceLinks:true}); });
 $('#expand-folders').addEventListener('click', () => setExplorerFoldersExpanded(true));
 $('#collapse-folders').addEventListener('click', () => setExplorerFoldersExpanded(false));
 $('#new-folder').addEventListener('click', () => createFolder());
@@ -3882,13 +4113,27 @@ $('#notes-toolbar-position').addEventListener('change', (event) => setToolbarPos
 $('#canvas-toolbar-position').addEventListener('change', (event) => setToolbarPosition('canvas', event.target.value));
 document.querySelectorAll('.theme-card').forEach((button) => button.addEventListener('click', () => applyTheme(button.dataset.theme)));
 $('#change-directory').addEventListener('click', async () => { await chooseVault(); $('#directory-name').textContent = state.vault?.name || 'No folder open'; $('#directory-path').textContent = state.vault?.path || 'Choose a folder to see its location.'; });
-$('#save-ai-key').addEventListener('click', async () => {
-  try {
-    await window.stillnote.saveAiKey($('#ai-key').value);
-    $('#ai-key').value = ''; await updateKeyStatus(); await loadAiModels(); showToast('Ollama Cloud key saved securely');
-  } catch (error) { $('#ai-key-status').textContent = error.message; $('#ai-key-status').className = 'key-status error'; }
+$('#ai-provider').addEventListener('change', () => {
+  state.aiProvider = resolveAiProvider($('#ai-provider').value);
+  localStorage.setItem('stillnote-ai-provider', state.aiProvider);
+  syncAiProviderSettings(); void updateKeyStatus(); void loadAiModels();
 });
-$('#remove-ai-key').addEventListener('click', async () => { await window.stillnote.clearAiKey(); $('#ai-key').value = ''; await updateKeyStatus(); await loadAiModels(); });
+$('#save-ai-key').addEventListener('click', async () => {
+  const provider = state.aiProvider;
+  try {
+    await window.stillnote.saveAiKey($('#ai-key').value, provider);
+    if (state.aiProvider === provider) $('#ai-key').value = '';
+    await updateKeyStatus(); await loadAiModels(); showToast(`${AI_PROVIDERS[provider].name} key saved securely`);
+  } catch (error) { if (state.aiProvider === provider) { $('#ai-key-status').textContent = error.message; $('#ai-key-status').className = 'key-status error'; } }
+});
+$('#remove-ai-key').addEventListener('click', async () => {
+  const provider = state.aiProvider;
+  try {
+    await window.stillnote.clearAiKey(provider);
+    if (state.aiProvider === provider) $('#ai-key').value = '';
+    await updateKeyStatus(); await loadAiModels();
+  } catch (error) { showToast(error.message || 'Could not remove the API key'); }
+});
 $('#reset-unreadable-credentials').addEventListener('click', async () => {
   const button = $('#reset-unreadable-credentials'); button.disabled = true;
   try {
@@ -3930,7 +4175,7 @@ $('#save-desmos-key').addEventListener('click', async () => {
   try {
     await window.stillnote.saveDesmosKey(key);
     setSettingsHealth('desmos', true, 'API key saved in this vault');
-    showToast('Desmos key saved securely in this vault'); refreshOpenGraph();
+    showToast('Desmos key saved securely in this vault'); refreshOpenGraph(); invalidateVaultLinkRendering();
   } catch (error) { showToast(error.message || 'Could not save the Desmos key.'); }
 });
 $('#remove-desmos-key').addEventListener('click', async () => {
@@ -3941,7 +4186,7 @@ $('#remove-desmos-key').addEventListener('click', async () => {
   state.structured?.desmos?.destroy?.(); if (state.structured) state.structured.desmos = null;
   refreshOpenGraph(); showToast('Desmos API key removed');
 });
-$('#ai-model').addEventListener('change', () => localStorage.setItem('stillnote-ai-model', $('#ai-model').value || 'glm-4.6'));
+$('#ai-model').addEventListener('change', () => localStorage.setItem(aiModelStorageKey(), selectedAiModel()));
 $('#assistant-toggle').addEventListener('click', () => setAssistantOpen(!state.assistantOpen));
 $('#home-button').addEventListener('click', () => { if (!state.home) void openHome(); else $('#home-input')?.focus(); });
 document.querySelectorAll('.assistant-mode').forEach((button) => button.addEventListener('click', () => {
@@ -3955,22 +4200,44 @@ $('#assistant-input').addEventListener('keydown', (event) => {
     event.preventDefault(); $('#assistant-form').requestSubmit();
   }
 });
+function handleAppEscape(event) {
+  if (event.defaultPrevented || event.isComposing || event.repeat) return;
+  // Let Chromium handle exiting video fullscreen and cancelling native dialogs.
+  if (document.fullscreenElement || document.querySelector('dialog[open]')) return;
+  const close = action => { event.preventDefault(); action(); };
+  if (!$('#rename-overlay').hidden) return close(() => finishRenameDialog());
+  if (!$('#delete-overlay').hidden) return close(() => finishDeleteDialog(false));
+  if (!$('#link-picker-overlay').hidden) return close(() => closeLinkPicker());
+  const equation = document.querySelector('.equation-preview');
+  if (equation) return close(() => equation._dismiss?.());
+  if (!$('#new-file-menu').hidden) return close(() => { $('#new-file-menu').hidden = true; $('#new-file').setAttribute('aria-expanded','false'); });
+  if ($('#topbar-search').classList.contains('is-open')) return close(closeSearch);
+  if (!$('#settings-overlay').hidden) return close(closeSettings);
+  if (!$('#explorer-context-menu').hidden) return close(closeExplorerContextMenu);
+  if (!$('#editor-context-menu').hidden) return close(closeEditorContextMenu);
+  if (state.view && searchPanelOpen(state.view.state)) return close(() => closeSearchPanel(state.view));
+  if (state.assistantOpen) return close(() => setAssistantOpen(false));
+  if ([...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(dialog => dialog.getClientRects().length)) return;
+  const nativePicker = event.target.closest?.('select,input[type="date"],input[type="color"],input[type="file"]');
+  if (nativePicker) return close(() => nativePicker.blur());
+  if (state.active && !state.home && !event.metaKey && !event.ctrlKey && !event.altKey) close(() => { void openHome(); });
+}
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') { handleAppEscape(event); return; }
+  if (event.defaultPrevented || event.isComposing) return;
   if (event.key === 'Enter' && !$('#explorer-context-menu').hidden) state.contextDeleteBypass = true;
   const mod = event.metaKey || event.ctrlKey;
   if(state.structured?.type==='canvas'&&event.key==='Backspace'&&state.structured.deleteCanvasSelection&&!event.target.closest('input,textarea,[contenteditable="true"]')&&state.structured.data.elements.length){const hasSelection=document.querySelector('.canvas-svg .is-selected');if(hasSelection){event.preventDefault();state.structured.deleteCanvasSelection();return;}}
   if(state.structured&&mod&&event.key.toLowerCase()==='z'&&!event.target.closest('.canvas-text-edit')){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
   if(state.structured&&mod&&event.key.toLowerCase()==='y'){event.preventDefault();void applyStructuredHistory('redo');return;}
-  if (event.key === 'Escape' && !$('#rename-overlay').hidden) { event.preventDefault(); finishRenameDialog(); return; }
-  if (event.key === 'Escape' && !$('#delete-overlay').hidden) { event.preventDefault(); finishDeleteDialog(false); return; }
+  if (mod && !event.shiftKey && (event.key.toLowerCase() === 'f' || (!event.metaKey && event.key.toLowerCase() === 'h'))) {
+    event.preventDefault();
+    if (state.view && !state.home) openSearchPanel(state.view);
+    else openSearch();
+    return;
+  }
   if (mod && event.key.toLowerCase() === 'k') { event.preventDefault(); void openLinkPicker(); return; }
   if (mod && event.shiftKey && event.key.toLowerCase() === 'f') { event.preventDefault(); openSearch(); return; }
-  if (event.key === 'Escape' && !$('#link-picker-overlay').hidden) { event.preventDefault(); closeLinkPicker(); return; }
-  if (event.key === 'Escape' && $('#topbar-search').classList.contains('is-open')) closeSearch();
-  if (event.key === 'Escape' && !$('#settings-overlay').hidden) closeSettings();
-  if (event.key === 'Escape' && !$('#explorer-context-menu').hidden) closeExplorerContextMenu();
-  if (event.key === 'Escape' && !$('#editor-context-menu').hidden) closeEditorContextMenu();
-  if (event.key === 'Escape' && state.assistantOpen) setAssistantOpen(false);
   if (mod && event.key.toLowerCase() === 'n' && event.shiftKey) { event.preventDefault(); createFolder(); }
   else if (mod && event.key.toLowerCase() === 'n') { event.preventDefault(); createNote(); }
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); saveActive(); }

@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('stillnote', {
   getBacklinks: (path) => ipcRenderer.invoke('vault:backlinks', path),
   copyFileLink: (path) => ipcRenderer.invoke('vault:copy-link', path),
   resetUnreadableCredentials: () => ipcRenderer.invoke('credentials:reset-unreadable'),
+  onVaultChanged: (listener) => {
+    const handler = (_event, change) => listener(change);
+    ipcRenderer.on('vault:changed', handler);
+    return () => ipcRenderer.removeListener('vault:changed', handler);
+  },
   onFileLinksUpdated: (listener) => {
     const handler = (_event, moves) => listener(moves);
     ipcRenderer.on('vault:links-updated', handler);
@@ -51,15 +56,19 @@ contextBridge.exposeInMainWorld('stillnote', {
   },
   restoreSession: () => ipcRenderer.invoke('session:restore'),
   rememberNote: (path) => ipcRenderer.invoke('session:remember-note', path),
-  aiKeyStatus: () => ipcRenderer.invoke('ai:key-status'),
-  saveAiKey: (key) => ipcRenderer.invoke('ai:key-save', key),
-  clearAiKey: () => ipcRenderer.invoke('ai:key-clear'),
+  aiKeyStatus: (provider) => ipcRenderer.invoke('ai:key-status',provider),
+  saveAiKey: (key,provider) => ipcRenderer.invoke('ai:key-save',key,provider),
+  clearAiKey: (provider) => ipcRenderer.invoke('ai:key-clear',provider),
   desmosKeyStatus: () => ipcRenderer.invoke('desmos:key-status'),
   getDesmosKey: () => ipcRenderer.invoke('desmos:key-get'),
   saveDesmosKey: (key) => ipcRenderer.invoke('desmos:key-save', key),
   clearDesmosKey: () => ipcRenderer.invoke('desmos:key-clear'),
-  listAiModels: () => ipcRenderer.invoke('ai:models'),
+  listAiModels: (provider) => ipcRenderer.invoke('ai:models',provider),
+  homeStep: (request) => ipcRenderer.invoke('home:step', request),
+  homeTool: (request) => ipcRenderer.invoke('home:tool', request),
+  cancelHome: (requestId) => ipcRenderer.invoke('home:cancel', requestId),
   askAi: (request) => ipcRenderer.invoke('ai:chat', request),
+  linkedAiContext: (request) => ipcRenderer.invoke('ai:linked-context', request),
   loadSpellcheckDictionary: () => ipcRenderer.invoke('spellcheck:dictionary'),
   loadCustomDictionary: () => ipcRenderer.invoke('spellcheck:custom-load'),
   saveCustomDictionary: (words) => ipcRenderer.invoke('spellcheck:custom-save', words),

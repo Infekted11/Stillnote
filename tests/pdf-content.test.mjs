@@ -56,3 +56,7 @@ test('PDF placeholders cannot collide with source text', async () => {
   const html = context.renderMarkdownForPdf(prepared.markdown,'Title',prepared.replacements);
   assert.match(html,/STILLNOTEPDFCONTENT0END/); assert.match(html,/Rendered Canvas.md/);
 });
+test('!!! links stay text-only in PDFs while ordinary links render; media remains omitted',async()=>{
+  const render=renderers();const prepared=await preparePdfContent('<[!!!Image.png]> <[Image.png]> [[!!!Budget.md#A5,D8|Budget table]] <[!!!clip.mp4]>',render);
+  assert.deepEqual(render.calls,['Image.png']);const html=[...prepared.replacements.values()].join('');assert.match(html,/wiki-link/);assert.match(html,/Budget table/);assert(!html.includes('!!!'));assert(!html.includes('clip.mp4'));
+});
