@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="The complete Stillnote guide: notes, links, embeds, canvases, spreadsheets, graphs, media, tasks, AI providers, API keys, and keyboard shortcuts."><meta name="theme-color" content="#f6f4ee"><title>Docs — Stillnote</title><link rel="icon" href="logo.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="docs.css">
+</head>
+<body class="docs-page"><a class="skip-link" href="#docs-content">Skip to documentation</a>
+<header class="site-header">
+    <a class="brand" href="index.html" aria-label="Stillnote home">
+      <img src="logo.svg" alt="" width="34" height="34">
+      <span>Stillnote</span>
+    </a>
+<nav aria-label="Primary navigation">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#integrations">Integrations</a>
+      <a href="index.html#privacy">Local first</a>
+      <a href="docs.html" aria-current="page">Docs</a>
+      <a href="feature-requests.html">Feature requests</a>
+      <a href="log.html">Log</a>
+</nav>
+    <a class="button button-small" href="https://github.com/Infekted11/Stillnote/releases/latest">Download <span aria-hidden="true">↗</span></a>
+    <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false">Menu</button>
+</header>
+<main id="docs-top" class="section-shell">
+<div class="docs-heading">
+<p class="eyebrow">THE STILLNOTE FIELD GUIDE
+</p>
+<h1>A place for<br><em>every answer.</em>
+</h1>
+<div>
+<p>From your first note to a connected workspace. Learn the tools, the syntax, and the settings that make it yours.
+</p>
+<p class="docs-version">App 1.4.8 · Updated November 10, 2026
+</p>
+</div>
+</div>
+<div class="docs-layout">
+<aside class="docs-sidebar"><label for="docs-search">Find in the guide</label>
+<div class="docs-search-wrap"><input id="docs-search" type="search" placeholder="Try links, formulas, API keys…" autocomplete="off"><button id="docs-clear" type="button" aria-label="Clear guide search" hidden>×</button>
+</div>
+<p id="docs-status" role="status" aria-live="polite">
+</p>
+<details class="docs-toc" open>
+<summary>On this page
+</summary>
+<nav aria-label="Documentation contents"><a href="#start">Start with a vault</a><a href="#vault">Files, folders &amp; saving</a><a href="#file-types">Workspace file types</a><a href="#writing">Writing &amp; Markdown</a><a href="#links">Links, labels &amp; navigation</a><a href="#embeds">Linked previews &amp; !!!</a><a href="#spreadsheets">Spreadsheets &amp; formulas</a><a href="#table-ranges">Render a spreadsheet in a note</a><a href="#canvas">Canvases</a><a href="#math">Equations, graphs, geometry &amp; 3D</a><a href="#supported-files">Supported imported files</a><a href="#media">Audio, video, images &amp; models</a><a href="#tasks">Task sheets &amp; task references</a><a href="#home-ai">Home AI: Ask &amp; Work</a><a href="#sidebar-ai">File AI &amp; linked context</a><a href="#ai-keys">AI providers &amp; API keys</a><a href="#google-setup">Set up Google Tasks</a><a href="#desmos-setup">Set up Desmos</a><a href="#transcription">Local meeting transcription</a><a href="#find">Find, replace &amp; file search</a><a href="#export">Export a note to PDF</a><a href="#settings">Appearance, settings &amp; privacy</a><a href="#shortcuts">Keyboard reference</a><a href="#troubleshooting">Troubleshooting &amp; getting help</a>
+</nav>
+</details><a class="docs-download text-link" href="https://github.com/Infekted11/Stillnote/releases/latest">Download Stillnote ↗</a>
+</aside>
+<div id="docs-content" class="docs-content" tabindex="-1">
+<p id="docs-empty" hidden>No sections match. Try a broader term, such as “links” or “AI”.
+</p>
+<section class="doc-section" id="start" aria-labelledby="start-title">
+<p class="doc-number">01
+</p>
+<h2 id="start-title">Start with a vault
+</h2>
+<p>Stillnote is a desktop workspace for macOS and Windows. Your vault is a folder on your computer; notes are ordinary Markdown files. You can use notes, local files, canvases, and spreadsheets without setting up an AI account.
+</p>
+<ol>
+<li><a href="https://github.com/Infekted11/Stillnote/releases/latest">Download the latest release</a> for your platform and install it.
+</li>
+<li>Open Stillnote and choose a folder as your vault. An existing folder works too.
+</li>
+<li>Use <strong>File</strong> in the explorer to create a note or choose another workspace file type. Use <strong>Folder</strong> to organize files.
+</li>
+<li>Write, link files, and let autosave save your work. Use Settings to configure optional integrations.
+</li>
+</ol>
+<p>Stillnote restores your last vault and file. Back up the vault with your usual backup, version control, or folder-sync tools; Stillnote does not provide its own cloud backup.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="vault" aria-labelledby="vault-title">
+<p class="doc-number">02
+</p>
+<h2 id="vault-title">Files, folders &amp; saving
+</h2>
+<p>The explorer displays supported files and folders, including empty folders. Expand or collapse folders, refresh the directory, and use the context menu to rename or delete entries. Drag entries to move them; Shift-click selects multiple entries.
+</p>
+<p>Drop supported files into the explorer to copy them into the vault: up to 100 files per upload, with a 250 MB limit per file. Duplicate names must be resolved before importing. Opening a file uses the appropriate editor or viewer.
+</p>
+<p>Notes and workspace documents save automatically. <kbd>⌘ / Ctrl S</kbd> saves manually. Renaming or moving files inside Stillnote updates vault references, including linked canvas images. External deletions are detected by directory watching and when the app regains focus; deleted files stop rendering and their links become red. Fix the target or restore the file to repair them. External renames are not the same as a rename performed inside the app.
+</p>
+<p>Deleting an entry asks for confirmation. Review that dialog carefully: deletion changes the actual files in your vault. The app’s Home view is a starting point for AI conversations; Escape returns there when no other popup or action needs the key.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="file-types" aria-labelledby="file-types-title">
+<p class="doc-number">03
+</p>
+<h2 id="file-types-title">Workspace file types
+</h2>
+<p>Use the File menu to choose the kind of document you need. The short suffixes below are <strong>visual labels only</strong>. Structured workspace files are saved as <code>.md</code> with type metadata and JSON data; the suffix does not rename the actual file.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Type</th><th scope="col">App label</th><th scope="col">What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Note</td><td>.md</td><td>Live Markdown writing, links, embeds, equations, checklists, and PDF export.</td>
+</tr>
+<tr><td>Canvas</td><td>.cnvs</td><td>Freehand drawing, shapes, lines, editable text, and images.</td>
+</tr>
+<tr><td>Spreadsheet</td><td>.sht</td><td>Cells, arithmetic formulas, column labels, row/column ordering, and linked table ranges.</td>
+</tr>
+<tr><td>Graph</td><td>.grph</td><td>Desmos graphing with saved calculator state.</td>
+</tr>
+<tr><td>Geometry</td><td>.geom</td><td>Desmos geometry constructions with saved state.</td>
+</tr>
+<tr><td>3D calculator</td><td>.3d</td><td>Desmos 3D graphs with saved state.</td>
+</tr>
+<tr><td>Task sheet</td><td>.task</td><td>A local workspace view of a connected Google Tasks list.</td>
+</tr>
+<tr><td>Code / text</td><td>Actual extension</td><td>Edit supported text and source files without executing them.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For a spreadsheet shown as <code>Budget.sht</code>, link the real file: <code>&lt;[Budget.md]&gt;</code>. Avoid manually changing the metadata or JSON unless you understand that document’s format.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="writing" aria-labelledby="writing-title">
+<p class="doc-number">04
+</p>
+<h2 id="writing-title">Writing &amp; Markdown
+</h2>
+<p>Formatting renders as you write. Move the caret onto a formatted line to work with its syntax; move away to see the rendered result. The formatting toolbar gives quick access to common actions. Headings remain plain, without decorative underlines.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Feature</th><th scope="col">Syntax</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Heading</td><td><code># Heading (through ######)</code></td>
+</tr>
+<tr><td>Bold / italic</td><td><code>**bold** / *italic*</code></td>
+</tr>
+<tr><td>Strikethrough</td><td><code>~~text~~</code></td>
+</tr>
+<tr><td>Highlight</td><td><code>=important text=</code></td>
+</tr>
+<tr><td>Inline code</td><td><code>`code`</code></td>
+</tr>
+<tr><td>Bullet / numbered list</td><td><code>- Item / 1. Item</code></td>
+</tr>
+<tr><td>Checklist</td><td><code>- [ ] Task / - [x] Done</code></td>
+</tr>
+<tr><td>Quote</td><td><code>&gt; Quoted text</code></td>
+</tr>
+<tr><td>Divider</td><td><code>---</code></td>
+</tr>
+<tr><td>Fenced code</td><td><code>```js … ```</code></td>
+</tr>
+<tr><td>Markdown image</td><td><code>![Description](image.png)</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use heading and highlight indexes to jump through a note. Heading navigation includes H1/H2 headings and Setext headings. Click checklist boxes to change their completion state. Code blocks preserve code formatting; they do not run code.
+</p>
+<p>English spellcheck offers right-click suggestions and a personal dictionary. Add accepted terms, or remove them in Settings. The personal dictionary is stored encrypted per vault.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="links" aria-labelledby="links-title">
+<p class="doc-number">05
+</p>
+<h2 id="links-title">Links, labels &amp; navigation
+</h2>
+<p>Stillnote links use a vault path inside <code>&lt;[… ]&gt;</code> (without the space). Paths start at the vault root, even when the current note is inside a folder. Matching is case-insensitive; use actual filenames and extensions. The link picker, <kbd>⌘ / Ctrl K</kbd>, helps insert file or task links.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Example</th><th scope="col">Destination</th>
+</tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;[Projects/Plan.md]&gt;</code></td><td>A file in the Projects folder.</td>
+</tr>
+<tr><td><code>&lt;[Projects/Plan.md|Open plan]&gt;</code></td><td>The same target with a custom label.</td>
+</tr>
+<tr><td><code>&lt;[Projects/Plan.md#next-steps]&gt;</code></td><td>A heading or tag anchor.</td>
+</tr>
+<tr><td><code>&lt;[Projects/Plan.md#L24]&gt;</code></td><td>Line 24 of the note.</td>
+</tr>
+<tr><td><code>&lt;[#next-steps]&gt;</code></td><td>An anchor in the current note.</td>
+</tr>
+<tr><td><code>[[Projects/Plan]]</code></td><td>A legacy extensionless note link.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Right-click a rendered link to open it.</strong> Use Edit link to reveal and change the raw syntax. The backlinks footer shows notes linking to the current file, with excerpts and line destinations. Keep names unambiguous when selecting destinations.
+</p>
+<p>Red links indicate unresolved vault targets. Stillnote leaves the link text in place so you can repair it, but does not keep rendering a deleted file from a cached copy.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="embeds" aria-labelledby="embeds-title">
+<p class="doc-number">06
+</p>
+<h2 id="embeds-title">Linked previews &amp; !!!
+</h2>
+<p>A normal Stillnote link automatically renders supported visual content: images, canvases, spreadsheet tables, audio, video, 3D models, graphs, geometry, and 3D calculators. Graph previews show the graph without the equation list or editing controls. Edit the source file to change the underlying content.
+</p>
+<p>Start an individual target with three consecutive exclamation points to keep it as a link. This affects only that occurrence, preserving navigation, aliases, backlinks, and rename handling.
+</p>
+<pre><code>&lt;[Garden.png]&gt;
+&lt;[!!!Garden.png]&gt;
+&lt;[Garden canvas.md]&gt;
+&lt;[!!!Budget.md#A5,D8|Open budget]&gt;</code>
+</pre>
+<p>Resize image and 3D model previews from their lower-right handle. Images keep their aspect ratio. Model previews allow independent width and height. A missing source stops the preview and marks the reference as broken. Audio and video references are omitted entirely from PDF exports, including links with <code>!!!</code>.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="spreadsheets" aria-labelledby="spreadsheets-title">
+<p class="doc-number">07
+</p>
+<h2 id="spreadsheets-title">Spreadsheets &amp; formulas
+</h2>
+<p>A spreadsheet stores text, numbers, and formulas in addressed cells. Enter a formula beginning with <code>=</code>. Addresses use letters for columns and numbers for rows, such as A1 or AA12. Add rows and columns as needed.
+</p>
+<pre><code>=A1+B1
+=(B2-C2)*D2
+=A1^2
+=-(C3/2)</code>
+</pre>
+<p>Supported operations are addition, subtraction, multiplication, division, powers, parentheses, and unary plus/minus. Numeric constants may include decimals or scientific notation. Blank references evaluate to zero. Nonnumeric references produce <code>#VALUE</code>, circular references <code>#CYCLE</code>, and division by zero <code>#DIV/0</code>.
+</p>
+<p>This is an arithmetic formula engine: spreadsheet functions such as SUM and IF, formula ranges, comparisons, and AND/OR logic are not supported. To total three cells, use <code>=A1+A2+A3</code>.
+</p>
+<p>Double-click a column header or press F2 to name it; formulas still use the letter address. Reorder rows or columns by dragging headers or using Alt + arrow keys. References adjust with the move to preserve dependencies. Undo/Redo covers spreadsheet changes. Cell content can also contain Stillnote links.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="table-ranges" aria-labelledby="table-ranges-title">
+<p class="doc-number">08
+</p>
+<h2 id="table-ranges-title">Render a spreadsheet in a note
+</h2>
+<p>Linking the spreadsheet’s real Markdown path inserts a table. By default, the table extends from A1 to the furthest populated row and column, including numeric zero and formula cells. Tables use internal row and column lines, stronger separators after the first row and column, and no outside border.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Syntax</th><th scope="col">Rendered cells</th>
+</tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;[Budget.md]&gt;</code></td><td>Smallest A1 rectangle containing all populated cells.</td>
+</tr>
+<tr><td><code>&lt;[Budget.md#D8]&gt;</code></td><td>A1 through D8, inclusive.</td>
+</tr>
+<tr><td><code>&lt;[Budget.md#A5,D8]&gt;</code></td><td>A5 through D8, inclusive.</td>
+</tr>
+<tr><td><code>&lt;[!!!Budget.md#A5,D8]&gt;</code></td><td>A link only; no table.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use two complete cell addresses for an offset range. The second must be below and/or to the right of the first. Partial addresses such as <code>#A5,D</code> are invalid. An embed is limited to 50,000 cells; choose a smaller range for large sheets.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="canvas" aria-labelledby="canvas-title">
+<p class="doc-number">09
+</p>
+<h2 id="canvas-title">Canvases
+</h2>
+<p>A canvas combines a pen, shapes, lines, text, and images. Choose a tool, then click or drag on the canvas. Use Select to move objects, drag a selection area, resize, rotate, duplicate, or delete selected content. The selection outline rotates with the object. Undo/Redo tracks changes.
+</p>
+<p>The shape and line controls provide their available shapes and endpoints. Choose a color for drawn objects and text. The duplicate icon sits beneath the color selector. Images do not have a color picker and use rounded corners.
+</p>
+<h3>Text selection and editing
+</h3>
+<p>The first click on an existing text field selects it so it can be dragged. A second click enters text editing. Newly inserted text is ready to edit immediately. Text supports multiple lines and plain-text paste.
+</p>
+<h3>Add an image
+</h3>
+<p>Click Add image to open a popup with an image link field and the images detected in your vault. Choose a vault image or enter an image URL. New images start on the bottom layer, behind other canvas elements. You can move, resize, rotate, and duplicate them.
+</p>
+<p>Vault image references update when the image or containing folder is renamed or moved inside Stillnote. Deleting the image replaces it with a missing-image indicator; saved image data is not used to hide the broken link. Remote URLs need network access and do not participate in vault rename tracking.
+</p>
+<p>Place the canvas toolbar on the left, right, or bottom in Settings. Link the canvas’s actual <code>.md</code> path from a note to show a preview.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="math" aria-labelledby="math-title">
+<p class="doc-number">10
+</p>
+<h2 id="math-title">Equations, graphs, geometry &amp; 3D
+</h2>
+<h3>Equations in notes
+</h3>
+<p>Wrap math in dollar signs. Stillnote renders supported expressions locally, including powers, subscripts, fractions, roots, integral notation, and Greek symbols. This is a focused math renderer, not a full LaTeX installation.
+</p>
+<pre><code>$x^2 + y_i$
+$\frac{a}{b}$
+$\int_0^1 x^2 dx$
+$/alpha + /theta$</code>
+</pre>
+<p>Right-click an equation for a Desmos preview. Desmos features require an internet connection and your Desmos API key.
+</p>
+<h3>Dedicated math files
+</h3>
+<p>Create Graph, Geometry, or 3D calculator files to work in the corresponding Desmos tool. Enter expressions or construct geometry using its controls; the tool state saves in the vault file. A key must have access to the chosen tool, including Geometry and 3D where applicable.
+</p>
+<p>Link one of these files into a note to show a graph-only preview without equations or editing controls. Previews use a separate instance and do not overwrite the source. Save a graph in its full editor first if a preview has no saved state to display.
+</p>
+<p>These calculator files differ from imported OBJ/STL/STEP models: calculators plot and construct math; model viewers display existing model files.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="supported-files" aria-labelledby="supported-files-title">
+<p class="doc-number">11
+</p>
+<h2 id="supported-files-title">Supported imported files
+</h2>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Category</th><th scope="col">Extensions</th><th scope="col">Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Notes</td><td><code>.md</code></td><td>Live Markdown or a recognized structured workspace document.</td>
+</tr>
+<tr><td>Text & data</td><td><code>.txt .csv .tsv</code></td><td>Editable text. CSV/TSV remain text files, rather than automatically becoming workspace spreadsheets.</td>
+</tr>
+<tr><td>Source & configuration</td><td><code>.js .cjs .mjs .jsx .ts .tsx .py .html .css .json .java .c .h .cpp .hpp .rs .go .sql .sh .xml .yaml .yml .toml .swift .kt .rb .php</code></td><td>Editable source. Syntax highlighting for JS/TS/JSX/TSX, Python, HTML/XML, CSS, and JSON; other formats use text editing.</td>
+</tr>
+<tr><td>Images</td><td><code>.png .jpg .jpeg .webp .gif .bmp .heic .icns .svg</code></td><td>Image viewer and note previews. HEIC/ICNS conversion depends on native support.</td>
+</tr>
+<tr><td>Audio</td><td><code>.mp3 .wav .ogg .oga .m4a .aac .flac .opus</code></td><td>Custom player and inline player.</td>
+</tr>
+<tr><td>Video</td><td><code>.mp4 .webm .ogv .mov .m4v</code></td><td>Custom player and inline player.</td>
+</tr>
+<tr><td>Documents</td><td><code>.pdf</code></td><td>PDF viewer; selectable text available to AI within extraction limits.</td>
+</tr>
+<tr><td>3D models</td><td><code>.obj .stl .step .stp</code></td><td>Interactive model viewing and note previews.</td>
+</tr>
+<tr><td>Other recognized extension</td><td><code>.jar</code></td><td>Recognized by the file filter and opened through text editing; no archive browsing or Java execution.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Codec and operating-system support can affect media playback and image conversion. A recognized extension does not guarantee every encoding will play. Stillnote is not a code runtime, office document editor, or model authoring tool.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="media" aria-labelledby="media-title">
+<p class="doc-number">12
+</p>
+<h2 id="media-title">Audio, video, images &amp; models
+</h2>
+<p>Open an image for a dedicated viewer, or link it in a note for a preview. Open audio or video for Stillnote’s custom player, with play/pause, seeking, elapsed time, volume, and mute. Video also has a fullscreen button. Embedded audio uses a compact, padded layout with the filename above its controls.
+</p>
+<p>Change playback speed in the audio or video file’s viewer. Speed is remembered per file and reused by its inline player; the inline render does not show a speed setting.
+</p>
+<p>OBJ, STL, and STEP/STP files open in an interactive 3D viewer. Orbit and zoom to inspect a model. A link can render the same model in a note. This is viewing, not mesh or CAD editing.
+</p>
+<p>PDFs open in a document viewer. AI can read selectable text from supported PDFs, but does not perform OCR on scanned pages. Linked audio/video is playable media, not automatic transcription or audiovisual understanding for AI.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="tasks" aria-labelledby="tasks-title">
+<p class="doc-number">13
+</p>
+<h2 id="tasks-title">Task sheets &amp; task references
+</h2>
+<p>A task sheet connects a workspace file to a Google Tasks list. Connect Google Tasks in Settings, then choose an existing list or create one. Task titles, completion, due dates, details, and subtasks can be edited from the sheet. Use Sync to refresh remote changes. Deleting a synced task changes the Google list too.
+</p>
+<p>Stars are local to the task sheet and are preserved on refresh; Google Tasks does not receive them as native stars. Ordinary Markdown checkboxes are separate local note content and do not become Google Tasks automatically.
+</p>
+<h3>Link a task to a note
+</h3>
+<pre><code>;;List name/Task name;;</code>
+</pre>
+<p>The reference resolves the task by its list and task names, which must be unique. The app adds a <code>stillnote://open</code> backlink to the task’s Details, returning to the line containing the reference in the same vault. Task references update with supported task renames; completed task references are hidden in rendered note content. Use the link picker to avoid mistyping names.
+</p>
+<p>Google Tasks needs a connected account and internet access for synchronization and remote changes. Review changes to shared workflows in the Google Tasks account as well as the local task sheet.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="home-ai" aria-labelledby="home-ai-title">
+<p class="doc-number">14
+</p>
+<h2 id="home-ai-title">Home AI: Ask &amp; Work
+</h2>
+<p>Home has two mode buttons immediately above the prompt input. Choose a mode before sending. Enter sends a message; Shift + Enter inserts a new line. AI needs a configured provider, API key, model, and internet connection.
+</p>
+<h3>Ask
+</h3>
+<p>Ask is read-only. Use it to summarize notes and files, compare sources, explain explicit links, and reason about relationships. For example: “Compare the garden plan with the budget and explain what is missing.” It can inspect vault material as context without changing it.
+</p>
+<h3>Work
+</h3>
+<p>Work plans and carries out multi-step requests. It can inspect files, create several linked documents, update existing files, analyze tabular data and relationships, and create or link Google Tasks and task lists when that integration is connected. For example: “Read the project notes, ask me about missing deadlines, then create a linked plan and task list.”
+</p>
+<p>Work is instructed to ask follow-up questions when material details are ambiguous. Answer in the conversation so it can continue. It checks file revisions before updates, and has bounded tool steps; a long request may need another turn. Cancel stops further work but does not undo steps already completed. Review the resulting files and tasks.
+</p>
+<p>Recent Home conversations are stored locally, with bounded history passed to the model. AI does not have a general shell or web browser. Table analysis is not an unlimited spreadsheet engine; calculated formula values are not automatically included in raw-data correlation analysis.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="sidebar-ai" aria-labelledby="sidebar-ai-title">
+<p class="doc-number">15
+</p>
+<h2 id="sidebar-ai-title">File AI &amp; linked context
+</h2>
+<p>Open the file assistant to ask about the current document or request an edit. PDFs provide read-only extracted text. Supported editable notes, code, and structured documents can receive validated edits.
+</p>
+<p><strong>Edits apply directly.</strong> The response provides Undo changes / Redo changes. If the current document changed during the request, the app refuses the stale edit. Invalid structured document output is rejected. Keep reviewing the result; an AI response can still be wrong.
+</p>
+<h3>What it receives
+</h3>
+<p>Each request includes the current document and bounded context from files directly linked from it, including links in unsaved edits. Linked text and structured files provide excerpts; PDFs provide selectable text. Images, audio, video, and other binary assets contribute metadata rather than automatic vision, transcription, or complete binary contents.
+</p>
+<p>This follows direct outgoing links, not every backlink or every recursively connected file. Context is deduplicated and limited by file count and character budgets; missing or truncated sources are marked. Linked files are read-only sidebar context. Use Home Work for requests that need changes across multiple files.
+</p>
+<p>Enter sends; Shift + Enter adds a line. The selected provider receives the prompt and relevant context when you send a request.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="ai-keys" aria-labelledby="ai-keys-title">
+<p class="doc-number">16
+</p>
+<h2 id="ai-keys-title">AI providers &amp; API keys
+</h2>
+<p>In Settings, choose Groq, OpenAI, or Anthropic, enter that provider’s own API key, and select a supported model. Keys and model preferences are separate for each provider. Use the app’s model discovery rather than assuming that every provider model supports the required structured output.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Provider</th><th scope="col">Setup</th><th scope="col">Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>Groq</td><td>Create an API key in the <a href="https://console.groq.com/keys">Groq console</a>, select Groq in Stillnote, and save the key.</td><td>The app’s default provider. Free-plan usage is subject to the account’s current model, rate, and daily limits.</td>
+</tr>
+<tr><td>OpenAI</td><td>Create an API key in the <a href="https://platform.openai.com/api-keys">OpenAI API platform</a>, configure API billing if required, then save it under OpenAI.</td><td>API access and billing are separate from a ChatGPT subscription.</td>
+</tr>
+<tr><td>Anthropic</td><td>Create an API key in the <a href="https://platform.claude.com/">Claude API console</a>, configure API access/billing, and save it under Anthropic.</td><td>Claude API usage is separate from a consumer Claude subscription.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The app does not switch providers or buy more usage when a quota is exhausted. Groq requests may retry a short rate limit once; a daily or account limit needs time or an account change. Check the provider’s console for current availability, quotas, billing, and errors. No provider’s allowance is guaranteed by Stillnote.
+</p>
+<p>Never paste keys into notes or AI prompts. Keys saved through Settings are encrypted with operating-system protection. AI is optional: local writing and local workspace tools do not require a key.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="google-setup" aria-labelledby="google-setup-title">
+<p class="doc-number">17
+</p>
+<h2 id="google-setup-title">Set up Google Tasks
+</h2>
+<ol>
+<li>Open the <a href="https://console.cloud.google.com/">Google Cloud console</a> and choose or create a project.
+</li>
+<li>Enable the Google Tasks API for that project.
+</li>
+<li>Configure the OAuth consent screen / Audience. If the app is in testing, add the Google account you will use as a test user.
+</li>
+<li>Create an OAuth client of type <strong>Desktop app</strong>. Copy its client ID and client secret.
+</li>
+<li>In Stillnote Settings → Tasks, save those credentials and select Connect. Finish the account authorization in your browser.
+</li>
+<li>Return to Stillnote and open or create a task sheet, then choose a list.
+</li>
+</ol>
+<p>Disconnect through Settings when needed. If authorization fails, check that the API is enabled, the OAuth client is a Desktop app, the right account is permitted by the consent configuration, and your network allows the authorization flow.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="desmos-setup" aria-labelledby="desmos-setup-title">
+<p class="doc-number">18
+</p>
+<h2 id="desmos-setup-title">Set up Desmos
+</h2>
+<ol>
+<li>Obtain your own Desmos API key through <a href="https://www.desmos.com/api">Desmos API access</a>.
+</li>
+<li>Save it in Stillnote’s Desmos settings.
+</li>
+<li>Create or open a Graph, Geometry, or 3D calculator file.
+</li>
+</ol>
+<p>Geometry and 3D require corresponding access on the key. If a tool cannot initialize, check the saved key, network connection, and permission for that tool. Saving a file stores its state locally; loading Desmos and its previews still needs the online API.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="transcription" aria-labelledby="transcription-title">
+<p class="doc-number">19
+</p>
+<h2 id="transcription-title">Local meeting transcription
+</h2>
+<p>Open a Markdown note and use Meeting Notes to record microphone audio into that note as text. Allow microphone access when requested. Stop the recording to flush remaining audio. Transcription is appended to the original note in chunks rather than being turned into a separate meeting summary.
+</p>
+<p>Whisper Medium runs locally in a worker. The first use downloads the model and can take time and substantial storage; later use reuses the available model cache. Performance depends on your computer. No cloud AI API key is required for this local transcription path.
+</p>
+<p>Wait for the model to be ready, keep the destination note available while recording, and review the recognized text. This is microphone recording, not automatic transcription of every linked audio file.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="find" aria-labelledby="find-title">
+<p class="doc-number">20
+</p>
+<h2 id="find-title">Find, replace &amp; file search
+</h2>
+<p>In a note or code editor, press <kbd>⌘ / Ctrl F</kbd> to open the app-styled find panel. It shows match counts and next/previous controls. Enable case sensitivity, whole-word matching, or regular expressions as needed; default search is literal.
+</p>
+<p>Expand replacement to replace one match or all matches. Replacements can be undone. Regex replacement supports capture references such as <code>$1</code>. Enter goes to the next match and Shift + Enter to the previous; Escape closes the panel. F3 / Shift + F3 also navigate matches.
+</p>
+<p>Use <kbd>⌘ / Ctrl Shift F</kbd> for vault file/title search. This is different from the current editor’s text search. <kbd>⌘ / Ctrl K</kbd> opens the link picker.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="export" aria-labelledby="export-title">
+<p class="doc-number">21
+</p>
+<h2 id="export-title">Export a note to PDF
+</h2>
+<p>Use Export PDF or <kbd>⌘ / Ctrl P</kbd> from a note. Export renders the whole document, including content beyond the visible editor area, rather than taking a screenshot of the viewport.
+</p>
+<p>The export includes rendered text, equations, highlights, task references, images, canvas previews, spreadsheet ranges, and model snapshots. Graph tools use a screenshot where supported by the API; unavailable graph snapshots receive an explicit fallback message.
+</p>
+<p><strong>Audio and video are omitted completely</strong>, including their link labels and links marked with <code>!!!</code>. Other suppressed previews remain links. Missing files cannot be exported as old cached previews. Check the saved PDF before sharing it, especially documents with network images or online graph tools.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="settings" aria-labelledby="settings-title">
+<p class="doc-number">22
+</p>
+<h2 id="settings-title">Appearance, settings &amp; privacy
+</h2>
+<p>Choose Light, Sepia, or Dark. Place the notes toolbar on the left, right, bottom, or hide it; the canvas toolbar supports left, right, or bottom. Resize the file explorer and assistant pane to fit your workspace. Settings also holds integration credentials, model selection, keyboard help, syntax help, and the personal dictionary.
+</p>
+<p>Notes and structured content live in your chosen folder. Encrypted credential and dictionary files are stored per vault and hidden from the explorer. Operating-system protection can bind them to the current device/account. If encrypted credentials become unreadable, reset them in Settings and re-enter your keys; this does not delete your notes.
+</p>
+<p>Local-first does not mean every feature stays offline. AI sends relevant context to the chosen AI provider, Google Tasks syncs with Google, Desmos loads online tools, and remote image URLs contact their hosts. The first transcription-model download also requires internet. Back up your own files and avoid publishing credential files with a shared vault.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="shortcuts" aria-labelledby="shortcuts-title">
+<p class="doc-number">23
+</p>
+<h2 id="shortcuts-title">Keyboard reference
+</h2>
+<p><kbd>⌘</kbd> means Command on macOS; use <kbd>Ctrl</kbd> on Windows unless a platform-specific shortcut is shown.
+</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr><th scope="col">Action</th><th scope="col">Shortcut</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>New note</td><td>⌘ / Ctrl N</td>
+</tr>
+<tr><td>New folder</td><td>⌘ / Ctrl Shift N</td>
+</tr>
+<tr><td>Open vault</td><td>⌘ / Ctrl O</td>
+</tr>
+<tr><td>Save</td><td>⌘ / Ctrl S</td>
+</tr>
+<tr><td>Export PDF</td><td>⌘ / Ctrl P</td>
+</tr>
+<tr><td>Settings</td><td>⌘ / Ctrl ,</td>
+</tr>
+<tr><td>Toggle assistant</td><td>⌘ / Ctrl Shift A</td>
+</tr>
+<tr><td>Insert file/task link</td><td>⌘ / Ctrl K</td>
+</tr>
+<tr><td>Find in editor</td><td>⌘ / Ctrl F</td>
+</tr>
+<tr><td>Vault file search</td><td>⌘ / Ctrl Shift F</td>
+</tr>
+<tr><td>Undo / Redo</td><td>⌘ / Ctrl Z · ⌘ / Ctrl Shift Z</td>
+</tr>
+<tr><td>Bold / Italic</td><td>⌘ / Ctrl B · ⌘ / Ctrl I</td>
+</tr>
+<tr><td>Inline code / Strikethrough</td><td>⌘ / Ctrl Shift C · ⌘ / Ctrl Shift X</td>
+</tr>
+<tr><td>Send AI message / New line</td><td>Enter · Shift + Enter</td>
+</tr>
+<tr><td>Back to Home</td><td>Escape, after dismissing active panels, dialogs, menus, or other actions</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Some shortcuts depend on the focused editor or tool. Escape first handles the active interaction; it takes you Home from a file only when nothing else consumes it.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+<section class="doc-section" id="troubleshooting" aria-labelledby="troubleshooting-title">
+<p class="doc-number">24
+</p>
+<h2 id="troubleshooting-title">Troubleshooting &amp; getting help
+</h2>
+<dl>
+<dt>A link is red or a preview disappeared
+</dt>
+<dd>Check that the real file still exists, use the vault-root path and real <code>.md</code> extension, and refresh the explorer. Remove <code>!!!</code> if you want a preview. Fix broken references after external renames.
+</dd>
+<dt>A table range fails
+</dt>
+<dd>Use complete addresses such as <code>#D8</code> or <code>#A5,D8</code>, with the endpoint below/right of the start. Keep the range under the embed size limit.
+</dd>
+<dt>AI says unauthorized, unavailable, or rate limited
+</dt>
+<dd>Check the selected provider, its saved key and supported model, account access/billing, and the provider console’s current limits. Keys are not interchangeable between providers.
+</dd>
+<dt>A graph will not load
+</dt>
+<dd>Check the Desmos key, connection, and access to the particular calculator. Open and save the source file before embedding its state.
+</dd>
+<dt>Audio/video will not play
+</dt>
+<dd>Check the file exists and its actual codec is supported. Try another encoding; an accepted filename extension alone does not establish codec support.
+</dd>
+<dt>PDF context is empty
+</dt>
+<dd>Scans may contain no selectable text. Large documents can be truncated; point AI to a smaller text source or relevant excerpt.
+</dd>
+</dl>
+<p>See the <a href="log.html">Log</a> for changes, <a href="https://github.com/Infekted11/Stillnote">GitHub</a> for the project, or <a href="feature-requests.html">Feature requests</a> to draft feedback. The website’s request form prepares an email for you to review and send; it never sends automatically.
+</p><a class="section-top" href="#docs-top">Back to top ↑</a>
+</section>
+</div>
+</div>
+</main>
+<footer class="section-shell"><a class="brand" href="index.html"><img src="logo.svg" alt="" width="30" height="30"><span>Stillnote</span></a>
+<p>Room to think. Tools to connect.
+</p>
+<div><a href="index.html">Home</a><a href="docs.html" aria-current="page">Docs</a><a href="log.html">Log</a><a href="feature-requests.html">Feature requests</a><a href="https://github.com/Infekted11/Stillnote">GitHub ↗</a>
+</div>
+</footer><script src="script.js"></script><script src="docs.js"></script>
+</body>
+</html>

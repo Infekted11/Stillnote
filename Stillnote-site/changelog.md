@@ -4,6 +4,8 @@
 
 ### Added:
 
+- Updated the website homepage for linked previews, Ask/Work AI, file context, and current workspace tools. Added searchable Docs covering file types, link syntax, spreadsheet ranges, canvas editing, media, tasks, integrations and API keys, privacy, PDF export, and shortcuts.
+
 - Added per-link preview suppression with <[!!!File.md]> while preserving navigation, renames, and backlinks. Graph, geometry, and 3D calculator links now show isolated graph-only previews without equation lists or editing controls. Updated the syntax guide and PDF rendering.
 
 - Deleted vault files now stop rendering linked previews, including saved canvas image fallbacks. Broken file links appear red in notes, canvas text, spreadsheets, and Home citations. Directory watching and focus refresh keep links current after external changes; autosave cannot recreate deleted files.
