@@ -51,3 +51,8 @@ body:has(>.site-header)::after{content:'';position:fixed;top:20px;left:max(24px,
 
 /* Headings remain plain across the website and app demo. */
 h1,h2,h3,h4,h5,h6{ text-decoration:none }
+
+/* Current workspace overview and documentation entry points. */
+.linked-workspace{display:grid;grid-template-columns:1fr 1fr;gap:85px;padding-block:0 110px;align-items:center}.linked-workspace h2{margin:0;font:400 clamp(38px,4.5vw,58px)/1.08 var(--serif);letter-spacing:-.04em}.linked-workspace h2 em{font-weight:400;color:var(--accent)}.linked-workspace>div>p:not(.eyebrow){max-width:470px;color:#787b70;font-size:14px;line-height:1.8}.link-examples{padding:15px 28px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2)}.link-examples p{padding-block:15px;border-bottom:1px solid var(--line);margin:0}.link-examples p:last-child{border:0}.link-examples span{display:block;font-size:11px;color:#85867e;margin-bottom:10px}.link-examples code{font:12px/1.8 var(--mono);color:#79604d;overflow-wrap:anywhere}.docs-invitation{display:flex;align-items:center;justify-content:space-between;gap:40px;padding:36px;margin-bottom:100px;background:#eae6dd;border-radius:10px}.docs-invitation h2{margin:0;font:400 31px/1.2 var(--serif);letter-spacing:-.025em}.docs-invitation p:not(.eyebrow){max-width:650px;color:#74766b;font-size:13px}.docs-invitation .button{flex-shrink:0}.site-header nav a[aria-current=page]:after{transform:scaleX(1)}
+@media(min-width:901px){.site-header{gap:25px}.site-header nav{gap:22px}}
+@media(max-width:760px){.linked-workspace{grid-template-columns:1fr;gap:28px;padding-bottom:65px}.docs-invitation{flex-direction:column;align-items:flex-start;padding:25px;margin-bottom:65px;gap:15px}.docs-invitation h2{font-size:27px}}
