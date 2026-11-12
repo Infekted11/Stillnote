@@ -1,4 +1,6 @@
-import { parseVaultLink, shouldRenderFileLink } from './vault-links.js';
+import stillnoteLogo from '../Stillnote-site/logo.svg';
+import noteSyntaxGuide from '../electron/note-syntax.html?raw';
+import { parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
 import { createGraphPreview } from './graph-preview.js';
 import { findReplaceExtension } from './find-replace.js';
 import { fileDisplayName, fileDisplayParts } from './file-labels.js';
@@ -244,13 +246,15 @@ app.innerHTML = `
     <header class="topbar${isWindows ? ' topbar-windows' : ''}">
       <div class="traffic-space"></div>
       <button class="icon-button sidebar-toggle" aria-label="Toggle sidebar">${icons.panel}</button>
-      <div class="topbar-location"><span class="location-vault">No vault</span><span class="location-divider">/</span><span class="location-note">Welcome</span></div>
+      <div class="topbar-brand"><img src="${stillnoteLogo}" width="26" height="26" alt=""><span>Stillnote</span></div>
       <div class="topbar-actions"><button class="icon-button home-trigger" id="home-button" title="Home" aria-label="Home">${icons.home}</button><div class="topbar-search" id="topbar-search"><button class="icon-button search-trigger" title="Search notes (⌘⇧F / Ctrl+Shift+F)" aria-label="Search notes" aria-expanded="false">${icons.search}</button><input class="topbar-search-input" id="search-input" placeholder="Search notes…" autocomplete="off" aria-label="Search notes"><div class="topbar-search-results" id="search-results"></div></div><button class="icon-button assistant-trigger" id="assistant-toggle" title="Open assistant">${icons.assistant}</button></div>
     </header>
     <div class="workspace">
       <aside class="sidebar">
         <div class="explorer-toolbar"><button class="explorer-action" id="new-folder" title="New folder">${icons.folderPlus}<span>Folder</span></button><button class="explorer-action" id="new-file" title="Create a file">${icons.filePlus}<span>File ▾</span></button><button class="explorer-tree-action" id="expand-folders" title="Expand all folders" aria-label="Expand all folders">${icons.expandAll}</button><button class="explorer-tree-action" id="collapse-folders" title="Collapse all folders" aria-label="Collapse all folders">${icons.collapseAll}</button><button class="explorer-refresh" id="refresh-notes" title="Refresh explorer">${icons.refresh}</button></div>
         <div class="note-list" id="note-list"></div>
+        <section class="sidebar-linked-files" hidden aria-label="Linked files"></section>
+        <div class="explorer-root-drop">Move to vault root</div>
         <div class="sidebar-bottom"><div class="explorer-heading"><button class="vault-switcher"><span class="vault-mark">S</span><span class="vault-name">Choose a folder</span></button></div><button class="icon-button small settings" id="settings-button" title="Settings" aria-label="Settings" aria-haspopup="true" aria-expanded="false">${icons.gear}</button></div>
       </aside>
       <div class="panel-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize file explorer" aria-valuemin="190" aria-valuemax="440" tabindex="0"></div>
@@ -319,7 +323,7 @@ app.innerHTML = `
 
             <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
-            <section class="settings-section" data-section="equations" hidden><div class="settings-section-heading"><span class="eyebrow">NOTE SYNTAX</span><h3>Write, link, and calculate</h3><p>Stillnote files are ordinary Markdown. Formatting renders when the caret leaves its line. Spreadsheet formulas calculate inside spreadsheet files.</p></div><div class="shortcut-groups equation-help-groups"><div class="shortcut-group"><h4>Text formatting</h4><div class="shortcut-row"><span>Bold</span><kbd>**bold**</kbd></div><div class="shortcut-row"><span>Italic</span><kbd>*italic*</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>~~text~~</kbd></div><div class="shortcut-row"><span>Highlight</span><kbd>=text=</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>&#96;code&#96;</kbd></div></div><div class="shortcut-group"><h4>Structure</h4><div class="shortcut-row"><span>Heading</span><kbd># Heading</kbd></div><div class="shortcut-row"><span>Bullet list</span><kbd>- Item</kbd></div><div class="shortcut-row"><span>Numbered list</span><kbd>1. Item</kbd></div><div class="shortcut-row"><span>Task list</span><kbd>- [ ] Task</kbd></div><div class="shortcut-row"><span>Quote and code block</span><kbd>&gt; Quote · &#96;&#96;&#96;code&#96;&#96;&#96;</kbd></div></div><div class="shortcut-group"><h4>Links to files and places</h4><div class="shortcut-row"><span>Note or file</span><kbd>&lt;[Projects/Plan.md]&gt;</kbd></div><div class="shortcut-row"><span>Custom label</span><kbd>&lt;[Projects/Plan.md|Open plan]&gt;</kbd></div><div class="shortcut-row"><span>Heading or tag</span><kbd>&lt;[Projects/Plan.md#next-steps]&gt;</kbd></div><div class="shortcut-row"><span>Exact line number</span><kbd>&lt;[Projects/Plan.md#L24]&gt;</kbd></div><div class="shortcut-row"><span>Legacy note link</span><kbd>[[Projects/Plan]]</kbd></div></div><div class="shortcut-group"><h4>Link a Google Task to this note</h4><div class="shortcut-row"><span>Task reference</span><kbd>;;List name/Task name;;</kbd></div><div class="shortcut-row"><span>What happens</span><kbd>Adds a Stillnote link to the task’s Details</kbd></div><div class="shortcut-row"><span>Destination</span><kbd>Returns to the line containing the reference</kbd></div><div class="shortcut-row"><span>Matching</span><kbd>List and task names must each be unique</kbd></div></div><div class="shortcut-group"><h4>Equations</h4><div class="shortcut-row"><span>Inline math</span><kbd>$x^2 + y_i$</kbd></div><div class="shortcut-row"><span>Fraction</span><kbd>$\\frac{a}{b}$</kbd></div><div class="shortcut-row"><span>Integral</span><kbd>$\\int_0^1 x^2 dx$</kbd></div><div class="shortcut-row"><span>Greek letters</span><kbd>$/alpha$, $/theta$, $/Omega$</kbd></div><div class="shortcut-row"><span>Preview</span><kbd>Right-click an equation for Desmos</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet tables in notes</h4><div class="shortcut-row"><span>All populated cells</span><kbd>&lt;[Budget.md]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A1 through D8</span><kbd>&lt;[Budget.md#D8]&gt;</kbd></div><div class="shortcut-row"><span>Rectangle A5 through D8</span><kbd>&lt;[Budget.md#A5,D8]&gt;</kbd></div><div class="shortcut-row"><span>Legacy link</span><kbd>[[Budget.md#D8]]</kbd></div><div class="shortcut-row"><span>Displayed values</span><kbd>Formula results; first row and column act as headers</kbd></div><div class="shortcut-row"><span>Edit or open</span><kbd>Edit link to change extent; right-click table to open spreadsheet</kbd></div></div><div class="shortcut-group"><h4>Link previews</h4><div class="shortcut-row"><span>Render a linked file</span><kbd>&lt;[Image.png]&gt;</kbd></div><div class="shortcut-row"><span>Link without a preview</span><kbd>&lt;[!!!Image.png]&gt;</kbd></div><div class="shortcut-row"><span>Graph-only previews</span><kbd>Link graph, geometry, or 3D calculator .md files</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet formulas</h4><div class="shortcut-row"><span>Start a calculation</span><kbd>Begin the cell with =</kbd></div><div class="shortcut-row"><span>Add / subtract</span><kbd>=A1+B1 · =A1-B1</kbd></div><div class="shortcut-row"><span>Multiply / divide</span><kbd>=A1*B1 · =A1/B1</kbd></div><div class="shortcut-row"><span>Powers</span><kbd>=A1^2</kbd></div><div class="shortcut-row"><span>Group calculations</span><kbd>=(A1+B1)*C1</kbd></div><div class="shortcut-row"><span>Total several cells</span><kbd>=A1+A2+A3</kbd></div><div class="shortcut-row"><span>Average several cells</span><kbd>=(A1+A2+A3)/3</kbd></div><div class="shortcut-row"><span>Percentage of a value</span><kbd>=A1*15/100</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet calculation rules</h4><div class="shortcut-row"><span>Cell addresses</span><kbd>A1, B2, AA10 (case-insensitive)</kbd></div><div class="shortcut-row"><span>Named columns</span><kbd>Use letter addresses even after renaming</kbd></div><div class="shortcut-row"><span>Blank cells</span><kbd>Count as 0 in formulas</kbd></div><div class="shortcut-row"><span>Negative numbers</span><kbd>=A1*(-2)</kbd></div><div class="shortcut-row"><span>Order of operations</span><kbd>Parentheses, powers, × / ÷, + / −</kbd></div><div class="shortcut-row"><span>Reorder rows or columns</span><kbd>References update to follow moved cells</kbd></div><div class="shortcut-row"><span>Edit a formula</span><kbd>Focus the cell to edit its source</kbd></div><div class="shortcut-row"><span>Supported logic</span><kbd>Arithmetic only; no IF, AND, OR, comparisons, ranges, or SUM</kbd></div></div><div class="shortcut-group"><h4>Spreadsheet errors</h4><div class="shortcut-row"><span>Division by zero</span><kbd>#DIV/0! — check the divisor</kbd></div><div class="shortcut-row"><span>Circular reference</span><kbd>#CYCLE! — a formula refers back to itself</kbd></div><div class="shortcut-row"><span>Invalid value or formula</span><kbd>#VALUE! — check syntax and referenced cells</kbd></div><div class="shortcut-row"><span>Text in calculations</span><kbd>Referenced cells must contain numbers or formulas</kbd></div></div></div></section>
+            <section class="settings-section" data-section="equations" hidden>${noteSyntaxGuide}</section>
             <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant; otherwise go Home from a file</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Find and replace in file</span><kbd>⌘ / Ctrl F</kbd></div><div class="shortcut-row"><span>Next / previous match</span><kbd>Enter / ${icons.shift} Enter</kbd></div><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
           </div>
         </div>
@@ -501,7 +505,7 @@ function renderSpreadsheetPreview(data, endCell, file) {
   table.append(body); scroll.append(table); return scroll;
 }
 class WikiMediaWidget extends WidgetType {
-  constructor(file, from, to, endCell = '', revision = 0) { super(); this.file = file; this.from = from; this.to = to; this.endCell = endCell; this.revision = revision; }
+  constructor(file, from, to, rawLink, endCell, previewSize, revision) { super(); this.file = file; this.from = from; this.to = to; this.rawLink = rawLink; this.endCell = endCell; this.previewSize = previewSize; this.revision = revision; }
   toDOM(view) {
     const extension = `.${fileExtension(this.file)}`;
     const is3d = ['.obj', '.stl', '.step', '.stp'].includes(extension);
@@ -518,6 +522,12 @@ class WikiMediaWidget extends WidgetType {
       view.dispatch({ selection: { anchor: this.from + 2 }, scrollIntoView: true }); view.focus();
     });
     preview.append(edit);
+    const saveSize = (size) => {
+      if (state.view !== view || preview.__disposed || view.state.sliceDoc(this.from, this.to) !== this.rawLink) return;
+      const value = setVaultLinkPreviewSize(this.rawLink.slice(2, -2), size);
+      const insert = this.rawLink.slice(0, 2) + value + this.rawLink.slice(-2);
+      if (insert !== this.rawLink) view.dispatch({ changes: { from: this.from, to: this.to, insert }, userEvent: 'input' });
+    };
     const loading = document.createElement('span'); loading.className = 'cm-wiki-media-loading'; loading.textContent = 'Loading preview…'; preview.append(loading);
     const source = isCanvas || isSpreadsheet || isGraph ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
     source.then(async (asset) => {
@@ -552,10 +562,10 @@ class WikiMediaWidget extends WidgetType {
         const image = document.createElement('img'); image.className = 'cm-wiki-image-preview'; image.alt = this.file; image.loading = 'lazy';
         image.addEventListener('load', () => { if (preview.isConnected) view.requestMeasure(); });
         image.src = asset.data; preview.append(image);
-        attachMediaResize(preview, view, `${state.vault?.path}/${state.active}:${this.file}:${this.from}`, image);
+        attachMediaResize(preview, view, this.previewSize, saveSize, image);
       } else if (['.obj', '.stl', '.step', '.stp'].includes(extension)) {
         const viewport = document.createElement('span'); viewport.className = 'cm-wiki-3d-preview'; preview.append(viewport);
-        attachMediaResize(preview, view, `${state.vault?.path}/${state.active}:${this.file}:${this.from}`);
+        attachMediaResize(preview, view, this.previewSize, saveSize);
         void mountInlineModelPreview(viewport, this.file, asset, preview);
       }
       view.requestMeasure();
@@ -570,7 +580,7 @@ class WikiMediaWidget extends WidgetType {
     return preview;
   }
   destroy(dom) { dom.__disposed = true; disposeMediaPlayers(dom); dom.__disposePreview?.(); }
-  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to && other.endCell === this.endCell && other.revision === this.revision; }
+  eq(other) { return other.file === this.file && other.from === this.from && other.to === this.to && other.rawLink === this.rawLink && other.revision === this.revision; }
 }
 const taskPreviewCache = new Map();
 function decodeTaskReferencePart(value) { try { return decodeURIComponent(value); } catch { return value; } }
@@ -734,12 +744,12 @@ function makeLiveMarkdownDecorations(view) {
         const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
         if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
         const reference = (wikiMatch[1] || wikiMatch[2]).split('|')[0];
-        const [target, endCell = ''] = reference.split('#').map(value => value.trim());
+        const { path: target, fragment: endCell, previewSize } = parseVaultLink(reference);
         const linkedFile = resolveVaultFileTarget(target);
         const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
         const media = shouldRenderFileLink(reference,findExplorerNode(linkedFile)?.format,extension);
         const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
-        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, endCell, vaultRenderRevision) }).range(from, to));
+        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, wikiMatch[0], endCell, previewSize, vaultRenderRevision) }).range(from, to));
         else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: isBrokenVaultLink(reference) ? 'Linked file not found' : target } }).range(from, to));
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
@@ -881,9 +891,29 @@ function setEditorLinePrefix(view, prefix, kind) {
   const last = view.state.doc.lineAt(selection.to);
   const lines = [];
   for (let number = first.number; number <= last.number; number++) lines.push(view.state.doc.line(number));
+  if (kind === 'heading') {
+    const markers = lines.map((line) => ({
+      from: line.from,
+      to: line.from + (line.text.match(/^#{1,6}\s+/)?.[0].length ?? 0),
+      insert: prefix ? `${prefix} ` : '',
+    }));
+    const changes = view.state.changes(markers);
+    const mapPosition = (position) => {
+      const marker = markers[view.state.doc.lineAt(position).number - first.number];
+      return marker && position <= marker.to
+        ? changes.mapPos(marker.from, -1) + marker.insert.length
+        : changes.mapPos(position);
+    };
+    view.dispatch({
+      changes,
+      selection: { anchor: mapPosition(selection.anchor), head: mapPosition(selection.head) },
+      scrollIntoView: true,
+    });
+    view.focus();
+    return;
+  }
   const original = lines.map((line) => line.text);
   const next = original.map((text) => {
-    if (kind === 'heading') return /^#{1,6}\s/.test(text) ? text.replace(/^#{1,6}\s+/, prefix ? `${prefix} ` : '') : `${prefix} ${text}`;
     if (kind === 'task') {
       if (/^(\s*)[-*+]\s+\[[ xX]\]\s+/.test(text)) return text.replace(/^(\s*)[-*+]\s+\[[ xX]\]\s+/, '$1');
       if (/^(\s*)[-*+]\s+/.test(text)) return text.replace(/^(\s*)[-*+]\s+/, `$1${prefix}`);
@@ -974,8 +1004,17 @@ function fileLabelPath(path) {
   return parts.join(' / ');
 }
 function fileLabelHtml(path, format = findExplorerNode(path)?.format) {
-  const { name, extension } = fileDisplayParts(path, format);
-  return `<span class="file-name"><span class="file-name-base">${escapeHtml(name)}</span>${extension ? `<span class="file-type-extension">${escapeHtml(extension)}</span>` : ''}</span>`;
+  const filename = path.split('/').at(-1);
+  const display = fileDisplayParts(path, format);
+  const dot = filename.lastIndexOf('.');
+  const extension = display.extension || (dot > 0 ? filename.slice(dot) : '');
+  const name = display.extension ? display.name : dot > 0 ? filename.slice(0, dot) : filename;
+  const characters = Array.from(name);
+  const tailLength = Math.min(4, Math.floor(characters.length / 2));
+  const split = characters.length - tailLength;
+  const head = characters.slice(0, split).join('');
+  const tail = characters.slice(split).join('');
+  return `<span class="file-name" title="${escapeHtml(name + extension)}"><span class="file-name-base">${escapeHtml(head)}</span><span class="file-name-tail">${escapeHtml(tail)}<span class="file-type-extension">${escapeHtml(extension)}</span></span></span>`;
 }
 
 const codeFileTypes = [
@@ -1173,7 +1212,112 @@ function refreshVaultLinksIfChanged() {
   const signature=JSON.stringify([state.vault?.path,entries]);
   if(signature!==vaultCatalogSignature){vaultCatalogSignature=signature;invalidateVaultLinkRendering();}
 }
+const linkedFilesPanel = $('.sidebar-linked-files');
+let linkedFilesKey = '';
+
+function renderSidebarLinks() {
+  if (linkedFilesPanel.hidden) return;
+  const targets = new Set();
+  const collect = (value) => {
+    if (typeof value === 'string') {
+      for (const match of value.matchAll(/<\[([^\]\r\n]+)\]>|\[\[([^\]\r\n]+)\]\]/g)) {
+        const file = resolveVaultFileTarget(match[1] ?? match[2]);
+        if (file) targets.add(file);
+      }
+    } else if (value && typeof value === 'object') {
+      Object.values(value).forEach(collect);
+    }
+  };
+  if (state.active) collect(state.structured?.data ?? state.view?.state.doc.toString());
+  const key = JSON.stringify([state.vault?.path, state.active, [...targets]]);
+  if (key === linkedFilesKey) return;
+  linkedFilesKey = key;
+  const heading = document.createElement('h2');
+  heading.textContent = 'Linked files';
+  linkedFilesPanel.replaceChildren(heading);
+  if (!targets.size) {
+    const empty = document.createElement('p');
+    empty.textContent = state.active ? 'No linked files' : 'Open a file to see its links';
+    linkedFilesPanel.append(empty);
+  }
+  for (const file of targets) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'sidebar-linked-file';
+    const name = document.createElement('strong');
+    name.innerHTML = fileLabelHtml(file);
+    const location = document.createElement('span');
+    location.textContent = file;
+    row.append(name, location);
+    row.addEventListener('click', () => void openNote(file));
+    linkedFilesPanel.append(row);
+    void renderSidebarLinkPreview(row, file).catch(() => {});
+  }
+}
+
+async function renderSidebarLinkPreview(row, file) {
+  const extension = fileExtension(file);
+  const video = /^(mp4|webm|ogv|mov|m4v)$/.test(extension);
+  const image = /^(png|jpe?g|gif|bmp|webp|heic|icns|svg)$/.test(extension);
+  if (video || image) {
+    const asset = await window.stillnote.readAsset(file);
+    if (!row.isConnected) return;
+    if (image) {
+      const thumbnail = document.createElement('img');
+      thumbnail.alt = '';
+      thumbnail.loading = 'lazy';
+      thumbnail.src = asset.data;
+      row.append(thumbnail);
+      return;
+    }
+    const media = document.createElement('video');
+    media.muted = true;
+    media.preload = 'auto';
+    media.addEventListener('loadeddata', () => {
+      if (row.isConnected && media.videoWidth) {
+        const thumbnail = document.createElement('canvas');
+        thumbnail.width = Math.min(240, media.videoWidth);
+        thumbnail.height = Math.round(thumbnail.width * media.videoHeight / media.videoWidth);
+        thumbnail.getContext('2d').drawImage(media, 0, 0, thumbnail.width, thumbnail.height);
+        row.append(thumbnail);
+      }
+      media.removeAttribute('src');
+      media.load();
+    }, { once: true });
+    media.src = asset.data;
+  } else if (extension === 'md' || isEditableAsset(file)) {
+    const text = await window.stillnote.readNote(file);
+    if (!row.isConnected) return;
+    const structured = extension === 'md' ? decodeStructured(text) : null;
+    const excerpt = document.createElement('span');
+    excerpt.textContent = structured ? `${fileLabel(file)} · ${structured.type}` : text.trim().slice(0, 220);
+    row.append(excerpt);
+  }
+}
+
+function setSidebarLinksVisible(visible) {
+  if (linkedFilesPanel.hidden === !visible) return;
+  linkedFilesPanel.hidden = !visible;
+  linkedFilesPanel.closest('.sidebar').classList.toggle('show-linked-files', visible);
+  if (visible) renderSidebarLinks();
+  else {
+    linkedFilesPanel.replaceChildren();
+    linkedFilesKey = '';
+  }
+}
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Alt' && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    setSidebarLinksVisible(true);
+  }
+});
+document.addEventListener('keyup', (event) => {
+  if (!event.altKey) setSidebarLinksVisible(false);
+});
+window.addEventListener('blur', () => setSidebarLinksVisible(false));
+
 function renderFiles() {
+  renderSidebarLinks();
   refreshVaultLinksIfChanged();
   scheduleBacklinks();
   list.innerHTML = '';
@@ -1239,7 +1383,7 @@ async function setVault(vault) {
   if (state.vault?.path && state.vault.path !== vault.path) { state.view?.destroy(); state.view = null; state.active = null; $('#editor-content').replaceChildren(); }
   state.vault = vault; state.files = vault.files; state.tree = vault.tree; state.collapsed.clear();
   $('.vault-name').textContent = vault.name; $('.vault-mark').textContent = vault.name.charAt(0).toUpperCase();
-  $('.location-vault').textContent = vault.name; $('#status-vault').textContent = vault.name;
+  $('#status-vault').textContent = vault.name;
   setSettingsHealth('directory', true, 'Folder open');
   renderFiles();
   await loadCustomDictionaryForVault().catch((error) => {
@@ -1348,7 +1492,7 @@ async function openHome() {
   $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><div class="home-mode-toggle" role="group" aria-label="Home assistant mode"><button type="button" data-home-mode="ask" aria-pressed="true">Ask</button><button type="button" data-home-mode="work" aria-pressed="false">Work</button></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><button type="button" class="home-stop" id="home-stop" hidden>Stop</button><div class="home-footnote" id="home-mode-note"></div></div></div></section>`;
   $('#note-editor').hidden = false; $('#welcome').hidden = true;
   $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault?.name || 'Workspace')}</span><span class="crumb-slash">/</span><strong>Home</strong>`;
-  $('.location-note').textContent = 'Home'; $('#save-state').textContent = '';
+  $('#save-state').textContent = '';
   $('#word-count').textContent = ''; $('#assistant-toggle').disabled = true; $('#assistant-toggle').setAttribute('aria-disabled', 'true'); $('#assistant-toggle').setAttribute('aria-pressed', 'false');
   await window.stillnote.rememberNote(null).catch(() => {}); renderFiles();
   if (state.homeRun) { renderHomeTranscript(); renderHomeHistory(); updateHomeMode(); } else startHomeSession();
@@ -1624,7 +1768,7 @@ async function openNote(file) {
       $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
       updateAssistantModeCopy();
       $('#note-editor').hidden = false; $('#welcome').hidden = true; $('#save-state').textContent = 'Preview'; $('#editor-footer').querySelector('span').textContent = 'PREVIEW'; $('#editor-footer').lastElementChild.textContent = 'LOCAL FILE';
-      updateStructuredLocation(file); renderFiles();
+      updateFileLocation(file); renderFiles();
       await renderAssetPreview(file, navigationId); if (navigationId !== state.navigationId) return;
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
       return;
@@ -1637,7 +1781,7 @@ async function openNote(file) {
       if (changedFile) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
       $('#editor-content').replaceChildren(); $('#note-indexes').hidden = true; $('#note-format-toolbar').hidden = true; $('#meeting-notes-trigger').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
       renderAssetTextEditor(file, contents, navigationId); state.dirty = false; $('#save-state').textContent = 'Saved'; $('#note-editor').hidden = false; $('#welcome').hidden = true; $('#editor-footer').querySelector('span').textContent = fileExtension(file).toUpperCase();
-      updateAssistantModeCopy(); updateWordCount(contents); updateStructuredLocation(file); renderFiles();
+      updateAssistantModeCopy(); updateWordCount(contents); updateFileLocation(file); renderFiles();
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
       return;
     }
@@ -1671,7 +1815,7 @@ async function openNote(file) {
       state.dirty = false; $('#save-state').textContent = 'Saved'; updateWordCount(contents);
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active note:', error));
       if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
-      $('#welcome').hidden = true; $('#note-editor').hidden = false; updateStructuredLocation(file); renderFiles(); return;
+      $('#welcome').hidden = true; $('#note-editor').hidden = false; updateFileLocation(file); renderFiles(); return;
     }
     const theme = EditorView.theme({
       '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '16px', height: '100%' },
@@ -1701,8 +1845,7 @@ async function openNote(file) {
     if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
     $('#welcome').hidden = true; $('#note-editor').hidden = false;
     renderNoteIndexes(state.view);
-    $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(file))}</strong>`;
-    $('.location-note').textContent = fileLabel(file); renderFiles();
+    updateFileLocation(file); renderFiles();
   } catch (error) { showToast(error.message || 'Could not open note.'); }
 }
 $('#editor-content').addEventListener('contextmenu', (event) => {
@@ -1734,6 +1877,7 @@ $('#note-format-toolbar').addEventListener('click', (event) => {
   actions[button.dataset.format]?.(); view.focus();
 });
 function onEdit() {
+  renderSidebarLinks();
   state.dirty = true; $('#save-state').textContent = 'Unsaved changes';
   const documentText = state.view.state.doc.toString();
   scheduleTaskReferenceLinks(state.view);
@@ -1950,6 +2094,7 @@ function resolveVaultFileTarget(target) {
   return null;
 }
 function setStructuredDirty() {
+  renderSidebarLinks();
   const structured=state.structured;
   if(structured && structured.type !== 'tasks'){
     const snapshot=JSON.stringify({title:structured.title||prettyName(state.active),data:structured.data});
@@ -1978,7 +2123,7 @@ async function applyStructuredHistory(direction){
   structured.data=restored.data;structured.title=restored.title;structured.historySnapshot=snapshot;
   let active=state.active;
   if(restored.title&&restored.title!==prettyName(active)){
-    try{active=await window.stillnote.renameEntry(active,restored.title);state.active=active;[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();updateStructuredLocation(active);void window.stillnote.rememberNote(active).catch(()=>{});}
+    try{active=await window.stillnote.renameEntry(active,restored.title);state.active=active;[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();updateFileLocation(active);void window.stillnote.rememberNote(active).catch(()=>{});}
     catch(error){showToast(`Could not restore the file name: ${error.message}`);}
   }
   renderStructured(type,restored.data,active,restored.title||prettyName(active));
@@ -2012,7 +2157,7 @@ function renderStructured(type, rawData, file, title) {
           if(state.active!==old||state.structured!==owner)return;
           state.active = moved; [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
           if(state.active!==moved||state.structured!==owner)return;
-          renderFiles(); updateStructuredLocation(moved); setStructuredDirty();
+          renderFiles(); updateFileLocation(moved); setStructuredDirty();
         } catch (e) {
           if(state.structured===owner){
             showToast(`Could not rename file: ${e.message}`);
@@ -2040,9 +2185,54 @@ function renderStructured(type, rawData, file, title) {
   updateStructuredHistoryButtons();
   return root;
 }
-function updateStructuredLocation(file) {
-  $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(file))}</strong>`;
-  $('.location-note').textContent = fileLabel(file);
+function updateFileLocation(file) {
+  const breadcrumbs = $('#breadcrumbs');
+  breadcrumbs.innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong class="breadcrumb-path"></strong>`;
+  const path = breadcrumbs.querySelector('.breadcrumb-path');
+  const parts = file.split('/');
+  parts.forEach((part, index) => {
+    const entryPath = parts.slice(0, index + 1).join('/');
+    const isFile = index === parts.length - 1;
+    const extension = isFile && part.lastIndexOf('.') > 0 ? part.slice(part.lastIndexOf('.')) : '';
+    const name = part.slice(0, part.length - extension.length);
+    const displayedExtension = /^\.md$/i.test(extension) ? fileDisplayParts(file, findExplorerNode(file)?.format).extension : extension;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'breadcrumb-name';
+    button.textContent = name;
+    button.setAttribute('aria-label', `Rename ${button.textContent}`);
+    button.addEventListener('click', () => {
+      const node = findExplorerNode(entryPath);
+      if (!node) return;
+      const input = document.createElement('input');
+      input.className = 'breadcrumb-name';
+      input.value = name;
+      input.size = Math.max(8, input.value.length);
+      input.setAttribute('aria-label', button.getAttribute('aria-label'));
+      button.replaceWith(input);
+      input.focus();
+      input.select();
+      const finish = (commit) => {
+        if (!input.isConnected) return;
+        const nextName = input.value.trim();
+        input.replaceWith(button);
+        if (commit && nextName && nextName !== name) {
+          void renameExplorerEntryTo(node, nextName + extension, file, nextName);
+        }
+      };
+      input.addEventListener('blur', () => finish(true), { once: true });
+      input.addEventListener('keydown', (event) => {
+        const saveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's';
+        if (event.isComposing || (!saveShortcut && event.key !== 'Enter' && event.key !== 'Escape')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        finish(event.key !== 'Escape');
+        button.focus();
+      });
+    });
+    if (index > 0) path.append(' / ');
+    path.append(button, displayedExtension);
+  });
 }
 function renderGeometry(root, data) {
   void renderDesmosTool(root, data, 'geometry');
@@ -2672,7 +2862,7 @@ async function adoptGoogleTaskListTitle(root, owner, remoteTitle) {
     if (state.active !== oldPath || state.structured !== owner) return;
     state.active = moved; owner.file = moved; owner.title = title; titleEl.textContent = title;
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
-    renderFiles(); updateStructuredLocation(moved); void window.stillnote.rememberNote(moved).catch(() => {}); setStructuredDirty();
+    renderFiles(); updateFileLocation(moved); void window.stillnote.rememberNote(moved).catch(() => {}); setStructuredDirty();
   } catch (error) { showToast(`Google list title changed, but the task sheet could not be renamed: ${error.message}`); }
 }
 async function renderTaskSheet(root, data) {
@@ -2912,8 +3102,7 @@ async function saveActive() {
         state.active = savedPath;
         [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
         renderFiles();
-        $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault.name)}</span><span class="crumb-slash">/</span><strong>${escapeHtml(fileLabelPath(savedPath))}</strong>`;
-        $('.location-note').textContent = fileLabel(savedPath);
+        updateFileLocation(savedPath);
         void window.stillnote.rememberNote(savedPath).catch((error) => console.error('Could not save active note:', error));
       }
       if (state.view === view && state.active === savedPath) {
@@ -3085,6 +3274,7 @@ function canDropOnFolder(item, destinationPath) {
 function clearDragStyles() {
   document.querySelectorAll('.dragging,.drop-target,.root-drop-target').forEach((element) => element.classList.remove('dragging', 'drop-target', 'root-drop-target'));
   $('#note-list')?.classList.remove('asset-upload-target');
+  $('.sidebar').classList.remove('explorer-dragging');
 }
 function hasExternalFiles(event) { return !state.draggedItem && Array.from(event.dataTransfer?.types || []).includes('Files'); }
 async function uploadDroppedFiles(event, destination = '') {
@@ -3110,6 +3300,7 @@ function wireExplorerDrag(row, node) {
     const items = selected.filter((entry) => !selected.some((parent) => parent.type === 'folder' && entry.path.startsWith(`${parent.path}/`)))
       .map(({ path, type }) => ({ path, type }));
     state.draggedItem = { items };
+    $('.sidebar').classList.add('explorer-dragging');
     state.explorerSelection = new Set(selected.map((entry) => entry.path));
     for (const element of $('#note-list').querySelectorAll('.note-row,.folder-row')) {
       if (selected.some((entry) => entry.path === element.title)) element.classList.add('dragging');
@@ -3180,16 +3371,27 @@ async function moveExplorerEntry(item, destinationPath) {
   if (failure) showToast(`${moved.length ? `${moved.length} items moved. ` : ''}${failure.message || 'Could not move selected items.'}`);
   else showToast(`${moved.length} item${moved.length === 1 ? '' : 's'} moved`);
 }
-$('.explorer-heading').addEventListener('dragover', (event) => {
-  if (!state.draggedItem || !canDropOnFolder(state.draggedItem, '')) return;
-  event.preventDefault(); event.dataTransfer.dropEffect = 'move'; $('.explorer-heading').classList.add('root-drop-target');
-});
-$('.explorer-heading').addEventListener('dragleave', () => $('.explorer-heading').classList.remove('root-drop-target'));
-$('.explorer-heading').addEventListener('drop', (event) => {
-  if (!state.draggedItem || !canDropOnFolder(state.draggedItem, '')) return;
-  event.preventDefault(); event.stopPropagation();
-  const item = state.draggedItem; state.draggedItem = null; clearDragStyles(); moveExplorerEntry(item, '');
-});
+for (const target of document.querySelectorAll('.explorer-heading, .explorer-root-drop, #note-list')) {
+  const isRootDrop = (event) => canDropOnFolder(state.draggedItem, '')
+    && (target.id !== 'note-list' || event.target === target);
+  const highlight = target.id === 'note-list' ? $('.explorer-root-drop') : target;
+  target.addEventListener('dragover', (event) => {
+    if (!isRootDrop(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    highlight.classList.add('root-drop-target');
+  });
+  target.addEventListener('dragleave', () => highlight.classList.remove('root-drop-target'));
+  target.addEventListener('drop', (event) => {
+    if (!isRootDrop(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const item = state.draggedItem;
+    state.draggedItem = null;
+    clearDragStyles();
+    void moveExplorerEntry(item, '');
+  });
+}
 function showExplorerContextMenu(event, node) {
   event.preventDefault(); event.stopPropagation();
   if (!state.explorerSelection.has(node.path)) state.explorerSelection = new Set([node.path]);
@@ -3341,26 +3543,39 @@ function finishDeleteDialog(confirmed = false) {
   if (!resolveDeleteDialog) return;
   const resolve = resolveDeleteDialog; resolveDeleteDialog = null; $('#delete-overlay').hidden = true; resolve(confirmed);
 }
+function explorerRenameName(node) {
+  return node.type === 'note' ? prettyName(node.name) : node.name;
+}
 async function renameExplorerEntry(node) {
   const activePathBeforeDialog = state.active;
-  const currentName = node.type === 'note' ? prettyName(node.name) : node.name;
-  const nextName = await requestRenameValue(currentName, node.type);
-  if (!nextName?.trim() || nextName.trim() === currentName) return;
+  const nextName = await requestRenameValue(explorerRenameName(node), node.type);
+  await renameExplorerEntryTo(node, nextName, activePathBeforeDialog);
+}
+async function renameExplorerEntryTo(node, nextName, activePathBeforeSave, listName = nextName) {
+  if (!nextName?.trim() || nextName.trim() === explorerRenameName(node)) return;
   try {
+    const vault = state.vault;
+    const activeBeforeSave = state.active;
     await saveActive();
-    const sourcePath = node.type === 'note' && activePathBeforeDialog === node.path && state.active !== node.path ? state.active : node.path;
+    if (state.vault !== vault) return;
+    if (state.dirty) throw new Error('Save changes before renaming this item.');
+    const sourcePath = node.type === 'note' && activePathBeforeSave === node.path && activeBeforeSave === node.path && state.active !== node.path && state.active ? state.active : node.path;
     if (node.type === 'note' && node.format === 'tasks') {
       const parsed = decodeStructured(await window.stillnote.readNote(sourcePath));
-      if (parsed?.type === 'tasks' && parsed.data?.listId) await window.stillnote.renameGoogleTaskList(parsed.data.listId, nextName.trim());
+      if (parsed?.type === 'tasks' && parsed.data?.listId) await window.stillnote.renameGoogleTaskList(parsed.data.listId, listName.trim());
     }
     const renamed = await window.stillnote.renameEntry(sourcePath, nextName.trim());
-    let nextActive = state.active;
+    const active = state.active;
+    let nextActive = active;
     if (state.active === sourcePath) nextActive = renamed;
     else if (node.type === 'folder' && state.active?.startsWith(`${sourcePath}/`)) nextActive = `${renamed}${state.active.slice(sourcePath.length)}`;
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
-    if (node.type === 'folder' && state.collapsed.delete(sourcePath)) state.collapsed.add(renamed);
+    if (node.type === 'folder') {
+      state.collapsed = new Set([...state.collapsed].map((folder) =>
+        folder === sourcePath || folder.startsWith(`${sourcePath}/`) ? `${renamed}${folder.slice(sourcePath.length)}` : folder));
+    }
     renderFiles();
-    if (nextActive) { state.active = null; await openNote(nextActive); }
+    if (nextActive && nextActive !== active && state.active === active) { state.active = null; await openNote(nextActive); }
   } catch (error) { showToast(error.message || 'Could not rename item.'); }
 }
 async function deleteExplorerEntries(rawNodes, skipConfirm = false) {
