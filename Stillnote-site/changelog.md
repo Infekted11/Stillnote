@@ -1,5 +1,29 @@
 # Stillnote log
 
+## 2026-11-12
+
+- Shortened long file labels in the middle so the ending and extension remain visible.
+
+- Added a hold-Alt or Option sidebar view for files linked from the current file, with text excerpts, image previews, and video thumbnails.
+
+## 2026-11-11
+
+- Saved image and 3D preview dimensions in their links so resizing survives a reload.
+
+- Replaced the top-bar location label with the Stillnote logo and wordmark.
+
+- Shared the full in-app note syntax guide with Home Ask, Home Work, and the file assistant.
+
+- Gave Home and file assistants vault-relative file and folder names so they can link to files without reading their contents.
+
+- Kept the cursor after the Markdown marker when applying H1 or H2 from the note toolbar.
+
+- Fixed saving breadcrumb renames and made file extensions read-only in the breadcrumb editor.
+
+- Made file and folder names editable in the note breadcrumbs.
+
+- Added a drop target at the bottom of the file explorer for moving files and folders to the vault root.
+
 ## 2026-11-10
 
 ### Added:

@@ -447,15 +447,19 @@ $/alpha + /theta$</code>
 <h2 id="google-setup-title">Set up Google Tasks
 </h2>
 <ol>
-<li>Open the <a href="https://console.cloud.google.com/">Google Cloud console</a> and choose or create a project.
+<li>Open the <a href="https://console.cloud.google.com/">Google Cloud Console</a>, create a project, and open its dashboard.
 </li>
-<li>Enable the Google Tasks API for that project.
+<li>In the left sidebar, click <strong>Library</strong>. Search for <strong>Google Tasks API</strong> and click <strong>Enable</strong>.
 </li>
-<li>Configure the OAuth consent screen / Audience. If the app is in testing, add the Google account you will use as a test user.
+<li>Return to the project dashboard. Open <strong>Credentials</strong>, click <strong>Create credentials</strong>, and select <strong>OAuth client ID</strong>. Set the application type to <strong>Desktop app</strong> and create the client.
 </li>
-<li>Create an OAuth client of type <strong>Desktop app</strong>. Copy its client ID and client secret.
+<li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong>. You’ll need both in Stillnote. Save the secret now while it’s visible.
 </li>
-<li>In Stillnote Settings → Tasks, save those credentials and select Connect. Finish the account authorization in your browser.
+<li>Under <strong>OAuth 2.0 Client IDs</strong>, open the client you created. Go to <strong>Audience</strong>, scroll down to <strong>Test users</strong>, and add the Gmail address you plan to connect.
+</li>
+<li>In Stillnote, open <strong>Settings → Tasks</strong>. Paste the Client ID and Client Secret, click <strong>Save</strong>, then click <strong>Connect Google Account</strong>.
+</li>
+<li>In your browser, select the Gmail account you added as a test user and confirm access. Stillnote requests access only to your Google Tasks.
 </li>
 <li>Return to Stillnote and open or create a task sheet, then choose a list.
 </li>
