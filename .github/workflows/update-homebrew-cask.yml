@@ -1,0 +1,48 @@
+name: Update Homebrew Cask
+
+on:
+  workflow_run:
+    workflows: ["Build and Release Stillnote"]
+    types: [completed]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-cask:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'release' && !github.event.release.prerelease)
+    concurrency:
+      group: update-homebrew-cask
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the tap
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Sync the cask with GitHub Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" | python3 scripts/update-homebrew-cask.py
+
+          if git diff --quiet -- Casks/stillnote.rb; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- Casks/stillnote.rb
+          git commit -m "Update Stillnote Homebrew cask"
+          git push

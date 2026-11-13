@@ -1,5 +1,11 @@
 # Stillnote log
 
+## 2026-11-13
+
+- Automated Homebrew cask updates using the latest stable GitHub release and its macOS installer checksum.
+
+- Added a Homebrew cask for installing and upgrading Stillnote on macOS.
+
 ## 2026-11-12
 
 - Added Unpack folder to the explorer’s right-click menu to move its contents into the parent folder.

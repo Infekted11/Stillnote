@@ -10,9 +10,18 @@ The installers are not code-signed or notarized, so macOS Gatekeeper or Windows 
 
 ### macOS
 
-1. Open the downloaded `.dmg` and drag **Stillnote** to **Applications**.
-2. If macOS says it cannot verify the developer or check the app for malicious software, first try Control-clicking **Stillnote** in Applications and choosing **Open**, then confirm **Open**.
-3. If macOS still blocks it, try opening Stillnote once, then go to **System Settings → Privacy & Security** and select **Open Anyway** in the Security section.
+To install with Homebrew, add the Stillnote tap and trust the Stillnote cask once:
+
+```sh
+brew tap infekted11/stillnote https://github.com/Infekted11/Stillnote.git
+brew trust --cask infekted11/stillnote/stillnote
+brew install stillnote
+```
+
+Run `brew update && brew upgrade stillnote` to install the latest release. If you downloaded the DMG directly, drag **Stillnote** to **Applications**. The same first-launch steps apply to both install methods.
+
+1. If macOS says it cannot verify the developer or check the app for malicious software, first try Control-clicking **Stillnote** in Applications and choosing **Open**, then confirm **Open**.
+2. If macOS still blocks it, try opening Stillnote once, then go to **System Settings → Privacy & Security** and select **Open Anyway** in the Security section.
 
 If you trust that the DMG came from the official Stillnote GitHub Releases page, you can also remove its quarantine attribute in Terminal:
 
@@ -89,6 +98,8 @@ npm run dist:win
 ```
 
 The installers are written to `release/`. macOS creates a universal DMG and ZIP for Intel and Apple Silicon, and Windows creates an x64 NSIS installer. Build each installer on its matching operating system; the release workflow uses native macOS and Windows runners.
+
+The **Update Homebrew Cask** workflow keeps the tap in sync with the latest stable GitHub release. It reads the universal DMG’s SHA-256 from GitHub and commits the new version and checksum to the default branch. You can also run it manually from the Actions tab.
 
 ## Set up API keys and accounts
 
