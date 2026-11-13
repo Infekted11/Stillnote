@@ -301,6 +301,11 @@ async function vaultTextFiles(dir = vaultPath, base = '') {
   return files;
 }
 async function updateMovedFileLinks(oldPath, newPath) {
+  await updateMovedEntriesLinks([[oldPath, newPath]], fs.stat);
+}
+
+async function updateMovedEntriesLinks(entries, stat = fs.lstat) {
+  if (!entries.length) return;
   const files = await vaultTextFiles();
   const treeFiles = async (dir, base) => {
     const result = [];
@@ -311,9 +316,12 @@ async function updateMovedFileLinks(oldPath, newPath) {
     }
     return result;
   };
-  const moved = (await fs.stat(resolveVaultPath(newPath))).isDirectory()
-    ? await treeFiles(resolveVaultPath(newPath), newPath) : [newPath];
-  const moves = moved.map((file) => [oldPath + file.slice(newPath.length), file]);
+  const moves = [];
+  for (const [oldPath, newPath] of entries) {
+    const target = resolveVaultPath(newPath);
+    const moved = (await stat(target)).isDirectory() ? await treeFiles(target, newPath) : [newPath];
+    for (const file of moved) moves.push([oldPath + file.slice(newPath.length), file]);
+  }
   const written = [];
   try {
     for (const file of files) {
@@ -357,7 +365,7 @@ async function walkVault(dir, base = '', pathsOnly = false) {
       try {
         if (!isMarkdown(entry.name)) throw new Error('Not a Markdown note');
         const prefix = (await fs.readFile(absolute, 'utf8')).slice(0, 500);
-        const match = prefix.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*-->/);
+        const match = prefix.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks|geometry|calculator3d|gantt)\s*-->/);
         if (match) format = match[1];
       } catch {}
       nodes.push({ name: entry.name, path: relative, type: 'note', format });
@@ -801,6 +809,44 @@ function registerIpc() {
     catch (error) { await fs.rename(destination, source); throw error; }
     return path.relative(vaultPath, destination).split(path.sep).join('/');
   });
+  ipcMain.handle('vault:unpack', async (_event, relativePath) => {
+    const root = vaultPath;
+    const source = resolveVaultPath(relativePath);
+    if (source === root) throw new Error('The vault root cannot be unpacked.');
+    const info = await fs.lstat(source);
+    if (!info.isDirectory()) throw new Error('Choose a folder to unpack.');
+    const parent = path.dirname(source);
+    const names = await fs.readdir(source);
+    const taken = new Set((await fs.readdir(parent)).map(name => name.toLowerCase()));
+    for (const name of names) {
+      if (taken.has(name.toLowerCase())) throw new Error(`An item named “${name}” already exists in the parent folder.`);
+      taken.add(name.toLowerCase());
+    }
+    const relative = target => path.relative(root, target).split(path.sep).join('/');
+    const moved = [];
+    let removed = false;
+    try {
+      for (const name of names) {
+        await assertUniqueEntryName(parent, name);
+        await fs.rename(path.join(source, name), path.join(parent, name));
+        moved.push(name);
+      }
+      await fs.rmdir(source);
+      removed = true;
+      if (root !== vaultPath) throw new Error('The vault changed while unpacking.');
+      await updateMovedEntriesLinks(moved.map(name => [
+        relative(path.join(source, name)), relative(path.join(parent, name)),
+      ]));
+    } catch (error) {
+      if (removed) await fs.mkdir(source, { mode: info.mode & 0o777 });
+      for (const name of moved.reverse()) {
+        await assertUniqueEntryName(source, name);
+        await fs.rename(path.join(parent, name), path.join(source, name));
+      }
+      throw error;
+    }
+    return moved.map(name => relative(path.join(parent, name)));
+  });
   ipcMain.handle('vault:backlinks', async (_event, relativePath) => {
     resolveVaultPath(relativePath);
     const results = [];
@@ -897,6 +943,47 @@ function registerIpc() {
       if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
       await fs.rm(tempFile, { force: true }).catch(() => {});
     }
+  });
+  ipcMain.handle('web:preview', async (_event, value) => {
+    const url = new URL(value);
+    const isWebUrl = (candidate) => {
+      try {
+        const parsed = new URL(candidate);
+        return ['https:', 'http:'].includes(parsed.protocol) && !parsed.username && !parsed.password;
+      } catch { return false; }
+    };
+    if (!isWebUrl(url.href)) throw new Error('Enter a valid HTTP or HTTPS URL.');
+
+    const previewSession = session.fromPartition('stillnote-web-preview');
+    previewSession.setPermissionCheckHandler(() => false);
+    previewSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    const preview = new BrowserWindow({
+      parent: mainWindow,
+      width: 760,
+      height: 540,
+      title: url.hostname,
+      webPreferences: {
+        session: previewSession, nodeIntegration: false, contextIsolation: true, sandbox: true,
+      },
+    });
+    const guardNavigation = (event, target) => {
+      if (!isWebUrl(target)) event.preventDefault();
+    };
+    preview.webContents.on('will-navigate', guardNavigation);
+    preview.webContents.on('will-redirect', guardNavigation);
+    preview.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    try {
+      await preview.loadURL(url.href);
+    } catch (error) {
+      if (preview.isDestroyed() || error.code === 'ERR_ABORTED') return;
+      preview.close();
+      throw new Error(`Could not load ${url.hostname}: ${error.code || error.message}`);
+    }
+  });
+  ipcMain.handle('web:open-url', async (_event, value) => {
+    const url = new URL(value);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Enter a valid HTTP or HTTPS URL.');
+    await shell.openExternal(url.href);
   });
   ipcMain.handle('note:create', async (_event, title, parentPath = '') => {
     if (!vaultPath) throw new Error('Open a vault first.');

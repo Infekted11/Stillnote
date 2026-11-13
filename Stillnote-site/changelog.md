@@ -2,6 +2,34 @@
 
 ## 2026-11-12
 
+- Added Unpack folder to the explorer’s right-click menu to move its contents into the parent folder.
+
+- Hid the Gantt timeline scrollbar while keeping horizontal scrolling available.
+
+- Made Gantt timelines scroll in both directions from the current time, added horizontal zoom, and kept active drags stable while scrolling.
+
+- Replaced the four Gantt toolbar text buttons with icons and tooltips.
+
+- Kept Gantt dates stable after dragging, added whole-task moves and inline names, and put twelve pastel swatches in the task context menu.
+
+- Added pastel Gantt task colors, draggable start and end times, and a labeled timeline grid.
+
+- Moved Gantt task editing into a popup opened from the timeline.
+
+- Added Gantt chart files with editable task schedules, inline previews in notes, and Google Tasks links.
+
+- Kept spreadsheet tables on their own line when note preview wrapping is enabled.
+
+- Replaced the note preview wrapping checkbox with an animated switch.
+
+- Added an Editor layout setting to wrap note text around images and other previews or place it below them.
+
+- Removed the Web file type and kept webpage links and previews in notes. Existing Web files open as regular notes with their URL.
+
+- Opened Web files in a compact app window and added the same window option to inline previews for sites that block embedding.
+
+- Added Web files for saving a URL and previewing its page, and embedded linked URLs and Web files in notes.
+
 - Shortened long file labels in the middle so the ending and extension remain visible.
 
 - Added a hold-Alt or Option sidebar view for files linked from the current file, with text excerpts, image previews, and video thumbnails.

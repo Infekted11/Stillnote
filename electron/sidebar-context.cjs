@@ -6,7 +6,7 @@ const contextBudget=provider=>provider==='groq'?16000:60000;
 function directTargets(document){
   const targets=linksIn(document).map(link=>link.target);
   // Decode JSON strings too, so quoted paths in canvas text/image links resolve.
-  for(const match of document.matchAll(/```stillnote-(?:canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*\n([\s\S]*?)\n```/g)){
+  for(const match of document.matchAll(/```stillnote-(?:canvas|spreadsheet|graph|tasks|geometry|calculator3d|gantt)\s*\n([\s\S]*?)\n```/g)){
     try{const visit=value=>{if(typeof value==='string')targets.push(...linksIn(value).map(link=>link.target));else if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')Object.values(value).forEach(visit);};visit(JSON.parse(match[1]));}catch{}
   }
   return [...new Set(targets.filter(target=>target&&!/^[a-z][a-z\d+.-]*:/i.test(target)))];

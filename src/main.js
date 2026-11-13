@@ -1,3 +1,4 @@
+import { renderGanttEditor, renderGanttTimeline } from './gantt.js';
 import stillnoteLogo from '../Stillnote-site/logo.svg';
 import noteSyntaxGuide from '../electron/note-syntax.html?raw';
 import { parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
@@ -18,7 +19,7 @@ import { python } from '@codemirror/lang-python';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
-import { Strikethrough, TaskList } from '@lezer/markdown';
+import { Autolink, Strikethrough, TaskList } from '@lezer/markdown';
 import { searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree, bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language';
 import { animate } from 'animejs';
@@ -175,6 +176,8 @@ const svgIcon = (paths, className = '') => `<svg class="app-icon ${className}" v
 const icons = {
   panel: svgIcon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/>'),
   home: svgIcon('<path d="m3.5 10 8.5-7 8.5 7v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/>'),
+  zoomIn: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6m-3-3v6"/>'),
+  zoomOut: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6"/>'),
   search: svgIcon('<circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/>'),
   file: svgIcon('<path d="M6 3.8h8l4 4v12.4H6z"/><path d="M14 3.8v4h4M9 12h6M9 15.5h6"/>'),
   filePlus: svgIcon('<path d="M6 3.8h8l4 4v12.4H6z"/><path d="M14 3.8v4h4M12 11v6M9 14h6"/>'),
@@ -210,11 +213,14 @@ const icons = {
   eraser: svgIcon('<path d="m7 16-3-3a2 2 0 0 1 0-3l6-6a2 2 0 0 1 3 0l6 6-8 8H7zM13 18h7"/>'),
   trash: svgIcon('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
   star: svgIcon('<path d="m12 3 2.75 5.57 6.15.89-4.45 4.33 1.05 6.12L12 17.02l-5.5 2.89 1.05-6.12L3.1 9.46l6.15-.89L12 3z"/>'),
+  add: svgIcon('<path d="M12 5v14M5 12h14"/>'),
+  link: svgIcon('<path d="m10 13 4-4m-6 7-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m2 8a3.5 3.5 0 0 0 5 0l4-4a3.5 3.5 0 0 0-5-5l-1 1"/>'),
   undo: svgIcon('<path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/>'),
   redo: svgIcon('<path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/>'),
   code: svgIcon('<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>'),
   geometry: svgIcon('<path d="m4 19 8-15 8 15H4zM8 19a4 4 0 0 0-2-4"/>'),
   calculator3d: svgIcon('<path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M12 3v10"/>'),
+  gantt: svgIcon('<path d="M4 4v16h16M7 7h7M10 11h9M7 15h6"/>'),
   spreadsheet: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16M10 9v11M15 9v11"/>'),
   graph: svgIcon('<path d="M4 20V4M4 20h16"/><path d="M7 16c2-1 2-7 5-7s3 5 6 1"/>'),
   folder: svgIcon('<path d="M3.5 7.5a2 2 0 0 1 2-2H10l2 2h6.5a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>'),
@@ -303,7 +309,7 @@ app.innerHTML = `
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="settings-modal-header"><div><div class="eyebrow">PREFERENCES</div><h2 id="settings-title">Settings</h2></div><button class="icon-button" id="settings-close" aria-label="Close settings">${icons.close}</button></header>
         <div class="settings-modal-body">
-          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Toolbar</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
+          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Editor layout</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
             <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Play audio and video</strong><code>MP4 · WebM · OGV · MOV · M4V · MP3 · WAV · OGG · M4A · AAC · FLAC · Opus (codec support varies)</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
@@ -321,7 +327,7 @@ app.innerHTML = `
 
             <section class="settings-section" data-section="dictionary" hidden><div class="settings-section-heading"><span class="eyebrow">SPELL CHECK</span><h3>Personal dictionary</h3><p>Words here are treated as correctly spelled in your notes. This dictionary is encrypted in a separate file in the selected vault.</p></div><form class="dictionary-add-form" id="custom-dictionary-form"><input class="settings-input" id="custom-dictionary-input" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Add a word"><button class="secondary-button" type="submit">Add word</button></form><div class="custom-dictionary-list" id="custom-dictionary-list" aria-live="polite"></div></section>
 
-            <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Toolbar position</h3><p>Choose where formatting and canvas tools appear.</p></div><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
+            <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Editor layout</h3></div><button class="settings-switch" id="wrap-around-previews" type="button" role="switch" aria-checked="false"><span>Wrap note text around images and previews</span><span class="settings-switch-track" aria-hidden="true"><span class="settings-switch-thumb"></span></span></button><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
             <section class="settings-section" data-section="equations" hidden>${noteSyntaxGuide}</section>
             <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant; otherwise go Home from a file</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Find and replace in file</span><kbd>⌘ / Ctrl F</kbd></div><div class="shortcut-row"><span>Next / previous match</span><kbd>Enter / ${icons.shift} Enter</kbd></div><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
@@ -504,6 +510,80 @@ function renderSpreadsheetPreview(data, endCell, file) {
   }
   table.append(body); scroll.append(table); return scroll;
 }
+function webUrl(value) {
+  try {
+    const url = new URL(String(value ?? '').trim());
+    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href;
+  } catch {}
+  return null;
+}
+function convertLegacyWebNote(contents) {
+  const match = contents.match(/^([^\r\n]+)\r?\n<!-- stillnote:type=web -->\r?\n\r?\n```stillnote-web\r?\n([\s\S]*?)\r?\n```\s*$/);
+  if (!match) return contents;
+  try {
+    const url = webUrl(JSON.parse(match[2])?.url);
+    if (url) return `${match[1]}\n\n<${url}>\n`;
+  } catch {}
+  return contents;
+}
+function renderWebPreview(host, url) {
+  host.replaceChildren();
+  if (!url) {
+    host.textContent = 'Enter an HTTP or HTTPS URL to preview.';
+    return;
+  }
+  const frame = document.createElement('iframe');
+  frame.title = `Webpage preview for ${new URL(url).hostname}`;
+  frame.setAttribute('sandbox', 'allow-scripts');
+  frame.referrerPolicy = 'no-referrer';
+  frame.src = url;
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'secondary-button web-preview-open';
+  open.textContent = 'Open in browser';
+  open.title = url;
+  open.addEventListener('click', () => {
+    void window.stillnote.openWebUrl(url).catch(error => showToast(error.message));
+  });
+  const popout = document.createElement('button');
+  popout.type = 'button';
+  popout.className = 'secondary-button';
+  popout.textContent = 'Open preview window';
+  popout.addEventListener('click', () => openWebPreviewWindow(url));
+  const actions = document.createElement('span');
+  actions.className = 'web-preview-actions';
+  actions.append(popout, open);
+  host.append(actions, frame);
+}
+function openWebPreviewWindow(url) {
+  if (url) void window.stillnote.previewWebUrl(url).catch(error => showToast(error.message));
+}
+class WebPreviewWidget extends WidgetType {
+  constructor(url, from) {
+    super();
+    this.url = url;
+    this.from = from;
+  }
+  eq(other) {
+    return this.url === other.url && this.from === other.from;
+  }
+  toDOM(view) {
+    const panel = document.createElement('span');
+    panel.className = 'cm-wiki-media-preview web-preview';
+    const body = document.createElement('span');
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'secondary-button web-preview-edit';
+    edit.textContent = 'Edit link';
+    edit.addEventListener('click', () => {
+      view.dispatch({ selection: { anchor: this.from + 1 }, scrollIntoView: true });
+      view.focus();
+    });
+    panel.append(body, edit);
+    renderWebPreview(body, this.url);
+    return panel;
+  }
+}
 class WikiMediaWidget extends WidgetType {
   constructor(file, from, to, rawLink, endCell, previewSize, revision) { super(); this.file = file; this.from = from; this.to = to; this.rawLink = rawLink; this.endCell = endCell; this.previewSize = previewSize; this.revision = revision; }
   toDOM(view) {
@@ -512,9 +592,10 @@ class WikiMediaWidget extends WidgetType {
     const format = findExplorerNode(this.file)?.format;
     const isGraph = ['graph','geometry','calculator3d'].includes(format);
     const isCanvas = format === 'canvas';
+    const isGantt = format === 'gantt';
     const isSpreadsheet = findExplorerNode(this.file)?.format === 'spreadsheet';
     const isPlayable = playableMediaExtensions.includes(extension);
-    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${isGraph ? ' is-graph' : isSpreadsheet ? ' is-spreadsheet' : isCanvas ? ' is-canvas' : isPlayable ? ' is-playable' : is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
+    const preview = document.createElement('span'); preview.className = `cm-wiki-media-preview${isGantt ? ' is-gantt' : isGraph ? ' is-graph' : isSpreadsheet ? ' is-spreadsheet' : isCanvas ? ' is-canvas' : isPlayable ? ' is-playable' : is3d ? ' is-3d' : ' is-image'}`; preview.dataset.target = this.file; preview.title = `${this.file} · right-click to open · place the caret in the link to edit it`;
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'cm-wiki-media-edit'; edit.textContent = 'Edit link'; edit.title = 'Show and edit the link';
     edit.addEventListener('mousedown', (event) => { event.preventDefault(); event.stopPropagation(); });
     edit.addEventListener('click', (event) => {
@@ -529,7 +610,7 @@ class WikiMediaWidget extends WidgetType {
       if (insert !== this.rawLink) view.dispatch({ changes: { from: this.from, to: this.to, insert }, userEvent: 'input' });
     };
     const loading = document.createElement('span'); loading.className = 'cm-wiki-media-loading'; loading.textContent = 'Loading preview…'; preview.append(loading);
-    const source = isCanvas || isSpreadsheet || isGraph ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
+    const source = isCanvas || isSpreadsheet || isGraph || isGantt ? window.stillnote.readNote(this.file) : window.stillnote.readAsset(this.file);
     source.then(async (asset) => {
       if (!preview.isConnected || preview.__disposed) return;
       preview.replaceChildren(edit);
@@ -541,6 +622,10 @@ class WikiMediaWidget extends WidgetType {
         preview.__disposePreview = instance.destroy;
         await instance.ready;
         if(!preview.isConnected||preview.__disposed)return;
+      } else if (isGantt) {
+        const chart = decodeStructured(asset);
+        if (chart?.type !== 'gantt' || !Array.isArray(chart.data?.rows)) throw new Error('Invalid Gantt chart');
+        preview.append(renderGanttTimeline(chart.data.rows));
       } else if (isSpreadsheet) {
         const sheet = decodeStructured(asset);
         if (sheet?.type !== 'spreadsheet' || !sheet.data?.cells || typeof sheet.data.cells !== 'object') throw new Error('Invalid spreadsheet');
@@ -693,6 +778,24 @@ function makeLiveMarkdownDecorations(view) {
       const name = node.type.name;
       const line = view.state.doc.lineAt(node.from);
       if (name !== 'FencedCode' && equationRanges.some(({ from, to }) => node.from < to && node.to > from)) return;
+      if (['Link', 'Autolink', 'URL'].includes(name)) {
+        const syntax = node.node;
+        const urlNode = name === 'URL' ? syntax : syntax.getChild('URL');
+        const insideLink = name === 'URL' && ['Link', 'Autolink', 'Image'].includes(syntax.parent?.name);
+        const insideWiki = [...line.text.matchAll(/(?:<\[[^\]]+\]>|\[\[[^\]]+\]\])/g)]
+          .some(match => node.from < line.from + match.index + match[0].length && node.to > line.from + match.index);
+        if (insideWiki) return false;
+        if (urlNode && !insideLink) {
+          const target = view.state.doc.sliceString(urlNode.from, urlNode.to).replace(/^<|>$/g, '');
+          const url = webUrl(target);
+          const caretTouches = view.state.selection.ranges.some(({ head }) => head >= node.from && head <= node.to);
+          if (url && !caretTouches) {
+            const widget = new WebPreviewWidget(url, node.from);
+            decorations.push(Decoration.replace({ widget }).range(node.from, node.to));
+            return false;
+          }
+        }
+      }
       if ((name === 'Emphasis' || name === 'StrongEmphasis') && node.to > node.from) emphasisRanges.push([node.from, node.to]);
       if (name === 'TaskMarker' && node.to > node.from) {
         const marker = view.state.doc.sliceString(node.from, node.to);
@@ -744,13 +847,17 @@ function makeLiveMarkdownDecorations(view) {
         const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
         if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
         const reference = (wikiMatch[1] || wikiMatch[2]).split('|')[0];
-        const { path: target, fragment: endCell, previewSize } = parseVaultLink(reference);
+        const { path: target, target: fullTarget, linkOnly, fragment: endCell, previewSize } = parseVaultLink(reference);
         const linkedFile = resolveVaultFileTarget(target);
         const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
         const media = shouldRenderFileLink(reference,findExplorerNode(linkedFile)?.format,extension);
         const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
-        if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, wikiMatch[0], endCell, previewSize, vaultRenderRevision) }).range(from, to));
-        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: isBrokenVaultLink(reference) ? 'Linked file not found' : target } }).range(from, to));
+        const url = webUrl(fullTarget);
+        if (url && !linkOnly && !caretTouches) {
+          const widget = new WebPreviewWidget(url, from);
+          decorations.push(Decoration.replace({ widget }).range(from, to));
+        } else if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, wikiMatch[0], endCell, previewSize, vaultRenderRevision) }).range(from, to));
+        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${!url && isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: !url && isBrokenVaultLink(reference) ? 'Linked file not found' : target } }).range(from, to));
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
       const highlightMatcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
@@ -1785,8 +1892,9 @@ async function openNote(file) {
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
       return;
     }
-    const lineEnding = contents.includes('\r\n') ? '\r\n' : '\n';
-    const lines = contents.split(/\r?\n/);
+    const noteContents = convertLegacyWebNote(contents);
+    const lineEnding = noteContents.includes('\r\n') ? '\r\n' : '\n';
+    const lines = noteContents.split(/\r?\n/);
     const titleLine = prettyName(file);
     const firstLineTitle = lines[0].trim().replace(/^#{1,6}\s+/, '').replace(/\.md$/i, '').trim().toLocaleLowerCase();
     const fileTitle = titleLine.replace(/\.md$/i, '').trim().toLocaleLowerCase();
@@ -1829,7 +1937,7 @@ async function openNote(file) {
     }, { dark: false });
     if (state.view) { state.view.destroy(); state.view = null; }
     state.view = new EditorView({
-      state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
+      state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Autolink, Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
       parent: $('#editor-content'),
     });
     state.view.scrollDOM.addEventListener('scroll', () => updateNoteIndexCurrent(state.view), { passive: true });
@@ -1851,7 +1959,7 @@ async function openNote(file) {
 $('#editor-content').addEventListener('contextmenu', (event) => {
   if (!event.target.closest('.cm-editor') || !state.view) return;
   const mediaLink = event.target.closest('.cm-wiki-media-preview');
-  if (mediaLink) { event.preventDefault(); event.stopPropagation(); void navigateWikiTarget(mediaLink.dataset.target); return; }
+  if (mediaLink?.dataset.target) { event.preventDefault(); event.stopPropagation(); void navigateWikiTarget(mediaLink.dataset.target); return; }
   if (openWikiLinkAt(state.view, event)) { event.stopPropagation(); return; }
   const equation = event.target.closest('math[data-equation]');
   if (equation) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(equation.dataset.equation, event.clientX, event.clientY); return; }
@@ -1913,12 +2021,13 @@ function encodeStructured(type, title, data) {
   return `${title}\n<!-- stillnote:type=${type} -->\n\n\`\`\`stillnote-${type}\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`;
 }
 function decodeStructured(contents) {
-  const match = contents.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*-->[\s\S]*?```stillnote-\1\s*\n([\s\S]*?)\n```/);
+  const match = contents.match(/<!--\s*stillnote:type=(canvas|spreadsheet|graph|tasks|geometry|calculator3d|gantt)\s*-->[\s\S]*?```stillnote-\1\s*\n([\s\S]*?)\n```/);
   if (!match) return null;
   try { return { type: match[1], data: JSON.parse(match[2]) }; } catch { return { type: match[1], data: null }; }
 }
 function canvasDefaults() { return { version: 1, width: 1200, height: 760, elements: [] }; }
 function sheetDefaults() { return { version: 1, columns: 8, rows: 20, cells: {} }; }
+function ganttDefaults() { return { version: 1, rows: [] }; }
 function graphDefaults() { return { version: 1, state: null }; }
 function taskSheetDefaults(listId) { return { version: 1, listId, tasks: [] }; }
 function geometryDefaults() { return { version: 1, state: null }; }
@@ -2133,7 +2242,7 @@ async function applyStructuredHistory(direction){
 function renderStructured(type, rawData, file, title) {
   cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
   state.structured?.cleanup?.();
-  const defaults = { canvas: canvasDefaults, graph: graphDefaults, tasks: () => taskSheetDefaults(''), geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
+  const defaults = { canvas: canvasDefaults, graph: graphDefaults, gantt: ganttDefaults, tasks: () => taskSheetDefaults(''), geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
   const data = rawData && typeof rawData === 'object' ? rawData : (defaults[type] || sheetDefaults)();
   state.structured?.desmos?.destroy?.();
   state.structured = { type, data, title, file, undoStack:[], redoStack:[], historySnapshot:JSON.stringify({title,data}), historyPending:false };
@@ -2178,6 +2287,7 @@ function renderStructured(type, rawData, file, title) {
   host.append(root);
   if (type === 'canvas') renderCanvas(root, data);
   else if (type === 'graph') void renderGraph(root, data);
+  else if (type === 'gantt') renderGanttEditor(root, data, { icons, tasksApi: window.stillnote, onChange: setStructuredDirty, onHistory: applyStructuredHistory });
   else if (type === 'tasks') void renderTaskSheet(root, data);
   else if (type === 'geometry') renderGeometry(root, data);
   else if (type === 'calculator3d') renderCalculator3d(root, data);
@@ -3149,12 +3259,12 @@ async function createCodeFile(parentPath = '') {
 }
 async function createStructuredFile(type, parentPath = '') {
   if (!state.vault) return chooseVault();
-  const labels = { canvas: 'Canvas', graph: 'Graph', geometry: 'Geometry', calculator3d: '3D Calculator', spreadsheet: 'Spreadsheet' };
+  const labels = { gantt: 'Gantt Chart', canvas: 'Canvas', graph: 'Graph', geometry: 'Geometry', calculator3d: '3D Calculator', spreadsheet: 'Spreadsheet' };
   const label = labels[type] || 'Spreadsheet';
   const title = `Untitled ${label} ${state.files.filter((file) => prettyName(file).startsWith(`Untitled ${label}`)).length + 1}`;
   try {
     const file = await window.stillnote.createNote(title, parentPath);
-    const defaults = { canvas: canvasDefaults, graph: graphDefaults, geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
+    const defaults = { canvas: canvasDefaults, graph: graphDefaults, gantt: ganttDefaults, geometry: geometryDefaults, calculator3d: calculator3dDefaults, spreadsheet: sheetDefaults };
     const data = (defaults[type] || sheetDefaults)();
     await window.stillnote.writeNote(file, encodeStructured(type, title, data));
     [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
@@ -3214,6 +3324,7 @@ function showNewFileMenu(anchor, parentPath = '') {
     ['Geometry', 'geometry', () => createStructuredFile('geometry', parentPath)],
     ['3D calculator', 'calculator3d', () => createStructuredFile('calculator3d', parentPath)],
     ['Spreadsheet', 'spreadsheet', () => createStructuredFile('spreadsheet', parentPath)],
+    ['Gantt chart', 'gantt', () => createStructuredFile('gantt', parentPath)],
     ['Graph', 'graph', () => createStructuredFile('graph', parentPath)],
     ['Task sheet', 'tasks', () => createTaskSheet(parentPath)]
   ];
@@ -3411,6 +3522,7 @@ function showExplorerContextMenu(event, node) {
     addAction('New geometry here', () => createStructuredFile('geometry', node.path));
     addAction('New 3D calculator here', () => createStructuredFile('calculator3d', node.path));
     addAction('New spreadsheet here', () => createStructuredFile('spreadsheet', node.path));
+    addAction('New Gantt chart here', () => createStructuredFile('gantt', node.path));
     addAction('New graph here', () => createStructuredFile('graph', node.path));
     addAction('New task sheet here', () => createTaskSheet(node.path));
     addAction('New folder here', () => createFolder(node.path));
@@ -3419,6 +3531,7 @@ function showExplorerContextMenu(event, node) {
     addAction('Copy link', () => { void window.stillnote.copyFileLink(node.path).then(() => showToast('Link copied')).catch((error) => showToast(error.message || 'Could not copy link.')); });
   }
   addAction('Rename…', () => renameExplorerEntry(node));
+  if (node.type === 'folder') addAction('Unpack folder', () => unpackExplorerFolder(node));
   const selectedNodes = [...state.explorerSelection].map((path) => findExplorerNode(path)).filter(Boolean);
   const selectedRoots = selectedNodes.filter((candidate, index, all) => !all.some((parent, parentIndex) => parentIndex !== index && parent.type === 'folder' && candidate.path.startsWith(`${parent.path}/`)));
   addAction(selectedRoots.length > 1 ? `Delete ${selectedRoots.length} selected items…` : 'Delete…', (skipConfirm) => deleteExplorerEntries(selectedRoots, skipConfirm), true);
@@ -3577,6 +3690,31 @@ async function renameExplorerEntryTo(node, nextName, activePathBeforeSave, listN
     renderFiles();
     if (nextActive && nextActive !== active && state.active === active) { state.active = null; await openNote(nextActive); }
   } catch (error) { showToast(error.message || 'Could not rename item.'); }
+}
+async function unpackExplorerFolder(node) {
+  const vault = state.vault;
+  const prefix = `${node.path}/`;
+  const parent = node.path.slice(0, node.path.lastIndexOf('/') + 1);
+  const unpackPath = path => path?.startsWith(prefix) ? parent + path.slice(prefix.length) : path;
+  try {
+    await saveActive();
+    if (state.vault !== vault) return;
+    if (state.dirty) throw new Error('Save changes before unpacking this folder.');
+    const moved = await window.stillnote.unpackFolder(node.path);
+    if (state.vault !== vault) return;
+    [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
+    state.collapsed.delete(node.path);
+    state.collapsed = new Set([...state.collapsed].map(unpackPath));
+    state.explorerSelection = new Set(moved.filter(path => findExplorerNode(path)));
+    renderFiles();
+    const active = state.active;
+    const nextActive = unpackPath(active);
+    if (nextActive !== active) {
+      state.active = null;
+      await openNote(nextActive);
+    }
+    showToast('Folder unpacked');
+  } catch (error) { showToast(error.message || 'Could not unpack folder.'); }
 }
 async function deleteExplorerEntries(rawNodes, skipConfirm = false) {
   const nodes = rawNodes.filter(Boolean).filter((node, index, all) => !all.some((parent, parentIndex) => parentIndex !== index && parent.type === 'folder' && node.path.startsWith(`${parent.path}/`)));
@@ -4325,6 +4463,26 @@ $('#custom-dictionary-form').addEventListener('submit', (event) => {
   if (addCustomWord($('#custom-dictionary-input').value)) $('#custom-dictionary-input').value = '';
 });
 $('#notes-toolbar-position').addEventListener('change', (event) => setToolbarPosition('notes', event.target.value));
+const wrapAroundPreviews = $('#wrap-around-previews');
+const wrapSwitchThumb = wrapAroundPreviews.querySelector('.settings-switch-thumb');
+const wrapInitiallyEnabled = localStorage.getItem('stillnote-wrap-around-previews') !== 'false';
+wrapAroundPreviews.setAttribute('aria-checked', String(wrapInitiallyEnabled));
+$('#note-editor').dataset.wrapAroundPreviews = String(wrapInitiallyEnabled);
+wrapSwitchThumb.style.transform = `translateX(${wrapInitiallyEnabled ? 16 : 0}px)`;
+let wrapSwitchAnimation;
+wrapAroundPreviews.addEventListener('click', () => {
+  const enabled = wrapAroundPreviews.getAttribute('aria-checked') !== 'true';
+  wrapAroundPreviews.setAttribute('aria-checked', String(enabled));
+  $('#note-editor').dataset.wrapAroundPreviews = String(enabled);
+  localStorage.setItem('stillnote-wrap-around-previews', String(enabled));
+  wrapSwitchAnimation?.pause();
+  wrapSwitchAnimation = animate(wrapSwitchThumb, {
+    translateX: enabled ? 16 : 0,
+    duration: motionDuration(180),
+    ease: 'outCubic',
+  });
+  state.view?.requestMeasure();
+});
 $('#canvas-toolbar-position').addEventListener('change', (event) => setToolbarPosition('canvas', event.target.value));
 document.querySelectorAll('.theme-card').forEach((button) => button.addEventListener('click', () => applyTheme(button.dataset.theme)));
 $('#change-directory').addEventListener('click', async () => { await chooseVault(); $('#directory-name').textContent = state.vault?.name || 'No folder open'; $('#directory-path').textContent = state.vault?.path || 'Choose a folder to see its location.'; });

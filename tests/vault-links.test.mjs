@@ -9,10 +9,10 @@ const {parseVaultLink,shouldRenderFileLink}=await import(`data:text/javascript;b
 const {linksIn,matchesPath,rewriteLinks}=require('../electron/file-links.cjs');
 const main=await readFile(new URL('../src/main.js',import.meta.url),'utf8');
 test('!!! suppresses each preview type without changing the target, fragment, or alias',()=>{
-  for(const [file,format,extension] of [['image.png','asset','.png'],['Canvas.md','canvas','.md'],['Sheet.md','spreadsheet','.md'],['Graph.md','graph','.md'],['Geometry.md','geometry','.md'],['3D.md','calculator3d','.md'],['Song.mp3','asset','.mp3']]){
+  for(const [file,format,extension] of [['image.png','asset','.png'],['Canvas.md','canvas','.md'],['Sheet.md','spreadsheet','.md'],['Graph.md','graph','.md'],['Plan.md','gantt','.md'],['Geometry.md','geometry','.md'],['3D.md','calculator3d','.md'],['Song.mp3','asset','.mp3']]){
     assert.equal(shouldRenderFileLink(file,format,extension),true);assert.equal(shouldRenderFileLink('!!!'+file,format,extension),false);assert.equal(parseVaultLink('!!!'+file).path,file);
   }
-  assert.deepEqual(parseVaultLink('!!!Folder/Sheet.md#A5,D8|Budget'),{linkOnly:true,target:'Folder/Sheet.md#A5,D8',path:'Folder/Sheet.md',fragment:'A5,D8',label:'Budget'});
+  assert.deepEqual(parseVaultLink('!!!Folder/Sheet.md#A5,D8|Budget'),{linkOnly:true,target:'Folder/Sheet.md#A5,D8',previewSize:null,path:'Folder/Sheet.md',fragment:'A5,D8',label:'Budget'});
 });
 test('renames preserve suppression and link fragments in ordinary and structured documents',()=>{
   const text='<[!!!Folder/Sheet#A5,D8|Budget]> [[!!!Folder/Sheet.md]] <[Folder/Sheet.md]>';
@@ -31,15 +31,27 @@ test('suppressed links resolve for navigation and share broken-link styling rule
   assert.equal(context.isBrokenVaultLink('!!!Sheet.md'),false);assert.equal(context.isBrokenVaultLink('!!!Missing.md'),true);assert.equal(context.isBrokenVaultLink('!!!#Heading'),false);
   tree.pop();assert.equal(context.isBrokenVaultLink('!!!Sheet.md'),true);
 });
+test('existing Web files become regular notes with their URL',()=>{
+  const context=vm.createContext({URL});
+  const start=main.indexOf('function webUrl(');
+  vm.runInContext(main.slice(start,main.indexOf('function renderWebPreview(',start)),context);
+  const legacy='Website\n<!-- stillnote:type=web -->\n\n```stillnote-web\n{"url":"https://example.com/#section"}\n```\n';
+  assert.equal(context.convertLegacyWebNote(legacy),'Website\n\n<https://example.com/#section>\n');
+  const withExtraContent=legacy+'Additional note text';
+  assert.equal(context.convertLegacyWebNote(withExtraContent),withExtraContent);
+});
 test('the note renderer suppresses only marked links and replaces deleted previews with red links',async()=>{
   const {EditorState}=await import('@codemirror/state');
   const {Decoration,WidgetType}=await import('@codemirror/view');
   const {markdown}=await import('@codemirror/lang-markdown');
   const {syntaxTree}=await import('@codemirror/language');
+  const {Autolink}=await import('@lezer/markdown');
   class Preview extends WidgetType{constructor(file){super();this.file=file;}}
+  class WebPreview extends WidgetType{constructor(source){super();this.source=source;}}
   const files=new Map([['Image.png','asset'],['Graph.md','graph'],['Budget.md','spreadsheet']]);
-  const context=vm.createContext({parseVaultLink,shouldRenderFileLink,Decoration,syntaxTree,markdownMarkers:new Set(),WikiMediaWidget:Preview,TextWidget:Preview,vaultRenderRevision:1,state:{active:'Note.md'},fileExtension:file=>file.split('.').at(-1),findExplorerNode:file=>files.has(file)?{format:files.get(file)}:null,resolveVaultFileTarget:value=>{const file=parseVaultLink(value).path;return files.has(file)?file:null;}});
-  let start=main.indexOf('function isBrokenVaultLink(');vm.runInContext(main.slice(start,main.indexOf('function invalidateVaultLinkRendering(',start)),context);
+  const context=vm.createContext({URL,WebPreviewWidget:WebPreview,parseVaultLink,shouldRenderFileLink,Decoration,syntaxTree,markdownMarkers:new Set(),WikiMediaWidget:Preview,TextWidget:Preview,vaultRenderRevision:1,state:{active:'Note.md'},fileExtension:file=>file.split('.').at(-1),findExplorerNode:file=>files.has(file)?{format:files.get(file)}:null,resolveVaultFileTarget:value=>{const file=parseVaultLink(value).path;return files.has(file)?file:null;}});
+  let start=main.indexOf('function webUrl(');vm.runInContext(main.slice(start,main.indexOf('function renderWebPreview(',start)),context);
+  start=main.indexOf('function isBrokenVaultLink(');vm.runInContext(main.slice(start,main.indexOf('function invalidateVaultLinkRendering(',start)),context);
   start=main.indexOf('function makeLiveMarkdownDecorations(');vm.runInContext(main.slice(start,main.indexOf('function getNoteIndexTargets(',start)),context);
   const document='Note\n<[Image.png]>\n<[!!!Image.png]>\n<[Graph.md]>\n<[!!!Graph.md]>\n<[Missing.png]>\n[[!!!Budget.md#A5,D8]]';
   const state=EditorState.create({doc:document,extensions:[markdown()]});
@@ -47,4 +59,15 @@ test('the note renderer suppresses only marked links and replaces deleted previe
   assert.deepEqual(inspect(),{widgets:['Image.png','Graph.md'],broken:['<[Missing.png]>']});
   files.delete('Image.png');assert.deepEqual(inspect(),{widgets:['Graph.md'],broken:['<[Image.png]>','<[!!!Image.png]>','<[Missing.png]>']});
   files.set('Image.png','asset');assert.deepEqual(inspect().widgets,['Image.png','Graph.md']);assert.equal(state.doc.toString(),document);
+
+  const webState=EditorState.create({
+    doc:'Note\nhttps://example.com\n[Page](https://example.org/a)\n<https://example.net>\n[[https://example.com/#intro]]\n`https://example.com/code`',
+    extensions:[markdown({extensions:[Autolink]})]
+  });
+  const webPreviews=[];
+  context.makeLiveMarkdownDecorations({state:webState}).between(0,webState.doc.length,(_from,_to,value)=>{
+    if(value.spec.widget instanceof WebPreview)webPreviews.push(value.spec.widget.source);
+  });
+  assert.deepEqual(webPreviews,['https://example.com/','https://example.org/a','https://example.net/','https://example.com/#intro']);
+
 });

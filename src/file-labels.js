@@ -1,6 +1,7 @@
 // These suffixes identify structured Markdown files in the UI only.
 export const FILE_TYPE_EXTENSIONS = Object.freeze({
   graph: '.grph',
+  gantt: '.gantt',
   calculator3d: '.3d',
   canvas: '.cnvs',
   geometry: '.geom',

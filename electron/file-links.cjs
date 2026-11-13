@@ -26,7 +26,7 @@ function rewritePlainLinks(text, moves) {
 function rewriteLinks(text, moves) {
   // Structured documents contain JSON strings: escape renamed paths through JSON
   // serialization so quotes and backslashes in filenames cannot corrupt a canvas.
-  const fence = /```stillnote-(canvas|spreadsheet|graph|tasks|geometry|calculator3d)\s*\n([\s\S]*?)\n```/g;
+  const fence = /```stillnote-(canvas|spreadsheet|graph|tasks|geometry|calculator3d|gantt)\s*\n([\s\S]*?)\n```/g;
   let offset = 0, result = '', match;
   while ((match = fence.exec(text))) {
     result += rewritePlainLinks(text.slice(offset, match.index), moves);

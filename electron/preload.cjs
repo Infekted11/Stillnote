@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('stillnote', {
   createFolder: (parentPath, name) => ipcRenderer.invoke('vault:mkdir', parentPath, name),
   renameEntry: (path, name) => ipcRenderer.invoke('vault:rename', path, name),
   deleteEntry: (path) => ipcRenderer.invoke('vault:delete', path),
+  unpackFolder: (path) => ipcRenderer.invoke('vault:unpack', path),
   moveEntry: (path, destinationFolderPath) => ipcRenderer.invoke('vault:move', path, destinationFolderPath),
   getBacklinks: (path) => ipcRenderer.invoke('vault:backlinks', path),
   copyFileLink: (path) => ipcRenderer.invoke('vault:copy-link', path),
@@ -78,6 +79,8 @@ contextBridge.exposeInMainWorld('stillnote', {
   loadOcctWasm: () => ipcRenderer.invoke('asset:occt-wasm'),
   uploadAssets: (destination, uploads) => ipcRenderer.invoke('asset:upload', destination, uploads),
   exportPdf: (path, html) => ipcRenderer.invoke('note:export-pdf', path, html),
+  previewWebUrl: (url) => ipcRenderer.invoke('web:preview', url),
+  openWebUrl: (url) => ipcRenderer.invoke('web:open-url', url),
   createNote: (title, parentPath) => ipcRenderer.invoke('note:create', title, parentPath),
   createCodeFile: (name, parentPath) => ipcRenderer.invoke('file:create-code', name, parentPath),
 });
