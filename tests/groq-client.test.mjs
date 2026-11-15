@@ -7,6 +7,8 @@ const require=createRequire(import.meta.url);
 const {GROQ_BASE_URL,DEFAULT_GROQ_MODEL,listGroqModels,groqChat,completionText,waitForRetry}=require('../electron/groq-client.cjs');
 const {HOME_RESPONSE_SCHEMA,NOTE_RESPONSE_SCHEMA}=require('../electron/openai-client.cjs');
 const {aiProvider}=require('../electron/ai-providers.cjs');
+const {agendaContextMessage}=require('../electron/agenda.cjs');
+const {contextBudget}=require('../electron/sidebar-context.cjs');
 const response=(body,status=200,headers={})=>({ok:status<400,status,headers:{get:name=>headers[name]},json:async()=>body});
 const answer={kind:'answer',text:'Hello',tasks:[]};
 const completion=(content,extra={})=>({choices:[{finish_reason:'stop',message:{role:'assistant',content,...extra}}]});
@@ -130,6 +132,7 @@ test('model discovery, Home Ask/Work and note/task edits all use the selected pr
     const handlers=new Map(),calls=[],keyReads=[];
     const config=aiProvider(provider);
     const context=vm.createContext({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},vaultPath:'/vault',readAiProviderKey:async id=>{keyReads.push(id);return id+'-test';},HOME_RESPONSE_SCHEMA,AbortController,AbortSignal,setTimeout,clearTimeout,homeModelRequests:new Map(),homeSystemPrompt:mode=>'Home '+mode,aiProvider:id=>({...aiProvider(id),listModels:async request=>{calls.push({kind:'models',request});return [config.defaultModel];},chat:async request=>{calls.push({kind:'chat',request});return request.schema===HOME_RESPONSE_SCHEMA?'{"kind":"done","text":"Done","plan":[],"actions":[]}':'{"kind":"answer","text":"Answer","tasks":[]}';}})});
+    Object.assign(context,{agendaContextMessage,contextBudget,vaultDirectoryInstructions:'',noteSyntaxInstructions:'',vaultDirectoryMessage:async()=>({role:'user',content:'Vault directory'})});
     const modelsStart=main.indexOf("  ipcMain.handle('ai:models'");vm.runInContext(main.slice(modelsStart,main.indexOf("  ipcMain.handle('home:cancel'",modelsStart)),context);
     const start=main.indexOf("  ipcMain.handle('home:step'");vm.runInContext(main.slice(start,main.indexOf("  ipcMain.handle('vault:list'",start)),context);
     assert.deepEqual(await handlers.get('ai:models')(null,provider),[config.defaultModel]);

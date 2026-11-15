@@ -3,7 +3,7 @@ const object = properties => ({type:'object',properties,required:Object.keys(pro
 const array = items => ({type:'array',items});
 const HOME_TOOLS = {
   list_files:{}, search_files:{query:str}, read_file:{path:str,offset:optionalInteger,length:optionalInteger},
-  file_relations:{path:str}, analyze_data:{path:str}, list_task_lists:{}, list_tasks:{listId:str},
+  file_relations:{path:str}, analyze_data:{path:str}, list_task_lists:{}, list_tasks:{listId:str}, read_agenda:{offset:optionalInteger},
   create_file:{path:str,content:str}, update_file:{path:str,revision:str,content:str}, link_files:{path:str,target:str},
   create_task_list:{title:str}, create_task:{listId:str,title:str,notes:optionalString,due:optionalString,parentId:optionalString},
   link_task:{path:str,listId:str,taskId:str},

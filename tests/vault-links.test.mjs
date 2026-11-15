@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import vm from 'node:vm';
 const require=createRequire(import.meta.url);
 const linkSource=await readFile(new URL('../src/vault-links.js',import.meta.url),'utf8');
-const {parseVaultLink,shouldRenderFileLink}=await import(`data:text/javascript;base64,${Buffer.from(linkSource).toString('base64')}`);
+const {ganttTaskNumber,parseVaultLink,shouldRenderFileLink}=await import(`data:text/javascript;base64,${Buffer.from(linkSource).toString('base64')}`);
 const {linksIn,matchesPath,rewriteLinks}=require('../electron/file-links.cjs');
 const main=await readFile(new URL('../src/main.js',import.meta.url),'utf8');
 test('!!! suppresses each preview type without changing the target, fragment, or alias',()=>{
@@ -48,17 +48,17 @@ test('the note renderer suppresses only marked links and replaces deleted previe
   const {Autolink}=await import('@lezer/markdown');
   class Preview extends WidgetType{constructor(file){super();this.file=file;}}
   class WebPreview extends WidgetType{constructor(source){super();this.source=source;}}
-  const files=new Map([['Image.png','asset'],['Graph.md','graph'],['Budget.md','spreadsheet']]);
+  const files=new Map([['Image.png','asset'],['Graph.md','graph'],['Budget.md','spreadsheet'],['Plan.md','gantt']]);
   const context=vm.createContext({URL,WebPreviewWidget:WebPreview,parseVaultLink,shouldRenderFileLink,Decoration,syntaxTree,markdownMarkers:new Set(),WikiMediaWidget:Preview,TextWidget:Preview,vaultRenderRevision:1,state:{active:'Note.md'},fileExtension:file=>file.split('.').at(-1),findExplorerNode:file=>files.has(file)?{format:files.get(file)}:null,resolveVaultFileTarget:value=>{const file=parseVaultLink(value).path;return files.has(file)?file:null;}});
   let start=main.indexOf('function webUrl(');vm.runInContext(main.slice(start,main.indexOf('function renderWebPreview(',start)),context);
   start=main.indexOf('function isBrokenVaultLink(');vm.runInContext(main.slice(start,main.indexOf('function invalidateVaultLinkRendering(',start)),context);
   start=main.indexOf('function makeLiveMarkdownDecorations(');vm.runInContext(main.slice(start,main.indexOf('function getNoteIndexTargets(',start)),context);
-  const document='Note\n<[Image.png]>\n<[!!!Image.png]>\n<[Graph.md]>\n<[!!!Graph.md]>\n<[Missing.png]>\n[[!!!Budget.md#A5,D8]]';
+  const document='Note\n<[Image.png]>\n<[!!!Image.png]>\n<[Graph.md]>\n<[!!!Graph.md]>\n<[Missing.png]>\n[[!!!Budget.md#A5,D8]]\n<[Plan.md#task-3]>\n<[Plan.md]>';
   const state=EditorState.create({doc:document,extensions:[markdown()]});
   const inspect=()=>{const widgets=[],broken=[];context.makeLiveMarkdownDecorations({state}).between(0,state.doc.length,(from,to,value)=>{if(value.spec.widget instanceof Preview)widgets.push(value.spec.widget.file);if(value.spec.class?.includes('is-broken'))broken.push(state.sliceDoc(from,to));});return {widgets,broken};};
-  assert.deepEqual(inspect(),{widgets:['Image.png','Graph.md'],broken:['<[Missing.png]>']});
-  files.delete('Image.png');assert.deepEqual(inspect(),{widgets:['Graph.md'],broken:['<[Image.png]>','<[!!!Image.png]>','<[Missing.png]>']});
-  files.set('Image.png','asset');assert.deepEqual(inspect().widgets,['Image.png','Graph.md']);assert.equal(state.doc.toString(),document);
+  assert.deepEqual(inspect(),{widgets:['Image.png','Graph.md','Plan.md'],broken:['<[Missing.png]>']});
+  files.delete('Image.png');assert.deepEqual(inspect(),{widgets:['Graph.md','Plan.md'],broken:['<[Image.png]>','<[!!!Image.png]>','<[Missing.png]>']});
+  files.set('Image.png','asset');assert.deepEqual(inspect().widgets,['Image.png','Graph.md','Plan.md']);assert.equal(state.doc.toString(),document);
 
   const webState=EditorState.create({
     doc:'Note\nhttps://example.com\n[Page](https://example.org/a)\n<https://example.net>\n[[https://example.com/#intro]]\n`https://example.com/code`',
@@ -70,4 +70,38 @@ test('the note renderer suppresses only marked links and replaces deleted previe
   });
   assert.deepEqual(webPreviews,['https://example.com/','https://example.org/a','https://example.net/','https://example.com/#intro']);
 
+});
+
+test('Gantt task links navigate to a numbered task, with or without the task prefix', async () => {
+  const copiedLink = '<[Projects/Plan.md#task-3]>';
+  const { fragment } = parseVaultLink(copiedLink.slice(2, -2));
+  assert.equal(ganttTaskNumber(fragment), 3);
+  assert.equal(ganttTaskNumber('3'), 3);
+  assert.equal(ganttTaskNumber('task-0'), null);
+  assert.equal(ganttTaskNumber('task-9007199254740992'), null);
+  assert.equal(shouldRenderFileLink('Projects/Plan.md#task-3', 'gantt', 'md'), false);
+  assert.equal(shouldRenderFileLink('Projects/Plan.md', 'gantt', 'md'), true);
+  assert.equal(rewriteLinks(copiedLink, [['Projects/Plan.md', 'Build.md']]), '<[Build.md#task-3]>');
+
+  const focused = [], opened = [], toasts = [];
+  const state = { active: 'Note.md', view: {} };
+  const context = vm.createContext({
+    state, parseVaultLink, ganttTaskNumber, prettyName: path => path,
+    resolveVaultFileTarget: path => path === 'Projects/Plan' ? 'Projects/Plan.md' : path,
+    openNote: async file => {
+      opened.push(file);
+      state.active = file;
+      state.view = null;
+      state.structured = { type: 'gantt', focusTask: number => { focused.push(number); return number < 9; } };
+    },
+    showToast: message => toasts.push(message),
+  });
+  const start = main.indexOf('async function navigateWikiTarget(');
+  vm.runInContext(main.slice(start, main.indexOf('function slugForHeading(', start)), context);
+  await context.navigateWikiTarget('Projects/Plan#3');
+  await context.navigateWikiTarget('Projects/Plan.md#task-5');
+  await context.navigateWikiTarget('#task-9');
+  assert.deepEqual(opened, ['Projects/Plan.md']);
+  assert.deepEqual(focused, [3, 5, 9]);
+  assert.deepEqual(toasts, ['No task 9 found in Projects/Plan.md.']);
 });

@@ -7,6 +7,7 @@ import {createRequire} from 'node:module';
 import vm from 'node:vm';
 const require=createRequire(import.meta.url);
 const {collectLinkedContext,limitLinkedContext,linkedContextMessage,contextBudget}=require('../electron/sidebar-context.cjs');
+const {agendaContextMessage}=require('../electron/agenda.cjs');
 const isEditableTextFile=file=>/\.(md|js|csv)$/i.test(file),isSupportedFile=file=>/\.(md|js|csv|pdf|png|mp3)$/i.test(file);
 async function fixture(t){
   const root=await mkdtemp(path.join(os.tmpdir(),'stillnote-sidebar-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -54,9 +55,11 @@ test('all sidebar providers receive linked context as untrusted read-only data',
   for(const provider of ['groq','openai','anthropic']){
     const handlers=new Map(),calls=[];
     const context=vm.createContext({vaultPath:'/vault',linkedContextMessage,ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},readAiProviderKey:async()=>provider+'-key',aiProvider:()=>({id:provider,name:provider,defaultModel:'test-model',chat:async request=>{calls.push(request);return '{"kind":"answer","text":"42","tasks":[]}';}}),AbortController,setTimeout,clearTimeout});
+    Object.assign(context,{agendaContextMessage,contextBudget,vaultDirectoryInstructions:'',noteSyntaxInstructions:'',vaultDirectoryMessage:async()=>({role:'user',content:'Vault directory'})});
     const start=main.indexOf("  ipcMain.handle('ai:chat'");vm.runInContext(main.slice(start,main.indexOf("  ipcMain.handle('vault:list'",start)),context);
-    await handlers.get('ai:chat')(null,{provider,vault:'/vault',notePath:'Current.md',mode:'ask',prompt:'Compare',document:'Current note',linkedContext:{files:[{path:'Linked.md',kind:'text',text:'Revenue: 42'}]}});
+    await handlers.get('ai:chat')(null,{provider,vault:'/vault',notePath:'Current.md',mode:'ask',prompt:'Compare',document:'Current note',linkedContext:{files:[{path:'Linked.md',kind:'text',text:'Revenue: 42'}]},agenda:{now:[{title:'Related task'}],upcoming:[]}});
     const request=calls[0];assert.match(request.messages[0].content,/Linked files are read-only/);assert.match(request.messages.at(-1).content,/Current file: Current.md/);assert.match(request.messages.at(-1).content,/Revenue: 42/);assert.match(request.messages.at(-1).content,/Current note/);
+    assert.match(request.messages.at(-1).content,/Related task/);
     await assert.rejects(handlers.get('ai:chat')(null,{vault:'/different',prompt:'Compare'}),/active vault changed/);assert.equal(calls.length,1);
   }
 });

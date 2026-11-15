@@ -1,0 +1,233 @@
+:root {
+  --control-paper: #fbfbf9;
+  --control-field: #fff;
+  --control-ink: #40413b;
+  --control-muted: #6d6e64;
+  --control-line: #dcdcd4;
+  --control-check-line: #8a8b7f;
+  --control-hover: #eeefeb;
+  --control-accent: #88725f;
+  --control-on-accent: #fff;
+  --control-error-ink: #913e36;
+  --control-error-paper: #f8eeea;
+  --control-error-line: #b16154;
+}
+
+.app-shell[data-theme="sepia"], body:has(.app-shell[data-theme="sepia"]) .canvas-image-dialog {
+  --control-paper: #faf6ed;
+  --control-field: #fbf8f0;
+  --control-ink: #493f34;
+  --control-muted: #706355;
+  --control-line: #e0d5c2;
+  --control-check-line: #978672;
+  --control-hover: #eee5d5;
+  --control-accent: #826347;
+  --control-error-ink: #883d31;
+  --control-error-paper: #f4e5d9;
+  --control-error-line: #a85c4d;
+}
+
+.app-shell[data-theme="dark"], body:has(.app-shell[data-theme="dark"]) .canvas-image-dialog {
+  --control-paper: #292a26;
+  --control-field: #242521;
+  --control-ink: #e0dfd6;
+  --control-muted: #b6b8ad;
+  --control-line: #55574e;
+  --control-check-line: #85877b;
+  --control-hover: #3a3c35;
+  --control-accent: #c39e80;
+  --control-on-accent: #282521;
+  --control-error-ink: #f2b1a5;
+  --control-error-paper: #3c2c28;
+  --control-error-line: #d99487;
+}
+
+.app-shell input.stillnote-checkbox[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--control-check-line);
+  border-radius: 4px;
+  background: var(--control-field);
+  color: var(--control-on-accent);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.app-shell input.stillnote-checkbox:hover:not(:disabled) { border-color: var(--control-accent); }
+.app-shell input.stillnote-checkbox:checked {
+  border-color: var(--control-accent);
+  background: var(--control-accent);
+}
+
+.stillnote-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  width: 4px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.app-shell input.cm-md-task-checkbox[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0 7px 0 1px;
+  vertical-align: -2px;
+}
+
+.app-shell input.cm-task-preview-complete[type="checkbox"] { margin-top: 5px; }
+.app-shell .gantt-predecessors input.stillnote-checkbox[type="checkbox"] { margin-top: 1px; }
+.app-shell input.stillnote-checkbox:disabled { opacity: .55; cursor: default; }
+.app-shell input.stillnote-checkbox:focus-visible,
+.date-control-trigger:focus-visible,
+.date-calendar button:focus-visible {
+  outline: 2px solid var(--control-accent);
+  outline-offset: 2px;
+}
+
+.task-sheet-due-field { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.date-control { position: relative; min-width: 0; }
+.app-shell .date-control > input[type="date"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding-inline-end: 32px;
+  background: var(--control-field);
+  border-color: var(--control-line);
+  color: var(--control-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.date-control > input::-webkit-calendar-picker-indicator { display: none; }
+.app-shell .date-control > input:focus { border-color: var(--control-accent); }
+.date-control-trigger {
+  position: absolute;
+  inset-block: 3px;
+  inset-inline-end: 3px;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--control-muted);
+  cursor: pointer;
+}
+
+.date-control-trigger svg { width: 16px; height: 16px; }
+.date-control-trigger:hover, .date-control-trigger:has(+ :popover-open) {
+  background: var(--control-hover);
+  color: var(--control-ink);
+}
+
+.date-control:has(input:disabled) .date-control-trigger { opacity: .45; cursor: default; }
+.gantt-date-field .date-control:has(input:disabled) .date-control-trigger { visibility: hidden; }
+
+.date-calendar {
+  position: fixed;
+  inset: auto;
+  width: 265px;
+  max-height: calc(100dvh - 16px);
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--control-line);
+  border-radius: 9px;
+  color: var(--control-ink);
+  background: var(--control-paper);
+  box-shadow: 0 12px 36px #1e1b1933;
+  font: 12px 'DM Sans', sans-serif;
+}
+
+.date-calendar-header {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.date-calendar-month { font-weight: 600; }
+.date-calendar [role="row"] { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.date-calendar-weekdays {
+  padding: 7px 0 5px;
+  color: var(--control-muted);
+  text-align: center;
+  font: 10px 'DM Mono', monospace;
+}
+
+.date-calendar button {
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.date-calendar button:hover:not(:disabled) { background: var(--control-hover); }
+.date-calendar button:disabled { opacity: .45; cursor: default; }
+.date-calendar-header button span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(-45deg);
+}
+
+.date-calendar-header [data-previous] span { transform: rotate(135deg); }
+.date-calendar-grid button { width: 100%; height: 28px; font-variant-numeric: tabular-nums; }
+.date-calendar .is-outside-month { color: var(--control-muted); }
+.date-calendar button[aria-current="date"] { border-color: var(--control-accent); font-weight: 600; }
+.date-calendar [aria-selected="true"] button {
+  background: var(--control-accent);
+  color: var(--control-on-accent);
+  font-weight: 600;
+}
+.date-calendar [aria-selected="true"] button:hover { background: var(--control-accent); }
+
+.date-calendar-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--control-line);
+}
+.date-calendar-actions button { padding: 0 8px; font-weight: 600; }
+
+:is(.app-shell, .canvas-image-dialog) :is(input, select, textarea).settings-input[aria-invalid="true"] {
+  border-color: var(--control-error-line);
+}
+
+.form-field-error {
+  display: block;
+  margin: 0;
+  padding: 5px 8px;
+  border-inline-start: 2px solid var(--control-error-line);
+  border-radius: 4px;
+  background: var(--control-error-paper);
+  color: var(--control-error-ink);
+  font: 500 11px/1.45 'DM Sans', sans-serif;
+}
+
+.gantt-editor label + .form-field-error,
+.canvas-image-dialog .form-field-error { margin-top: -6px; }
+
+@media (forced-colors: active) {
+  .app-shell input.stillnote-checkbox[type="checkbox"] { appearance: auto; }
+  .stillnote-checkbox:checked::after { display: none; }
+  .date-calendar [aria-selected="true"] button { border-color: Highlight; }
+}

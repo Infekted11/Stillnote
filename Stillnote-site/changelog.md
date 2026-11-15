@@ -1,6 +1,36 @@
 # Stillnote log
 
+## 2026-11-15
+
+- Changed the display extension for Gantt charts to `.gnt`.
+
+- Made Stillnote start with the file explorer hidden and all folders collapsed.
+
+- Created a printable community service hours log with space for supervisor signatures and page totals.
+
+## 2026-11-14
+
+- Matched date pickers, checkboxes, and inline field errors to Stillnote’s light, sepia, and dark themes.
+
+- Added a Gantt header status for the first task happening now or the next upcoming task in that chart.
+
+- Added a Jump to today button to the Gantt toolbar.
+
+- Applied 2-pixel scrollbar thumbs with transparent tracks across Stillnote on macOS and Windows.
+
+- Replaced native Gantt scrollbars with matching 2-pixel overlay thumbs on macOS and Windows.
+
+- Added year and month labels at the widest Gantt zoom and reduced the scrollbar thumbs to 3 pixels with tracks that blend into the chart.
+
+- Added AI and Agenda tabs to Home, moved recent chats to the left, and added task schedules, elapsed Gantt progress, and expandable task links. Home AI reads the agenda, and sidebar AI gets relevant entries.
+
+- Simplified the Gantt controls and calendar, switched to 24-hour time, and added copyable links to individual tasks by chart and task ID.
+
+- Reworked the Gantt chart with a resizable task list, calendar grid, collapsible groups, progress bars, milestones, dependency arrows, task search, and zoom to fit.
+
 ## 2026-11-13
+
+- Checked Stillnote’s macOS release against the official Homebrew cask requirements. The current release needs Apple Developer ID signing and notarization to pass Gatekeeper.
 
 - Automated Homebrew cask updates using the latest stable GitHub release and its macOS installer checksum.
 

@@ -5,6 +5,8 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const {OPENAI_BASE_URL,DEFAULT_OPENAI_MODEL,HOME_RESPONSE_SCHEMA,NOTE_RESPONSE_SCHEMA,listOpenAiModels,openAiChat,responseText}=createRequire(import.meta.url)('../electron/openai-client.cjs');
 const {aiProvider}=createRequire(import.meta.url)('../electron/ai-providers.cjs');
+const {agendaContextMessage}=createRequire(import.meta.url)('../electron/agenda.cjs');
+const {contextBudget}=createRequire(import.meta.url)('../electron/sidebar-context.cjs');
 const response=(body,status=200)=>({ok:status<400,status,json:async()=>body});
 const output=text=>({status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text}]}]});
 test('OpenAI model discovery uses project authentication and filters unsupported modalities',async()=>{
@@ -73,9 +75,11 @@ test('key settings save and clear only the OpenAI credential',async()=>{
 test('Home and note assistants both route to OpenAI, with their respective schemas',async()=>{
   const handlers=new Map(),calls=[];
   const context=vm.createContext({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},vaultPath:'/vault',readAiProviderKey:async()=> 'openai-test',HOME_RESPONSE_SCHEMA,AbortController,setTimeout,clearTimeout,homeModelRequests:new Map(),homeSystemPrompt:()=> 'Home JSON system',aiProvider:(id)=>({...aiProvider(id),chat:async request=>{calls.push(request);return request.schema===HOME_RESPONSE_SCHEMA?'{"kind":"done","text":"Done","plan":[],"actions":[]}':'{"kind":"answer","text":"Answer","tasks":[]}';}})});
+  Object.assign(context,{agendaContextMessage,contextBudget,vaultDirectoryInstructions:'',noteSyntaxInstructions:'',vaultDirectoryMessage:async()=>({role:'user',content:'Vault directory'})});
   const start=main.indexOf("  ipcMain.handle('home:step'");vm.runInContext(main.slice(start,main.indexOf("  ipcMain.handle('vault:list'",start)),context);
-  const home=await handlers.get('home:step')(null,{vault:'/vault',mode:'work',requestId:'test',messages:[{role:'user',content:'Make a plan'}]});assert.equal(home.kind,'done');
+  const home=await handlers.get('home:step')(null,{vault:'/vault',mode:'work',requestId:'test',messages:[{role:'user',content:'Make a plan'}],agenda:{now:[{title:'Current task'}],upcoming:[{title:'Future task'}]}});assert.equal(home.kind,'done');
   const note=await handlers.get('ai:chat')(null,{mode:'ask',document:'Note content',prompt:'Summarize'});assert.equal(note.text,'Answer');
   assert.equal(calls.length,2);assert(calls.every(call=>call.apiKey==='openai-test'&&call.model===DEFAULT_OPENAI_MODEL));
   assert.equal(calls[0].schema,HOME_RESPONSE_SCHEMA);assert.equal(calls[1].schema,undefined);
+  assert(calls[0].messages.some(message=>message.content.includes('Current task')&&message.content.includes('Future task')));
 });

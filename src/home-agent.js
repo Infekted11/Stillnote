@@ -1,4 +1,4 @@
-export const HOME_READ_TOOLS = new Set(['list_files','search_files','read_file','file_relations','analyze_data','list_task_lists','list_tasks']);
+export const HOME_READ_TOOLS = new Set(['list_files','search_files','read_file','file_relations','analyze_data','list_task_lists','list_tasks','read_agenda']);
 export function compactHomeContext(messages, limit = 170000) {
   if (!messages.length) return [];
   const clip = message => ({role:message.role,content:message.content.length > 50000 ? message.content.slice(0,50000)+'\n[Content truncated; reread the source if needed.]' : message.content});

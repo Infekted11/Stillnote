@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('stillnote', {
   clearDesmosKey: () => ipcRenderer.invoke('desmos:key-clear'),
   listAiModels: (provider) => ipcRenderer.invoke('ai:models',provider),
   homeStep: (request) => ipcRenderer.invoke('home:step', request),
+  readAgenda: (vault, draft) => ipcRenderer.invoke('agenda:read', vault, draft),
+  agendaPage: (request) => ipcRenderer.invoke('agenda:page', request),
   homeTool: (request) => ipcRenderer.invoke('home:tool', request),
   cancelHome: (requestId) => ipcRenderer.invoke('home:cancel', requestId),
   askAi: (request) => ipcRenderer.invoke('ai:chat', request),

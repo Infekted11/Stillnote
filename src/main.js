@@ -1,11 +1,14 @@
 import { renderGanttEditor, renderGanttTimeline } from './gantt.js';
+import { addDatePickers, styleFormValidation } from './form-controls.js';
 import stillnoteLogo from '../Stillnote-site/logo.svg';
 import noteSyntaxGuide from '../electron/note-syntax.html?raw';
-import { parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
+import { ganttTaskNumber, parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
 import { createGraphPreview } from './graph-preview.js';
 import { findReplaceExtension } from './find-replace.js';
 import { fileDisplayName, fileDisplayParts } from './file-labels.js';
 import { runHomeAgent } from './home-agent.js';
+import { agendaSnapshot, collectAgenda, relevantAgenda } from './agenda.js';
+import { createAgendaView } from './agenda-view.js';
 import { preparePdfContent } from './pdf-content.js';
 import { createMediaPlayer, disposeMediaPlayers } from './media-player.js';
 import { attachMediaResize } from './media-resize.js';
@@ -28,6 +31,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
+import './form-controls.css';
 import './window-controls.css';
 
 const motionDuration = (milliseconds) => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 1 : milliseconds;
@@ -176,6 +180,8 @@ const svgIcon = (paths, className = '') => `<svg class="app-icon ${className}" v
 const icons = {
   panel: svgIcon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/>'),
   home: svgIcon('<path d="m3.5 10 8.5-7 8.5 7v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/>'),
+  ganttToday: svgIcon('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 4v4m8-4v4M4 10h16"/><path d="M12 14v2m-1-1h2"/>'),
+  fit: svgIcon('<path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5M4 4l5 5m11-5-5 5M4 20l5-5m11 5-5-5"/>'),
   zoomIn: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6m-3-3v6"/>'),
   zoomOut: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6"/>'),
   search: svgIcon('<circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/>'),
@@ -220,6 +226,8 @@ const icons = {
   code: svgIcon('<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>'),
   geometry: svgIcon('<path d="m4 19 8-15 8 15H4zM8 19a4 4 0 0 0-2-4"/>'),
   calculator3d: svgIcon('<path d="m12 3 9 5v9l-9 5-9-5V8zM3 8l9 5 9-5M12 13v9M12 3v10"/>'),
+  ganttEdit: svgIcon('<path d="M4 20h4L20 8l-4-4L4 16v4ZM14 6l4 4"/>'),
+  ganttUnlink: svgIcon('<path d="m4 4 16 16M10 16l-2 2a3.5 3.5 0 0 1-5-5l2-2m9-3 2-2a3.5 3.5 0 0 1 5 5l-2 2"/>'),
   gantt: svgIcon('<path d="M4 4v16h16M7 7h7M10 11h9M7 15h6"/>'),
   spreadsheet: svgIcon('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M4 14h16M10 9v11M15 9v11"/>'),
   graph: svgIcon('<path d="M4 20V4M4 20h16"/><path d="M7 16c2-1 2-7 5-7s3 5 6 1"/>'),
@@ -251,12 +259,12 @@ app.innerHTML = `
   <div class="app-shell">
     <header class="topbar${isWindows ? ' topbar-windows' : ''}">
       <div class="traffic-space"></div>
-      <button class="icon-button sidebar-toggle" aria-label="Toggle sidebar">${icons.panel}</button>
+      <button class="icon-button sidebar-toggle" aria-label="Toggle file explorer" aria-controls="file-explorer" aria-expanded="true">${icons.panel}</button>
       <div class="topbar-brand"><img src="${stillnoteLogo}" width="26" height="26" alt=""><span>Stillnote</span></div>
       <div class="topbar-actions"><button class="icon-button home-trigger" id="home-button" title="Home" aria-label="Home">${icons.home}</button><div class="topbar-search" id="topbar-search"><button class="icon-button search-trigger" title="Search notes (⌘⇧F / Ctrl+Shift+F)" aria-label="Search notes" aria-expanded="false">${icons.search}</button><input class="topbar-search-input" id="search-input" placeholder="Search notes…" autocomplete="off" aria-label="Search notes"><div class="topbar-search-results" id="search-results"></div></div><button class="icon-button assistant-trigger" id="assistant-toggle" title="Open assistant">${icons.assistant}</button></div>
     </header>
     <div class="workspace">
-      <aside class="sidebar">
+      <aside class="sidebar" id="file-explorer">
         <div class="explorer-toolbar"><button class="explorer-action" id="new-folder" title="New folder">${icons.folderPlus}<span>Folder</span></button><button class="explorer-action" id="new-file" title="Create a file">${icons.filePlus}<span>File ▾</span></button><button class="explorer-tree-action" id="expand-folders" title="Expand all folders" aria-label="Expand all folders">${icons.expandAll}</button><button class="explorer-tree-action" id="collapse-folders" title="Collapse all folders" aria-label="Collapse all folders">${icons.collapseAll}</button><button class="explorer-refresh" id="refresh-notes" title="Refresh explorer">${icons.refresh}</button></div>
         <div class="note-list" id="note-list"></div>
         <section class="sidebar-linked-files" hidden aria-label="Linked files"></section>
@@ -395,7 +403,7 @@ class HorizontalRuleWidget extends WidgetType {
 class TaskCheckboxWidget extends WidgetType {
   constructor(checked, from, to) { super(); this.checked = checked; this.from = from; this.to = to; }
   toDOM(view) {
-    const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'cm-md-task-checkbox'; input.checked = this.checked; input.setAttribute('aria-label', this.checked ? 'Mark task incomplete' : 'Mark task complete');
+    const input = document.createElement('input'); input.type = 'checkbox'; input.className = 'stillnote-checkbox cm-md-task-checkbox'; input.checked = this.checked; input.setAttribute('aria-label', this.checked ? 'Mark task incomplete' : 'Mark task complete');
     input.addEventListener('mousedown', (event) => event.preventDefault());
     input.addEventListener('change', () => view.dispatch({ changes: { from: this.from, to: this.to, insert: input.checked ? '[x]' : '[ ]' } }));
     return input;
@@ -709,7 +717,7 @@ class TaskReferenceWidget extends WidgetType {
       if (!preview.isConnected || preview.__disposed) return;
       if (task.status === 'completed') { replaceTaskReferenceInEditor(view, this.source, this.from, this.to, ''); return; }
       preview.className = 'cm-task-preview'; preview.replaceChildren();
-      const complete = document.createElement('input'); complete.type = 'checkbox'; complete.className = 'cm-task-preview-complete'; complete.setAttribute('aria-label', `Complete ${task.title}`);
+      const complete = document.createElement('input'); complete.type = 'checkbox'; complete.className = 'stillnote-checkbox cm-task-preview-complete'; complete.setAttribute('aria-label', `Complete ${task.title}`);
       const fields = document.createElement('span'); fields.className = 'cm-task-preview-fields';
       const title = document.createElement('input'); title.className = 'cm-task-preview-title'; title.value = task.title || this.taskName; title.maxLength = 1024; title.setAttribute('aria-label', 'Task title');
       const backlinkLines = String(task.notes || '').split(/\r?\n/).filter((line) => /^Stillnote note:\s+stillnote:\/\/open\?/i.test(line.trim()));
@@ -857,7 +865,7 @@ function makeLiveMarkdownDecorations(view) {
           const widget = new WebPreviewWidget(url, from);
           decorations.push(Decoration.replace({ widget }).range(from, to));
         } else if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, wikiMatch[0], endCell, previewSize, vaultRenderRevision) }).range(from, to));
-        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${!url && isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: !url && isBrokenVaultLink(reference) ? 'Linked file not found' : target } }).range(from, to));
+        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${!url && isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: !url && isBrokenVaultLink(reference) ? 'Linked file not found' : fullTarget } }).range(from, to));
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
       const highlightMatcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
@@ -1486,13 +1494,13 @@ function setExplorerFoldersExpanded(expanded) {
   visit(state.tree); renderFiles();
 }
 async function setVault(vault) {
-  if (state.vault?.path !== vault.path) stopHomeRun();
+  if (state.vault?.path !== vault.path) { stopHomeRun(); stopHomeAgenda(); }
   if (state.vault?.path && state.vault.path !== vault.path) { state.view?.destroy(); state.view = null; state.active = null; $('#editor-content').replaceChildren(); }
   state.vault = vault; state.files = vault.files; state.tree = vault.tree; state.collapsed.clear();
   $('.vault-name').textContent = vault.name; $('.vault-mark').textContent = vault.name.charAt(0).toUpperCase();
   $('#status-vault').textContent = vault.name;
   setSettingsHealth('directory', true, 'Folder open');
-  renderFiles();
+  setExplorerFoldersExpanded(false);
   await loadCustomDictionaryForVault().catch((error) => {
     customDictionary = new Set(); renderCustomDictionary();
     console.warn('Could not load the personal dictionary for this vault:', error.message);
@@ -1585,6 +1593,86 @@ function renderHomeHistory() {
     button.addEventListener('click', () => startHomeSession(chat)); history.append(button);
   }
 }
+let homeAgenda = null;
+let homeAgendaTimer;
+async function readAgenda(vault, draft) {
+  if (!vault) return { entries: [], googleStatus: 'disconnected' };
+  return collectAgenda(await window.stillnote.readAgenda(vault, draft), decodeStructured);
+}
+function stopHomeAgenda() {
+  clearInterval(homeAgendaTimer);
+  homeAgenda = null;
+}
+async function refreshHomeAgenda() {
+  const agenda = homeAgenda;
+  if (!agenda || agenda.panel.hidden) return;
+  if (agenda.loading) { agenda.refreshPending = true; return; }
+  agenda.loading = true;
+  const vault = state.vault?.path;
+  try {
+    const data = await readAgenda(vault);
+    if (homeAgenda !== agenda || state.vault?.path !== vault) return;
+    agenda.data = data;
+    agenda.error = '';
+  } catch {
+    agenda.error = 'Could not load the agenda.';
+  } finally {
+    agenda.loading = false;
+    if (homeAgenda === agenda && !agenda.panel.hidden && state.vault?.path === vault) {
+      agenda.render(agendaSnapshot(agenda.data), agenda.error);
+      if (agenda.refreshPending) {
+        agenda.refreshPending = false;
+        void refreshHomeAgenda();
+      }
+    }
+  }
+}
+function setHomeTab(tab) {
+  const ai = tab === 'ai';
+  $('#home-ai-panel').hidden = !ai;
+  $('#home-history-toggle').hidden = !ai;
+  homeAgenda.panel.hidden = ai;
+  for (const button of document.querySelectorAll('[data-home-tab]')) {
+    const selected = button.dataset.homeTab === tab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  clearInterval(homeAgendaTimer);
+  if (ai) return;
+  homeAgenda.render(agendaSnapshot(homeAgenda.data), homeAgenda.error);
+  void refreshHomeAgenda();
+  let ticks = 0;
+  homeAgendaTimer = setInterval(() => {
+    homeAgenda.render(agendaSnapshot(homeAgenda.data), homeAgenda.error);
+    if (++ticks % 8 === 0) void refreshHomeAgenda();
+  }, 15000);
+}
+function setupHomeTabs() {
+  const panel = $('#home-agenda-panel');
+  homeAgenda = {
+    panel,
+    data: { entries: [], googleStatus: 'disconnected' },
+    error: 'Loading agenda…',
+    render: createAgendaView(panel, {
+      icons, fileLabel: fileLabelPath,
+      openLink: ({ file, fragment, url }) => {
+        if (file) void navigateWikiTarget(file + (fragment ? '#' + fragment : ''));
+        else void window.stillnote.openWebUrl(url).catch(error => showToast(error.message));
+      },
+    }),
+  };
+  const tabs = [...document.querySelectorAll('[data-home-tab]')];
+  tabs.forEach(button => {
+    button.addEventListener('click', () => setHomeTab(button.dataset.homeTab));
+    button.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs.at(-1) : tabs.find(tab => tab !== button);
+      setHomeTab(next.dataset.homeTab);
+      next.focus();
+    });
+  });
+}
 async function openHome() {
   if (state.home && state.homeRun) return;
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
@@ -1596,11 +1684,49 @@ async function openHome() {
   state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
   state.structured = null; updateAssistantModeCopy(); state.active = null; state.home = true; state.dirty = false;
   state.assistantOpen = false; $('.workspace').classList.remove('assistant-open');
-  $('#editor-content').innerHTML = `<section class="home-view"><div class="home-topline"><button type="button" class="home-history-toggle" id="home-history-toggle" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button></div><div class="home-chat-layout"><aside class="home-history"><div class="home-history-top"><div class="home-history-label">RECENT CHATS</div><button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button></div><div id="home-history"></div></aside><div class="home-chat-main"><div class="home-transcript" id="home-transcript"></div><div class="home-mode-toggle" role="group" aria-label="Home assistant mode"><button type="button" data-home-mode="ask" aria-pressed="true">Ask</button><button type="button" data-home-mode="work" aria-pressed="false">Work</button></div><form class="home-composer" id="home-form"><textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea><button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button></form><button type="button" class="home-stop" id="home-stop" hidden>Stop</button><div class="home-footnote" id="home-mode-note"></div></div></div></section>`;
+  stopHomeAgenda();
+  $('#editor-content').innerHTML = `
+    <section class="home-view">
+      <div class="home-topline">
+        <button type="button" class="home-history-toggle" id="home-history-toggle" aria-controls="home-chat-history" aria-label="Show recent chats" aria-expanded="false" title="Recent chats">${icons.menu}</button>
+        <div class="home-tabs" role="tablist" aria-label="Home">
+          <button type="button" id="home-ai-tab" role="tab" data-home-tab="ai" aria-controls="home-ai-panel" aria-selected="true">AI</button>
+          <button type="button" id="home-agenda-tab" role="tab" data-home-tab="agenda" aria-controls="home-agenda-panel" aria-selected="false" tabindex="-1">Agenda</button>
+        </div>
+      </div>
+      <div class="home-chat-layout" id="home-ai-panel" role="tabpanel" aria-labelledby="home-ai-tab">
+        <aside class="home-history" id="home-chat-history">
+          <div class="home-history-top"><div class="home-history-label">RECENT CHATS</div>
+            <button type="button" id="home-new-chat" aria-label="New conversation" title="New conversation">${icons.filePlus}</button>
+          </div>
+          <div id="home-history"></div>
+        </aside>
+        <div class="home-chat-main">
+          <div class="home-transcript" id="home-transcript"></div>
+          <div class="home-mode-toggle" role="group" aria-label="Home assistant mode">
+            <button type="button" data-home-mode="ask" aria-pressed="true">Ask</button>
+            <button type="button" data-home-mode="work" aria-pressed="false">Work</button>
+          </div>
+          <form class="home-composer" id="home-form">
+            <textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea>
+            <button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button>
+          </form>
+          <button type="button" class="home-stop" id="home-stop" hidden>Stop</button>
+          <div class="home-footnote" id="home-mode-note"></div>
+        </div>
+      </div>
+      <div class="home-agenda" id="home-agenda-panel" role="tabpanel" aria-labelledby="home-agenda-tab" tabindex="0" hidden>
+        <p class="agenda-status" role="status">Loading agenda…</p>
+        <section aria-labelledby="agenda-now"><h2 id="agenda-now">Now</h2><ul class="agenda-list" data-agenda-now></ul></section>
+        <section aria-labelledby="agenda-upcoming"><h2 id="agenda-upcoming">Upcoming</h2><ul class="agenda-list" data-agenda-upcoming></ul></section>
+      </div>
+    </section>`;
+  setupHomeTabs();
   $('#note-editor').hidden = false; $('#welcome').hidden = true;
   $('#breadcrumbs').innerHTML = `<span>${escapeHtml(state.vault?.name || 'Workspace')}</span><span class="crumb-slash">/</span><strong>Home</strong>`;
   $('#save-state').textContent = '';
   $('#word-count').textContent = ''; $('#assistant-toggle').disabled = true; $('#assistant-toggle').setAttribute('aria-disabled', 'true'); $('#assistant-toggle').setAttribute('aria-pressed', 'false');
+  $('#home-button').setAttribute('aria-pressed', 'true');
   await window.stillnote.rememberNote(null).catch(() => {}); renderFiles();
   if (state.homeRun) { renderHomeTranscript(); renderHomeHistory(); updateHomeMode(); } else startHomeSession();
   $('#home-form').addEventListener('submit', submitHomeMessage);
@@ -1678,10 +1804,13 @@ async function submitHomeMessage(event) {
     if(session.messages.filter(item=>item.role==='user').length===1)session.title=prompt.slice(0,58);
     input.value='';renderHomeTranscript();persistHomeChat();
     progress=document.createElement('section');progress.className='home-run-progress';progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');$('#home-transcript').append(progress);
+    const agenda = await readAgenda(vault).then(data => agendaSnapshot(data), () => ({ now: [], upcoming: [], googleStatus: 'agenda_unavailable' }));
     const result=await runHomeAgent({mode,prompt,history,context:session.aiContext?.[mode]||[],
       stopped:()=>run.stopped||state.vault?.path!==vault,
-      modelStep:request=>window.stillnote.homeStep({...request,provider,model,vault,requestId:run.id}),
-      tool:(name,args)=>homeReadTool(name,args,mode,vault),
+      modelStep:request=>window.stillnote.homeStep({...request,provider,model,vault,requestId:run.id,agenda}),
+      tool:(name,args)=>name === 'read_agenda'
+        ? window.stillnote.agendaPage({vault, agenda, provider, offset:args.offset})
+        : homeReadTool(name,args,mode,vault),
       onProgress:({label,plan,events})=>{
         if(!progress.isConnected)return; progress.replaceChildren();
         const status=document.createElement('strong');status.textContent=label;progress.append(status);
@@ -1691,7 +1820,7 @@ async function submitHomeMessage(event) {
     });
     session.aiContext ||= {};session.aiContext[mode]=result.context;
     session.messages.push({role:'assistant',content:result.text,kind:result.kind,events:result.events,mode});
-    if(state.vault?.path===vault){[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();}
+    if(state.vault?.path===vault){[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();if(mode === 'work') void refreshHomeAgenda();}
     if(state.homeSession===session){persistHomeChat();if(state.home){renderHomeTranscript();renderHomeHistory();}}
   } catch(error) {
     session.messages.push({role:'assistant',content:error.message||'The request could not finish.',kind:'error'});
@@ -1699,7 +1828,7 @@ async function submitHomeMessage(event) {
   } finally {
     progress?.remove();if(state.homeRun===run)state.homeRun=null;
     if($('#home-stop')){$('#home-stop').disabled=false;$('#home-stop').textContent='Stop';}
-    updateHomeMode();if(state.home)$('#home-input')?.focus();
+    updateHomeMode();if(state.home && !$('#home-ai-panel')?.hidden)$('#home-input')?.focus();
   }
 }
 function bytesFromDataUrl(dataUrl) {
@@ -1853,6 +1982,7 @@ async function renderAssetPreview(file, navigationId) {
 }
 async function openNote(file) {
   stopHomeRun();
+  stopHomeAgenda();
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   if (meetingStarting) cancelMeetingRecording();
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
@@ -1918,12 +2048,13 @@ async function openNote(file) {
       cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
       const changedNote = state.active !== file;
       state.active = file;
+      $('#note-editor').hidden = false;
       renderStructured(structuredFile.type, structuredFile.data, file, titleLine);
       updateAssistantModeCopy();
       state.dirty = false; $('#save-state').textContent = 'Saved'; updateWordCount(contents);
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active note:', error));
       if (changedNote) { state.chatHistory = []; state.lastTitleValidationMessage = null; renderAssistantWelcome(); }
-      $('#welcome').hidden = true; $('#note-editor').hidden = false; updateFileLocation(file); renderFiles(); return;
+      $('#welcome').hidden = true; updateFileLocation(file); renderFiles(); return;
     }
     const theme = EditorView.theme({
       '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '16px', height: '100%' },
@@ -2061,15 +2192,17 @@ function structuredLink(target) {
   void navigateWikiTarget(String(target || '').split('|')[0].trim());
 }
 async function navigateWikiTarget(target) {
-  const clean = parseVaultLink(target).target;
-  const hashIndex = clean.indexOf('#');
-  const fileTarget = hashIndex < 0 ? clean : clean.slice(0, hashIndex).trim();
-  const fragment = hashIndex < 0 ? '' : clean.slice(hashIndex + 1).trim();
+  const { target: clean, path: fileTarget, fragment } = parseVaultLink(target);
   const file = fileTarget ? resolveVaultFileTarget(fileTarget) : state.active;
   if (!file) { showToast(`No file found for “${fileTarget || clean}”.`); return; }
-  // Keep the existing editor instance for in-note anchors. Reopening the same
-  // document destroys and remounts CodeMirror, which can reset its scroll state.
-  if (file !== state.active || !state.view) await openNote(file);
+  const currentGantt = state.active === file && state.structured?.type === 'gantt';
+  // Keep the current editor mounted for same-file jumps.
+  if (file !== state.active || (!state.view && !currentGantt)) await openNote(file);
+  if (fragment && state.active === file && state.structured?.type === 'gantt') {
+    const number = ganttTaskNumber(fragment);
+    if (number !== null && !state.structured.focusTask?.(number)) showToast(`No task ${number} found in ${prettyName(file)}.`);
+    return;
+  }
   if (fragment && state.view && state.active === file) {
     const position = findNoteAnchor(state.view, fragment);
     if (position == null) showToast(`No heading or tag “${fragment}” found in ${prettyName(file)}.`);
@@ -2229,6 +2362,9 @@ async function applyStructuredHistory(direction){
   clearTimeout(structured.historyTimer);structured.historyPending=false;
   to.push(JSON.stringify({title:structured.title||prettyName(state.active),data:structured.data}));
   const snapshot=from.pop();const restored=JSON.parse(snapshot);const type=structured.type,history={undoStack:structured.undoStack,redoStack:structured.redoStack};
+  if (type === 'gantt') {
+    restored.data.lastTaskNumber = Math.max(restored.data.lastTaskNumber ?? 0, structured.data.lastTaskNumber ?? 0);
+  }
   structured.data=restored.data;structured.title=restored.title;structured.historySnapshot=snapshot;
   let active=state.active;
   if(restored.title&&restored.title!==prettyName(active)){
@@ -2236,7 +2372,7 @@ async function applyStructuredHistory(direction){
     catch(error){showToast(`Could not restore the file name: ${error.message}`);}
   }
   renderStructured(type,restored.data,active,restored.title||prettyName(active));
-  Object.assign(state.structured,history,{historySnapshot:snapshot,historyPending:false});
+  Object.assign(state.structured,history,{historySnapshot:type === 'gantt' ? state.structured.historySnapshot : snapshot,historyPending:false});
   state.dirty=true;$('#save-state').textContent='Unsaved changes';clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveActive,250);updateStructuredHistoryButtons();
 }
 function renderStructured(type, rawData, file, title) {
@@ -2287,7 +2423,20 @@ function renderStructured(type, rawData, file, title) {
   host.append(root);
   if (type === 'canvas') renderCanvas(root, data);
   else if (type === 'graph') void renderGraph(root, data);
-  else if (type === 'gantt') renderGanttEditor(root, data, { icons, tasksApi: window.stillnote, onChange: setStructuredDirty, onHistory: applyStructuredHistory });
+  else if (type === 'gantt') {
+    const chart = state.structured;
+    const gantt = renderGanttEditor(root, data, {
+      icons, tasksApi: window.stillnote, onChange: setStructuredDirty, onHistory: applyStructuredHistory,
+      copyTaskLink: async number => {
+        const pendingRename = state.pendingStructuredRename;
+        if (pendingRename) await pendingRename;
+        if (state.structured !== chart) throw new Error('The chart is no longer open.');
+        await navigator.clipboard.writeText(`<[${state.active}#task-${number}]>`);
+      },
+    });
+    Object.assign(chart, gantt);
+    chart.historySnapshot = JSON.stringify({ title, data });
+  }
   else if (type === 'tasks') void renderTaskSheet(root, data);
   else if (type === 'geometry') renderGeometry(root, data);
   else if (type === 'calculator3d') renderCalculator3d(root, data);
@@ -2461,6 +2610,9 @@ function openCanvasImagePicker(insert) {
   dialog.setAttribute('aria-labelledby', 'canvas-image-title');
   dialog.innerHTML = `<form><header><h2 id="canvas-image-title">Add image</h2><button type="button" class="icon-button" data-close aria-label="Close">${icons.close}</button></header><label for="canvas-image-link">Image link</label><input class="settings-input" id="canvas-image-link" placeholder="Vault path, Stillnote link, or https://…" required autocomplete="off"><p class="canvas-image-hint">Vault links follow file and folder renames and moves. A saved copy keeps the image visible if its source is deleted.</p><label for="canvas-image-filter">Images in your vault</label><input class="settings-input" id="canvas-image-filter" type="search" placeholder="Filter images…"><div class="canvas-image-list"></div><p class="canvas-image-error" role="alert"></p><footer><button type="button" class="secondary-button" data-close>Cancel</button><button class="primary-button" type="submit">Add image</button></footer></form>`;
   const input = dialog.querySelector('#canvas-image-link'), filter = dialog.querySelector('#canvas-image-filter'), list = dialog.querySelector('.canvas-image-list');
+  const form = dialog.querySelector('form');
+  input.dataset.requiredMessage = 'Enter an image link or choose an image from your vault.';
+  styleFormValidation(form);
   const files = explorerFilePaths().filter(isCanvasImageFile);
   const render = () => {
     list.replaceChildren();
@@ -2468,7 +2620,7 @@ function openCanvasImagePicker(insert) {
     for (const file of matches) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'canvas-image-option';
       button.textContent = file; button.title = file;
-      button.addEventListener('click', () => { input.value = file; input.focus(); }); list.append(button);
+      button.addEventListener('click', () => { input.value = file; input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); }); list.append(button);
     }
     if (!matches.length) { const empty = document.createElement('p'); empty.textContent = files.length ? 'No matching images.' : 'No images found. Add images to your vault to choose them here.'; list.append(empty); }
   };
@@ -2476,7 +2628,7 @@ function openCanvasImagePicker(insert) {
   dialog.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => dialog.close()));
   dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
   dialog.addEventListener('close', () => { dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus(); });
-  dialog.querySelector('form').addEventListener('submit', async event => {
+  form.addEventListener('submit', async event => {
     event.preventDefault(); const submit = dialog.querySelector('[type="submit"]'), error = dialog.querySelector('.canvas-image-error');
     submit.disabled = true; error.textContent = '';
     try { await insert(input.value.trim(), () => dialog.open); if (dialog.open) dialog.close(); }
@@ -2993,12 +3145,13 @@ async function renderTaskSheet(root, data) {
       const index = data.tasks.indexOf(task);
       const depth = task.parent && taskMap.has(task.parent) ? 1 : 0;
       const due = task.due ? String(task.due).slice(0, 10) : '';
-      return `<article class="task-sheet-card${task.status === 'completed' ? ' is-complete' : ''}${depth ? ' is-subtask' : ''}${task.starred ? ' is-starred' : ''}" data-index="${index}"><div class="task-sheet-row"><input class="task-sheet-complete" type="checkbox" aria-label="Mark ${escapeHtml(task.title)} complete" ${task.status === 'completed' ? 'checked' : ''}><input class="task-sheet-title" type="text" maxlength="1024" aria-label="Task title" value="${escapeHtml(task.title)}"><button class="task-sheet-star${task.starred ? ' is-starred' : ''}" type="button" aria-label="${task.starred ? 'Unstar' : 'Star'} task" title="${task.starred ? 'Unstar task' : 'Star task'}">${icons.star}</button><button class="icon-button task-sheet-delete" type="button" aria-label="Delete ${escapeHtml(task.title)}" title="Delete task">${icons.trash}</button></div><div class="task-sheet-fields"><label>Due date<input class="task-sheet-due" type="date" value="${escapeHtml(due)}" aria-label="Due date"></label><label class="task-sheet-details-label">Details<textarea class="task-sheet-details" rows="2" maxlength="8192" placeholder="Add details…" aria-label="Task details">${escapeHtml(task.notes || '')}</textarea></label></div>${depth ? '' : `<form class="task-sheet-subtask"><input class="settings-input" type="text" maxlength="1024" placeholder="Add a subtask…" aria-label="New subtask"><button class="secondary-button" type="submit">Add subtask</button></form>`}</article>`;
+      return `<article class="task-sheet-card${task.status === 'completed' ? ' is-complete' : ''}${depth ? ' is-subtask' : ''}${task.starred ? ' is-starred' : ''}" data-index="${index}"><div class="task-sheet-row"><input class="stillnote-checkbox task-sheet-complete" type="checkbox" aria-label="Mark ${escapeHtml(task.title)} complete" ${task.status === 'completed' ? 'checked' : ''}><input class="task-sheet-title" type="text" maxlength="1024" aria-label="Task title" value="${escapeHtml(task.title)}"><button class="task-sheet-star${task.starred ? ' is-starred' : ''}" type="button" aria-label="${task.starred ? 'Unstar' : 'Star'} task" title="${task.starred ? 'Unstar task' : 'Star task'}">${icons.star}</button><button class="icon-button task-sheet-delete" type="button" aria-label="Delete ${escapeHtml(task.title)}" title="Delete task">${icons.trash}</button></div><div class="task-sheet-fields"><div class="task-sheet-due-field"><label for="task-sheet-due-${index}">Due date</label><input id="task-sheet-due-${index}" class="task-sheet-due" type="date" value="${escapeHtml(due)}"></div><label class="task-sheet-details-label">Details<textarea class="task-sheet-details" rows="2" maxlength="8192" placeholder="Add details…" aria-label="Task details">${escapeHtml(task.notes || '')}</textarea></label></div>${depth ? '' : `<form class="task-sheet-subtask"><input class="settings-input" type="text" maxlength="1024" placeholder="Add a subtask…" aria-label="New subtask"><button class="secondary-button" type="submit">Add subtask</button></form>`}</article>`;
     }).join('');
     const active = data.tasks.filter((task) => task.status !== 'completed');
     const completed = data.tasks.filter((task) => task.status === 'completed');
     list.innerHTML = `${renderRows(active)}${completed.length ? `<details class="task-sheet-completed"><summary>Completed <span>${completed.length}</span></summary><div class="task-sheet-completed-list">${renderRows(completed)}</div></details>` : ''}`;
     if (!active.length && !completed.length) list.innerHTML = '<div class="task-sheet-empty">No tasks in this list yet.</div>';
+    addDatePickers(list, icons.ganttToday);
   };
   const sync = async () => {
     if (syncing || !isCurrent()) return;
@@ -3373,9 +3526,11 @@ async function refreshExplorer({ paths = [], forceLinks = false } = {}) {
   if (revision === vaultRenderRevision && (forceLinks || paths.some(path => !path || path !== state.active))) invalidateVaultLinkRendering();
 }
 window.stillnote.onVaultChanged?.(change => {
-  if (change.vault === state.vault?.path) void refreshExplorer(change).catch(error => console.warn('Could not refresh vault:', error.message));
+  if (change.vault === state.vault?.path) {
+    void refreshExplorer(change).then(refreshHomeAgenda).catch(error => console.warn('Could not refresh vault:', error.message));
+  }
 });
-window.addEventListener('focus', () => { void refreshExplorer({forceLinks:true}).catch(() => {}); });
+window.addEventListener('focus', () => { void refreshExplorer({forceLinks:true}).then(refreshHomeAgenda).catch(() => {}); });
 function canDropOnFolder(item, destinationPath) {
   if (item?.items) return item.items.length > 0 && item.items.every((entry) => canDropOnFolder(entry, destinationPath));
   if (!item || item.path === destinationPath) return false;
@@ -4207,9 +4362,16 @@ async function submitAssistantMessage(event) {
     const current = () => state.active === notePath && state.vault?.path === vault && state.navigationId === navigation;
     if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
     loading.textContent = 'Reading linked files…';
-    const linkedContext = await loadLinkedAssistantContext({ provider, vault, notePath, document: documentText }, current);
+    const [linkedContext, agenda] = await Promise.all([
+      loadLinkedAssistantContext({ provider, vault, notePath, document: documentText }, current),
+      readAgenda(vault, { file: notePath, contents: documentText }).then(data => agendaSnapshot(data), () => null),
+    ]);
+    if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
+    const scopedAgenda = agenda && relevantAgenda(agenda, {
+      file: notePath, prompt, document: documentText, paths: linkedContext.files.map(file => file.path),
+    });
     loading.textContent = 'Thinking…';
-    const result = await window.stillnote.askAi({ provider, vault, notePath, mode, model, noteName: prettyName(notePath), documentType, document: documentText, linkedContext, prompt, history: state.chatHistory });
+    const result = await window.stillnote.askAi({ provider, vault, notePath, mode, model, noteName: prettyName(notePath), documentType, document: documentText, linkedContext, agenda: scopedAgenda, prompt, history: state.chatHistory });
     loading.remove();
     if (documentType === 'tasks' && result.kind === 'tasks') {
       const added = await addAiTasksToSheet(result.tasks, notePath, documentText);
@@ -4444,7 +4606,14 @@ $('#collapse-folders').addEventListener('click', () => setExplorerFoldersExpande
 $('#new-folder').addEventListener('click', () => createFolder());
 document.addEventListener('click', (event) => { if (!$('#explorer-context-menu').hidden && !$('#explorer-context-menu').contains(event.target)) closeExplorerContextMenu(); });
 document.addEventListener('click', (event) => { if (!$('#editor-context-menu').hidden && !$('#editor-context-menu').contains(event.target)) closeEditorContextMenu(); });
-$('.sidebar-toggle').addEventListener('click', () => { state.sidebarOpen = !state.sidebarOpen; $('.workspace').classList.toggle('sidebar-collapsed', !state.sidebarOpen); });
+$('.sidebar-toggle').addEventListener('click', (event) => {
+  state.sidebarOpen = !state.sidebarOpen;
+  const collapsed = !state.sidebarOpen;
+  $('.workspace').classList.toggle('sidebar-collapsed', collapsed);
+  $('#file-explorer').inert = collapsed;
+  $('#sidebar-resizer').inert = collapsed;
+  event.currentTarget.setAttribute('aria-expanded', String(state.sidebarOpen));
+});
 $('#settings-button').addEventListener('click', () => openSettings());
 $('#settings-close').addEventListener('click', closeSettings);
 $('#settings-overlay').addEventListener('click', (event) => { if (event.target === $('#settings-overlay')) closeSettings(); });
@@ -4524,7 +4693,7 @@ $('#save-google-tasks-client').addEventListener('click', async () => {
 });
 $('#connect-google-tasks').addEventListener('click', async () => {
   const button = $('#connect-google-tasks'); button.disabled = true; $('#google-tasks-status').textContent = 'Waiting for Google sign-in…';
-  try { await window.stillnote.connectGoogleTasks(); state.taskLinkStates.clear(); scheduleTaskReferenceLinks(state.view); await updateGoogleTasksStatus(); showToast('Google Tasks connected'); }
+  try { await window.stillnote.connectGoogleTasks(); void refreshHomeAgenda(); state.taskLinkStates.clear(); scheduleTaskReferenceLinks(state.view); await updateGoogleTasksStatus(); showToast('Google Tasks connected'); }
   catch (error) {
     await updateGoogleTasksStatus();
     $('#google-tasks-status').textContent = `Connection failed: ${error.message || 'Could not connect Google Tasks'}`;
@@ -4533,7 +4702,7 @@ $('#connect-google-tasks').addEventListener('click', async () => {
   }
 });
 $('#disconnect-google-tasks').addEventListener('click', async () => {
-  try { await window.stillnote.disconnectGoogleTasks(); await updateGoogleTasksStatus(); showToast('Google Tasks disconnected'); }
+  try { await window.stillnote.disconnectGoogleTasks(); void refreshHomeAgenda(); await updateGoogleTasksStatus(); showToast('Google Tasks disconnected'); }
   catch (error) { showToast(error.message || 'Could not disconnect Google Tasks'); }
 });
 function refreshOpenGraph() {
@@ -4561,7 +4730,11 @@ $('#remove-desmos-key').addEventListener('click', async () => {
 });
 $('#ai-model').addEventListener('change', () => localStorage.setItem(aiModelStorageKey(), selectedAiModel()));
 $('#assistant-toggle').addEventListener('click', () => setAssistantOpen(!state.assistantOpen));
-$('#home-button').addEventListener('click', () => { if (!state.home) void openHome(); else $('#home-input')?.focus(); });
+$('#home-button').addEventListener('click', () => {
+  if (!state.home || !homeAgenda) void openHome();
+  else if (homeAgenda.panel.hidden) $('#home-input')?.focus();
+  else homeAgenda.panel.focus();
+});
 document.querySelectorAll('.assistant-mode').forEach((button) => button.addEventListener('click', () => {
   state.assistantMode = button.dataset.mode;
   document.querySelectorAll('.assistant-mode').forEach((mode) => mode.classList.toggle('active', mode === button));
@@ -4575,6 +4748,7 @@ $('#assistant-input').addEventListener('keydown', (event) => {
 });
 function handleAppEscape(event) {
   if (event.defaultPrevented || event.isComposing || event.repeat) return;
+  if (document.querySelector('.date-calendar:popover-open')) return;
   // Let Chromium handle exiting video fullscreen and cancelling native dialogs.
   if (document.fullscreenElement || document.querySelector('dialog[open]')) return;
   const close = action => { event.preventDefault(); action(); };
