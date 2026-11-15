@@ -1,6 +1,6 @@
 cask "stillnote" do
-  version "1.4.11"
-  sha256 "ed390ef4228fce8edae7e7883121154a106c68da0ad2f5760dde681fd871b555"
+  version "1.4.12"
+  sha256 "9595988fcb6c5fc649363200583f7e3e3310a58bf28c44d3019f5535047f2f4d"
 
   url "https://github.com/Infekted11/Stillnote/releases/download/v#{version}/Stillnote-#{version}-universal.dmg"
   name "Stillnote"
