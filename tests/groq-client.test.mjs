@@ -37,12 +37,35 @@ test('Groq chat preserves conversation and uses strict JSON schemas with local v
 });
 
 test('Home tool actions and task responses validate against the respective schemas',async()=>{
-  const work={kind:'step',text:null,plan:['Create the requested note'],actions:[{tool:'create_file',label:'Create note',args:{path:'Plan.md',content:'# Plan'}}]};
+  const work={kind:'step',text:null,plan:['Inspect the vault and task lists'],actions:[
+    {tool:'list_files',label:'List files',args:null},
+    {tool:'list_task_lists',label:'List task lists',args:null},
+    {tool:'read_file',label:'Read plan',args:{path:'Plan.md',offset:null,length:null}},
+  ]};
   let calls=0;
-  const result=await groqChat({apiKey:'gsk_test',messages:[{role:'user',content:'Create a note'}],schema:HOME_RESPONSE_SCHEMA,fetchImpl:async(_url,options)=>{
-    calls++;const format=JSON.parse(options.body).response_format;assert.equal(format.json_schema.name,'stillnote_home');assert.equal(format.json_schema.strict,true);assert.deepEqual(format.json_schema.schema,HOME_RESPONSE_SCHEMA);return response(completion(JSON.stringify(work)));
+  const result=await groqChat({apiKey:'gsk_test',messages:[{role:'user',content:'Find my plan and task lists'}],schema:HOME_RESPONSE_SCHEMA,fetchImpl:async(_url,options)=>{
+    calls++;
+    const { response_format: format, messages } = JSON.parse(options.body);
+    assert.equal(format.json_schema.name,'stillnote_home');
+    assert.equal(format.json_schema.strict,true);
+    assert.match(messages[0].content,/set args to null/);
+    const expected = structuredClone(HOME_RESPONSE_SCHEMA);
+    for (const {properties} of expected.properties.actions.items.anyOf) {
+      if (['list_files','list_task_lists'].includes(properties.tool.enum[0])) {
+        assert.deepEqual(properties.args, {type:'object',properties:{},required:[],additionalProperties:false});
+        properties.args = {type:'null'};
+      }
+    }
+    assert.deepEqual(format.json_schema.schema,expected);
+    return response(completion(JSON.stringify(work)));
   }});
-  assert.deepEqual(JSON.parse(result),work);assert.equal(calls,1);
+  assert.deepEqual(JSON.parse(result),{...work,actions:work.actions.map(action=>({...action,args:action.args ?? {}}))});
+  assert.equal(calls,1);
+  for (const action of [{...work.actions[0],args:{path:'Plan.md'}},{...work.actions[2],args:null}]) {
+    await assert.rejects(groqChat({apiKey:'gsk_test',messages:[],schema:HOME_RESPONSE_SCHEMA,
+      fetchImpl:async()=>response(completion(JSON.stringify({...work,actions:[action]}))),
+    }),/invalid assistant response/);
+  }
   const tasks={kind:'tasks',text:null,tasks:[{title:'Prepare budget',notes:null,due:null,parentTitle:null}]};
   assert.deepEqual(JSON.parse(completionText(completion(JSON.stringify(tasks)),NOTE_RESPONSE_SCHEMA)),tasks);
   const edit={kind:'edit',text:'# New note\nUse <think> literally </think> here',tasks:[]};
@@ -53,6 +76,35 @@ test('invalid JSON, unsupported actions, missing fields and malformed arguments 
   for(const content of ['not JSON','',{kind:'step',text:null,plan:[],actions:[{tool:'delete_file',label:'Delete',args:{path:'Plan.md'}}]},{kind:'step',text:null,plan:[],actions:[{tool:'create_file',label:'Create',args:{path:42,content:'Note'}}]},{kind:'done',text:'Done',plan:'Not an array',actions:[]},{kind:'done',text:'Done',plan:[],actions:[],surprise:true},{kind:'done',text:'Done'}]){
     assert.throws(()=>completionText(completion(typeof content==='string'?content:JSON.stringify(content)),HOME_RESPONSE_SCHEMA),/No actions from this response were applied/);
   }
+});
+
+test('Home retries Groq JSON generation errors once and validates the fallback reply',async()=>{
+  const failure = {error:{message:"Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.",code:'json_validate_failed',failed_generation:'private invalid output'}};
+  const messages = [{role:'system',content:'Home prompt'},{role:'user',content:'List files'}];
+  const reply = {kind:'step',text:null,plan:[],actions:[{tool:'list_files',label:'List files',args:null}]};
+  const send = secondResponse => {
+    let attempts = 0;
+    return groqChat({apiKey:'gsk_test',messages,schema:HOME_RESPONSE_SCHEMA,fetchImpl:async(_url,options)=>{
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, DEFAULT_GROQ_MODEL);
+      assert.deepEqual(body.messages.slice(1), messages.slice(1));
+      assert(body.messages[0].content.startsWith(messages[0].content));
+      if (++attempts === 1) {
+        assert.equal(body.response_format.type, 'json_schema');
+        return response(failure,400);
+      }
+      assert.equal(attempts, 2);
+      assert.deepEqual(body.response_format, {type:'json_object'});
+      assert.match(body.messages[0].content, /matching this schema exactly/);
+      assert(!body.messages[0].content.includes(failure.error.failed_generation));
+      return secondResponse;
+    }});
+  };
+  const result = await send(response(completion(JSON.stringify(reply))));
+  assert.deepEqual(JSON.parse(result), {...reply,actions:[{...reply.actions[0],args:{}}]});
+  const invalidReply = {...reply,actions:[{tool:'create_file',label:'Write',args:{path:'Plan.md'}}]};
+  await assert.rejects(send(response(completion(JSON.stringify(invalidReply)))),/invalid assistant response/);
+  await assert.rejects(send(response(failure,400)),error=>error.status===400&&/could not generate a valid Home reply/.test(error.message)&&!error.message.includes(failure.error.failed_generation));
 });
 
 test('response extraction rejects truncation, refusals and reasoning-only replies',()=>{

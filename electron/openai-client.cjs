@@ -1,3 +1,4 @@
+const {providerError} = require('./ai-hold.cjs');
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-6.1-sol';
 const {HOME_RESPONSE_SCHEMA,NOTE_RESPONSE_SCHEMA}=require('./ai-schema.cjs');
@@ -6,13 +7,13 @@ function isAssistantModel(id) {
     && !/(?:audio|realtime|transcribe|search|image|embedding|moderation|codex|chat-latest|tts|whisper)/i.test(id)
     && id !== 'gpt-4o-2024-05-13';
 }
-function apiError(data,status) {
+function apiError(data,status,response) {
   const detail=typeof data?.error==='string'?data.error:data?.error?.message;
-  return new Error(detail?`OpenAI: ${detail}`:`OpenAI returned HTTP ${status}.`);
+  return providerError(new Error(detail?`OpenAI: ${detail}`:`OpenAI returned HTTP ${status}.`),data,status,response);
 }
 async function listOpenAiModels({apiKey,fetchImpl=fetch,signal}) {
   const response=await fetchImpl(`${OPENAI_BASE_URL}/models`,{headers:{Authorization:`Bearer ${apiKey}`},signal});
-  const data=await response.json().catch(()=>null);if(!response.ok)throw apiError(data,response.status);
+  const data=await response.json().catch(()=>null);if(!response.ok)throw apiError(data,response.status,response);
   const models=[...new Set((Array.isArray(data?.data)?data.data:[]).map(model=>typeof model?.id==='string'?model.id.trim():'').filter(isAssistantModel))].sort((a,b)=>a.localeCompare(b));
   if(!models.length)throw new Error('No supported text-assistant models were returned for this OpenAI API project.');
   return models;
@@ -30,7 +31,7 @@ async function openAiChat({apiKey,model=DEFAULT_OPENAI_MODEL,messages,schema=NOT
   if(!isAssistantModel(model))throw new Error('Select a supported OpenAI text model in Settings → AI settings.');
   const body={model,stream:false,store:false,max_output_tokens:16384,input:messages,text:{format:{type:'json_schema',name:schema===HOME_RESPONSE_SCHEMA?'stillnote_home':'stillnote_assistant',strict:true,schema}}};
   const response=await fetchImpl(`${OPENAI_BASE_URL}/responses`,{method:'POST',signal,headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await response.json().catch(()=>null);if(!response.ok)throw apiError(data,response.status);
+  const data=await response.json().catch(()=>null);if(!response.ok)throw apiError(data,response.status,response);
   return responseText(data);
 }
 module.exports={OPENAI_BASE_URL,DEFAULT_OPENAI_MODEL,HOME_RESPONSE_SCHEMA,NOTE_RESPONSE_SCHEMA,isAssistantModel,listOpenAiModels,openAiChat,responseText};

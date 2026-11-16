@@ -1,3 +1,4 @@
+const {providerError} = require('./ai-hold.cjs');
 const {NOTE_RESPONSE_SCHEMA,validateResult}=require('./ai-schema.cjs');
 const ANTHROPIC_BASE_URL='https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION='2026-10-21';
@@ -11,7 +12,7 @@ function apiError(data,status,response) {
   if(status===401)message='Anthropic rejected the API key. Add a valid Anthropic key in Settings → AI settings.';
   if(status===429)message='Anthropic rate limit reached. '+(retry&&/^\d+(?:\.\d+)?$/.test(retry)?`Try again in ${Math.ceil(Number(retry))} seconds. `:'Try again shortly. ')+(detail||'');
   if(status===529)message='Anthropic is temporarily overloaded. Try again shortly.';
-  const error=new Error(message);error.status=status;return error;
+  return providerError(new Error(message),data,status,response);
 }
 async function listAnthropicModels({apiKey,signal,fetchImpl=fetch}) {
   const models=new Set(),cursors=new Set();let cursor;

@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('stillnote', {
   findRelevantNotes: (query) => ipcRenderer.invoke('vault:relevant', query),
   getVaultTree: () => ipcRenderer.invoke('vault:tree'),
   createFolder: (parentPath, name) => ipcRenderer.invoke('vault:mkdir', parentPath, name),
-  renameEntry: (path, name) => ipcRenderer.invoke('vault:rename', path, name),
+  renameEntry: (path, name, contents) => ipcRenderer.invoke('vault:rename', path, name, contents),
   deleteEntry: (path) => ipcRenderer.invoke('vault:delete', path),
   unpackFolder: (path) => ipcRenderer.invoke('vault:unpack', path),
   moveEntry: (path, destinationFolderPath) => ipcRenderer.invoke('vault:move', path, destinationFolderPath),

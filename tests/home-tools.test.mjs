@@ -16,6 +16,39 @@ test('Work creates multiple linked files, protects collisions, and checks revisi
   await tool('update_file',{path:'Project/A.md',revision:read.revision,content:read.text+'More\n'},'work');
   const relation=await tool('file_relations',{path:'Project/B.md'});assert.equal(relation.incoming[0].path,'Project/A.md');
 });
+test('AI note writes turn added Markdown tables into separate spreadsheets with live vault links',async t=>{
+  const {root,tool}=await fixture(t);
+  const note='Project/Plan.md';
+  const oldTable='| Old |\n| --- |\n| Keep |';
+  const table='| Item | Notes | Cost |\n| --- | :--- | ---: |\n| Apple | | 5 |\n| Pear | Red \\| green | 8 |';
+  const original='Plan\n\n'+oldTable+'\n';
+  await fs.mkdir(path.join(root,'Project'));
+  await fs.writeFile(path.join(root,note),original);
+  await fs.writeFile(path.join(root,'Project/Plan Table.md'),'Existing file');
+  const content=original+'\n## Budget\n\n'+table+'\n\n```md\n'+table+'\n```\n';
+  const read=await tool('read_file',{path:note});
+  const result=await tool('update_file',{path:note,revision:read.revision,content},'work');
+  assert.deepEqual(result.sheets,['Project/Plan Table 2.md']);
+  const updated=await tool('read_file',{path:note});
+  assert.equal(updated.revision,result.revision);
+  assert.equal(updated.text,original+'\n## Budget\n\n<[Project/Plan Table 2.md]>\n\n```md\n'+table+'\n```\n');
+  assert.equal(await fs.readFile(path.join(root,'Project/Plan Table.md'),'utf8'),'Existing file');
+  const sheet=await tool('read_file',{path:result.sheets[0]});
+  assert.match(sheet.text,/stillnote:type=spreadsheet/);
+  assert.deepEqual(JSON.parse(sheet.text.split('\n')[4]),{version:1,rows:3,columns:3,cells:{A1:'Item',B1:'Notes',C1:'Cost',A2:'Apple',C2:'5',A3:'Pear',B3:'Red | green',C3:'8'}});
+  assert.equal((await tool('file_relations',{path:result.sheets[0]})).incoming[0].path,note);
+
+  const newNote=await tool('create_file',{path:'Project/New.md',content:'New\n\n'+table+'\n'},'work');
+  assert.match((await tool('read_file',{path:newNote.path})).text,/<\[Project\/New Table.md\]>/);
+  await assert.rejects(tool('create_file',{path:'Project/New.md',content:'New\n\n'+table+'\n'},'work'),/EEXIST/);
+  assert.equal((await fs.readdir(path.join(root,'Project'))).includes('New Table 2.md'),false);
+
+  const answer={path:'Project/AI Answer.md',content:table};
+  await assert.rejects(tool('prepare_note_tables',answer,'ask'),/Ask mode/);
+  const prepared=await tool('prepare_note_tables',answer,'work');
+  assert.equal(prepared.content,'<[Project/AI Answer Table.md]>');
+  await assert.rejects(fs.access(path.join(root,answer.path)),{code:'ENOENT'});
+});
 test('Ask is read-only and tools reject hidden paths, traversal and symlinks',async t=>{
   const {root,tool}=await fixture(t);await fs.writeFile(path.join(root,'Note.md'),'Hello');
   await assert.rejects(tool('create_file',{path:'No.md',content:'x'},'ask'),/Ask mode/);

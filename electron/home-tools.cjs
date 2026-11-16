@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { linksIn, matchesPath } = require('./file-links.cjs');
+const { writeLinkedTables } = require('./ai-tables.cjs');
 const READ_TOOLS = new Set(['list_files','search_files','read_file','file_relations','analyze_data','list_task_lists','list_tasks']);
 const TEXT = new Set(['.md','.txt','.csv','.tsv','.json','.js','.cjs','.mjs','.jsx','.ts','.tsx','.py','.html','.css','.java','.c','.h','.cpp','.hpp','.rs','.go','.sql','.sh','.xml','.yaml','.yml','.toml','.swift','.kt','.rb','.php']);
 const revision = text => crypto.createHash('sha256').update(text).digest('hex');
@@ -68,10 +69,27 @@ function createHomeTools({root,taskApi,isSupportedFile}) {
       if(rows.length>10000||Math.max(0,...rows.map(row=>row.length))>60)throw new Error('Analyze at most 10,000 rows and 60 columns per file.');return {path:args.path,...profileData(rows)};
     }
     if(name==='create_file'){
-      if(!TEXT.has(path.extname(args.path||'').toLowerCase()))throw new Error('Choose a supported text file extension.');const file=await target(args.path);if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide text up to 150,000 characters.');await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,args.content,{encoding:'utf8',flag:'wx'});return {path:args.path,revision:revision(args.content),summary:'Created file'};
+      if(!TEXT.has(path.extname(args.path||'').toLowerCase()))throw new Error('Choose a supported text file extension.');const file=await target(args.path);if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide text up to 150,000 characters.');await fs.mkdir(path.dirname(file),{recursive:true});
+      const { content, sheets } = await writeLinkedTables({ relative:args.path, content:args.content, target,
+        commit: text => fs.writeFile(file,text,{encoding:'utf8',flag:'wx'}),
+      });
+      return {path:args.path,revision:revision(content),sheets,summary:sheets.length ? 'Created file and linked spreadsheets' : 'Created file'};
     }
     if(name==='update_file'){
-      const original=await read(args.path);if(args.revision!==revision(original))throw new Error('The file changed. Read it again before editing.');if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide the complete updated text, up to 150,000 characters.');await fs.writeFile(await target(args.path),args.content,'utf8');return {path:args.path,revision:revision(args.content),summary:'Updated file'};
+      const original=await read(args.path);if(args.revision!==revision(original))throw new Error('The file changed. Read it again before editing.');if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide the complete updated text, up to 150,000 characters.');
+      const { content, sheets } = await writeLinkedTables({ relative:args.path, content:args.content, original, target,
+        commit: async text => {
+          if(await read(args.path)!==original)throw new Error('The file changed. Read it again before editing.');
+          await fs.writeFile(await target(args.path),text,'utf8');
+        },
+      });
+      return {path:args.path,revision:revision(content),sheets,summary:sheets.length ? 'Updated file and linked spreadsheets' : 'Updated file'};
+    }
+    if(name==='prepare_note_tables'){
+      const { path: relative, content, original = '' } = args;
+      if(typeof relative!=='string'||!relative.toLowerCase().endsWith('.md')||typeof content!=='string'||content.length>150000||typeof original!=='string'||original.length>150000)throw new Error('Provide a Markdown file and text up to 150,000 characters.');
+      await target(relative);
+      return writeLinkedTables({ relative, content, original, target });
     }
     if(name==='link_files'){
       const original=await read(args.path);await fs.access(await target(args.target));if(!/\.md$/i.test(args.path)||/stillnote:type=/.test(original))throw new Error('Add file links to an ordinary Markdown note.');const syntax=`<[${args.target}]>`;if(/[\[\]#|\r\n]/.test(args.target))throw new Error('This filename cannot be represented as a Stillnote link.');if(!original.includes(syntax))await fs.writeFile(await target(args.path),original+'\n'+syntax+'\n','utf8');return {path:args.path,target:args.target,summary:'Linked files'};

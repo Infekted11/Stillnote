@@ -1,6 +1,26 @@
 # Stillnote log
 
+## 2026-11-16
+
+- Synced Markdown note titles and filenames in both directions, preserving YAML properties and note content.
+
+- Made the first line of a Markdown note its H1 title without requiring heading syntax.
+
+- Replaced the Markdown view dropdown with an icon slider and displayed each note’s filename as a heading above its content.
+
+- Proposed restoring each note’s cursor and scroll position when returning to it during the same session.
+
 ## 2026-11-15
+
+- Added Live Preview, Source mode, and Reading view to the Markdown editor, with wiki-link completion, table previews, callouts, and note bodies independent of filenames.
+
+- Made Home Work and the note editor save AI-generated tables as linked Stillnote spreadsheets.
+
+- Put AI requests on hold during rate limits or credit shortages, and switched both AI composers to one line with a shared Send/Stop button.
+
+- Made Home retry Groq JSON generation failures once and validate the reply before running any actions.
+
+- Fixed a Groq schema error that prevented Home Ask and Work from starting.
 
 - Changed the display extension for Gantt charts to `.gnt`.
 

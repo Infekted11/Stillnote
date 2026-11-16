@@ -1,3 +1,7 @@
+import { autocompletion, completionStatus } from '@codemirror/autocomplete';
+import { isReading, markdownCodeAt, markdownMode, markdownModeExtensions, wikiCompletions } from './markdown-editor.js';
+import { noteTitleLine, noteTitleName, syncNoteTitle } from '../electron/note-title.mjs';
+import { requestWithAiHold } from './ai-hold.js';
 import { renderGanttEditor, renderGanttTimeline } from './gantt.js';
 import { addDatePickers, styleFormValidation } from './form-controls.js';
 import stillnoteLogo from '../Stillnote-site/logo.svg';
@@ -22,7 +26,7 @@ import { python } from '@codemirror/lang-python';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
-import { Autolink, Strikethrough, TaskList } from '@lezer/markdown';
+import { Autolink, Strikethrough, Table, TaskList } from '@lezer/markdown';
 import { searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, syntaxTree, bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language';
 import { animate } from 'animejs';
@@ -248,6 +252,7 @@ const icons = {
   shift: svgIcon('<path d="m5 12 7-7 7 7h-4v7H9v-7z"/>', 'shortcut-shift-icon'),
   close: svgIcon('<path d="m6 6 12 12M18 6 6 18"/>'),
   statusCheck: svgIcon('<path d="m5 12.5 4.5 4.5L19 7"/>'),
+  stop: svgIcon('<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/>'),
   statusX: svgIcon('<path d="m6 6 12 12M18 6 6 18"/>'),
   book: svgIcon('<path d="M5 4.5h11a3 3 0 0 1 3 3v12H8a3 3 0 0 1-3-3z"/><path d="M5 16.5a3 3 0 0 1 3-3h11M9 8h6"/>', 'brand-mark-icon'),
   command: svgIcon('<path d="M9 9h6v6H9z"/><path d="M9 9V6a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v12a2 2 0 1 0-2-2H7a2 2 0 1 0 2 2z"/>'),
@@ -283,7 +288,11 @@ app.innerHTML = `
             <div class="welcome-foot"><span>MARKDOWN, ALWAYS</span><span>·</span><span>YOUR FILES, YOURS</span></div>
           </div>
           <div class="note-editor" id="note-editor" hidden>
-            <div class="note-meta"><div class="breadcrumbs" id="breadcrumbs"></div><span class="save-state" id="save-state">Saved</span></div>
+            <div class="note-meta"><div class="breadcrumbs" id="breadcrumbs"></div><div class="note-meta-actions"><span class="save-state" id="save-state">Saved</span><div class="note-view-slider" id="note-view-mode" role="radiogroup" aria-label="Note view" hidden><span class="note-view-thumb" aria-hidden="true"></span>
+              <label title="Live Preview"><input type="radio" name="note-view" value="live" aria-label="Live Preview" checked>${icons.ganttEdit}</label>
+              <label title="Source mode"><input type="radio" name="note-view" value="source" aria-label="Source mode">${icons.formatCode}</label>
+              <label title="Reading view"><input type="radio" name="note-view" value="reading" aria-label="Reading view">${icons.book}</label>
+            </div></div></div>
             <nav class="note-indexes" id="note-indexes" aria-label="Note indexes" hidden></nav>
             <div class="editor-content" id="editor-content"></div>
             <nav class="note-format-toolbar" id="note-format-toolbar" aria-label="Note formatting" hidden>
@@ -309,7 +318,7 @@ app.innerHTML = `
       <aside class="assistant-drawer" id="assistant-drawer" aria-label="AI assistant">
         <div class="assistant-panel">
           <div class="assistant-messages" id="assistant-messages"><div class="assistant-welcome"><div class="assistant-welcome-icon">${icons.assistant}</div><strong>What would you like to do?</strong><p>Ask a question about this note, or ask me to edit it.</p></div></div>
-          <form class="assistant-composer" id="assistant-form"><div class="assistant-modes"><button type="button" class="assistant-mode active" data-mode="ask">Ask</button><button type="button" class="assistant-mode" data-mode="edit">Edit note</button></div><div class="assistant-input-wrap"><textarea id="assistant-input" rows="3" placeholder="Ask about this note…"></textarea><button type="submit" class="send-button" id="assistant-send" aria-label="Send question">${icons.send}</button></div><div class="assistant-footnote">The open file and directly linked files are sent to your selected AI provider.</div></form>
+          <form class="assistant-composer" id="assistant-form"><div class="assistant-modes"><button type="button" class="assistant-mode active" data-mode="ask">Ask</button><button type="button" class="assistant-mode" data-mode="edit">Edit note</button></div><div class="assistant-input-wrap"><textarea id="assistant-input" rows="1" aria-label="Message for file assistant" placeholder="Ask about this note…"></textarea><button type="submit" class="send-button" id="assistant-send" aria-label="Send" title="Send">${icons.send}</button></div><div class="assistant-footnote">The open file and directly linked files are sent to your selected AI provider.</div></form>
         </div>
       </aside>
     </div>
@@ -364,7 +373,7 @@ const AI_PROVIDERS = {
   anthropic: { name: 'Anthropic', defaultModel: 'claude-sonnet-5-5' },
 };
 function resolveAiProvider(value) { return Object.hasOwn(AI_PROVIDERS, value) ? value : 'groq'; }
-const state = { aiProvider: resolveAiProvider(localStorage.getItem('stillnote-ai-provider')), vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, homeMode: localStorage.getItem('stillnote-home-mode') === 'work' ? 'work' : 'ask', homeRun: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
+const state = { markdownEditingMode: localStorage.getItem('stillnote-markdown-mode') === 'source' ? 'source' : 'live', markdownView: null, aiProvider: resolveAiProvider(localStorage.getItem('stillnote-ai-provider')), vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, homeMode: localStorage.getItem('stillnote-home-mode') === 'work' ? 'work' : 'ask', homeRun: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantRun:null, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
 {
   const workspaceShortcuts = [...document.querySelectorAll('.shortcut-group')].find((group) => group.querySelector('h4')?.textContent === 'Workspace');
   const firstRow = workspaceShortcuts?.querySelector('.shortcut-row');
@@ -766,7 +775,12 @@ function showDesmosPreview(source, x, y) {
 }
 function makeLiveMarkdownDecorations(view) {
   const decorations = [];
-  const activeLines = new Set(view.state.selection.ranges.map((range) => view.state.doc.lineAt(range.head).number));
+  const selections = view.state.readOnly ? [] : view.state.selection.ranges;
+  const activeLines = new Set(selections.flatMap(({ from, to }) => {
+    const first = view.state.doc.lineAt(from).number, last = view.state.doc.lineAt(to).number;
+    return Array.from({ length: last - first + 1 }, (_, offset) => first + offset);
+  }));
+  const touches = (from, to) => selections.some(range => range.from <= to && range.to >= from);
   const listLines = new Set();
   const fencedCodeRanges = [];
   syntaxTree(view.state).iterate({ enter(node) { if (node.type.name === 'FencedCode') fencedCodeRanges.push([node.from, node.to]); } });
@@ -796,7 +810,7 @@ function makeLiveMarkdownDecorations(view) {
         if (urlNode && !insideLink) {
           const target = view.state.doc.sliceString(urlNode.from, urlNode.to).replace(/^<|>$/g, '');
           const url = webUrl(target);
-          const caretTouches = view.state.selection.ranges.some(({ head }) => head >= node.from && head <= node.to);
+          const caretTouches = touches(node.from, node.to);
           if (url && !caretTouches) {
             const widget = new WebPreviewWidget(url, node.from);
             decorations.push(Decoration.replace({ widget }).range(node.from, node.to));
@@ -811,6 +825,7 @@ function makeLiveMarkdownDecorations(view) {
         return;
       }
       if (name === 'ListMark' && node.to > node.from) {
+        if (activeLines.has(line.number)) return;
         const marker = view.state.doc.sliceString(node.from, node.to);
         if (/^[*+-]$/.test(marker.trim())) {
           const isTaskListLine = /^\s*[-*+]\s+\[[ xX]\](?:\s|$)/.test(line.text);
@@ -826,6 +841,23 @@ function makeLiveMarkdownDecorations(view) {
       }
       const heading = name.match(/^(?:ATX|Setext)Heading([1-6])$/);
       if (heading && node.to > node.from) decorations.push(Decoration.mark({ class: `cm-md-heading cm-md-h${heading[1]}` }).range(node.from, node.to));
+      if (name === 'Blockquote') {
+        const callout = /^ {0,3}>\s*\[!([\w-]+)\][+-]?[ \t]*(.*)$/i.exec(line.text);
+        const kind = callout?.[1].toLowerCase();
+        const tone = ['warning', 'caution', 'attention', 'danger', 'error', 'bug', 'failure'].includes(kind) ? 'warning'
+          : ['tip', 'hint', 'success', 'check', 'done'].includes(kind) ? 'tip' : 'note';
+        for (let number = line.number; number <= view.state.doc.lineAt(node.to).number; number++) {
+          const classes = callout ? 'cm-md-quote-line cm-md-callout cm-md-callout-' + tone + (number === line.number ? ' cm-md-callout-heading' : '') : 'cm-md-quote-line';
+          decorations.push(Decoration.line({ class: classes }).range(view.state.doc.line(number).from));
+        }
+        if (callout && !activeLines.has(line.number)) {
+          const start = line.from + line.text.indexOf('[!');
+          const end = line.to - callout[2].length;
+          const title = kind[0].toUpperCase() + kind.slice(1);
+          const widget = callout[2] ? undefined : new TextWidget(title, 'cm-md-callout-title');
+          decorations.push(Decoration.replace({ widget }).range(start, end));
+        }
+      }
       const marks = {
         Emphasis: 'cm-md-emphasis', StrongEmphasis: 'cm-md-strong', Strikethrough: 'cm-md-strikethrough',
         InlineCode: 'cm-md-inline-code', Link: 'cm-md-link', Image: 'cm-md-image', FencedCode: 'cm-md-code-block',
@@ -833,7 +865,7 @@ function makeLiveMarkdownDecorations(view) {
       if (marks[name] && node.to > node.from) decorations.push(Decoration.mark({ class: marks[name] }).range(node.from, node.to));
       if (markdownMarkers.has(name) && node.to > node.from) {
         const caretInEmphasis = name === 'EmphasisMark' && emphasisRanges.some(([from, to]) =>
-          node.from >= from && node.to <= to && view.state.selection.ranges.some((range) => range.head >= from && range.head <= to));
+          node.from >= from && node.to <= to && touches(from, to));
         if (name === 'EmphasisMark' ? !caretInEmphasis : !activeLines.has(line.number)) decorations.push(Decoration.replace({}).range(node.from, node.to));
       }
     },
@@ -846,11 +878,11 @@ function makeLiveMarkdownDecorations(view) {
       while ((taskMatch = taskMatcher.exec(line.text))) {
         const from = line.from + taskMatch.index, to = from + taskMatch[0].length;
         if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
-        const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
+        const caretTouches = touches(from, to);
         if (!caretTouches) decorations.push(Decoration.replace({ widget: new TaskReferenceWidget(decodeTaskReferencePart(taskMatch[1].trim()), decodeTaskReferencePart(taskMatch[2].trim()), taskMatch[0], from, to) }).range(from, to));
         else decorations.push(Decoration.mark({ class: 'cm-md-task-link' }).range(from, to));
       }
-      const wikiMatcher = /(?:<\[([^\]]+)\]>|\[\[([^\]]+)\]\])/g; let wikiMatch;
+      const wikiMatcher = /(?:<\[([^\]]+)\]>|!?\[\[([^\]]+)\]\])/g; let wikiMatch;
       while ((wikiMatch = wikiMatcher.exec(line.text))) {
         const from = line.from + wikiMatch.index, to = from + wikiMatch[0].length;
         if (syntaxTree(view.state).resolveInner(from + 2).type.is('InlineCode')) continue;
@@ -859,29 +891,46 @@ function makeLiveMarkdownDecorations(view) {
         const linkedFile = resolveVaultFileTarget(target);
         const extension = linkedFile ? `.${fileExtension(linkedFile)}` : '';
         const media = shouldRenderFileLink(reference,findExplorerNode(linkedFile)?.format,extension);
-        const caretTouches = view.state.selection.ranges.some(({ head }) => head >= from && head <= to);
+        const caretTouches = touches(from, to);
         const url = webUrl(fullTarget);
         if (url && !linkOnly && !caretTouches) {
           const widget = new WebPreviewWidget(url, from);
           decorations.push(Decoration.replace({ widget }).range(from, to));
         } else if (media && !caretTouches) decorations.push(Decoration.replace({ widget: new WikiMediaWidget(linkedFile, from, to, wikiMatch[0], endCell, previewSize, vaultRenderRevision) }).range(from, to));
-        else decorations.push(Decoration.mark({ class: `cm-md-wiki-link${!url && isBrokenVaultLink(reference) ? ' is-broken' : ''}`, attributes: { title: !url && isBrokenVaultLink(reference) ? 'Linked file not found' : fullTarget } }).range(from, to));
+        else {
+          const broken = !url && isBrokenVaultLink(reference);
+          decorations.push(Decoration.mark({ class: `cm-md-wiki-link${broken ? ' is-broken' : ''}`, attributes: { title: broken ? 'Linked file not found' : fullTarget, 'data-wiki-target': fullTarget } }).range(from, to));
+          if (!caretTouches) {
+            const body = wikiMatch[1] || wikiMatch[2];
+            const separator = body.indexOf('|');
+            const bodyStart = from + (wikiMatch[0].startsWith('!') ? 3 : 2);
+            const labelStart = separator >= 0 && separator < body.length - 1 ? bodyStart + separator + 1 : bodyStart;
+            decorations.push(Decoration.replace({}).range(from, labelStart));
+            decorations.push(Decoration.replace({}).range(to - 2, to));
+          }
+        }
       }
       for (const equation of equationRanges.filter((entry) => entry.line === number)) if (!activeLines.has(number)) decorations.push(Decoration.replace({ widget: new EquationWidget(equation.source, equation.from, equation.to) }).range(equation.from, equation.to));
-      const highlightMatcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
+      const blockId = /(?:^|\s)\^[\w-]+\s*$/.exec(line.text);
+      if (blockId && !activeLines.has(number) && !syntaxTree(view.state).resolveInner(line.from + blockId.index + 1).type.is('InlineCode')) {
+        decorations.push(Decoration.replace({}).range(line.from + blockId.index, line.to));
+      }
+      const highlightMatcher = /(^|[\s([{])(={1,2})([^=\n]+)\2(?=$|[\s.,!?;:)\]}])/g;
       let highlight;
       while ((highlight = highlightMatcher.exec(line.text))) {
         const start = line.from + highlight.index + highlight[1].length;
-        const contentStart = start + 1, contentEnd = start + highlight[0].length - highlight[1].length - 1;
-        if (contentEnd <= contentStart) continue;
+        const contentStart = start + highlight[2].length;
+        const contentEnd = contentStart + highlight[3].length;
+        const end = contentEnd + highlight[2].length;
+        if (syntaxTree(view.state).resolveInner(contentStart).type.is('InlineCode')) continue;
         decorations.push(Decoration.mark({ class: 'cm-md-highlight' }).range(contentStart, contentEnd));
-        if (!activeLines.has(number)) {
-          decorations.push(Decoration.replace({}).range(start, start + 1));
-          decorations.push(Decoration.replace({}).range(contentEnd, contentEnd + 1));
+        if (!touches(start, end)) {
+          decorations.push(Decoration.replace({}).range(start, contentStart));
+          decorations.push(Decoration.replace({}).range(contentEnd, end));
         }
       }
     }
-    if (line.text.trim() === '---' && !isInsideCode) {
+    if (line.text.trim() === '---' && !isInsideCode && !activeLines.has(number) && syntaxTree(view.state).resolveInner(line.from + 1).type.is('HorizontalRule')) {
       decorations.push(Decoration.line({ class: 'cm-md-horizontal-rule-line' }).range(line.from));
       decorations.push(Decoration.replace({ widget: new HorizontalRuleWidget() }).range(line.from, line.to));
     }
@@ -902,7 +951,7 @@ function getNoteIndexTargets(view) {
       continue;
     }
     if (fence) { activeFence = { char: fence[1][0], length: fence[1].length }; codeLines.add(number); continue; }
-    const atx = text.match(/^ {0,3}(#{1,2})(?:[ \t]+|$)(.*?)\s*#*\s*$/);
+    const atx = text.match(/^ {0,3}(#{1,6})(?:[ \t]+|$)(.*?)\s*#*\s*$/);
     if (atx) { headings.push({ from: line.from, label: atx[2].trim() || 'Heading' }); continue; }
     if (number < doc.lines && text.trim()) {
       const next = cleanHeadingPrefix(doc.line(number + 1).text);
@@ -914,12 +963,12 @@ function getNoteIndexTargets(view) {
   // intentionally maps both underline styles to the two supported levels.
   const text = view.state.doc.toString(), code = [];
   syntaxTree(view.state).iterate({ enter(node) { if (node.type.name === 'FencedCode') code.push([node.from, node.to]); } });
-  const matcher = /(^|[\s([{])=([^=\n]+)=(?=$|[\s.,!?;:)\]}])/g;
+  const matcher = /(^|[\s([{])(={1,2})([^=\n]+)\2(?=$|[\s.,!?;:)\]}])/g;
   let match;
   while ((match = matcher.exec(text))) {
     const from = match.index + match[1].length;
     if (code.some(([start, end]) => from >= start && from < end)) continue;
-    highlights.push({ from, label: match[2].trim() || 'Highlight' });
+    highlights.push({ from, label: match[3].trim() || 'Highlight' });
   }
   return { headings, highlights };
 }
@@ -987,17 +1036,50 @@ function jumpToNoteIndex(view, position) {
 const liveMarkdown = ViewPlugin.fromClass(class {
   constructor(view) { this.decorations = makeLiveMarkdownDecorations(view); }
   update(update) {
-    if (update.docChanged || update.selectionSet || update.viewportChanged || update.transactions.some(transaction => transaction.effects.some(effect => effect.is(refreshFileLinksEffect)))) this.decorations = makeLiveMarkdownDecorations(update.view);
+    if (update.docChanged || update.selectionSet || update.viewportChanged || update.startState.readOnly !== update.state.readOnly || update.transactions.some(transaction => transaction.effects.some(effect => effect.is(refreshFileLinksEffect)))) this.decorations = makeLiveMarkdownDecorations(update.view);
   }
 }, { decorations: (plugin) => plugin.decorations });
 
+function resetMarkdownView() {
+  state.markdownView = null;
+  $('#note-view-mode').hidden = true;
+}
+function setMarkdownView(mode, focus = true) {
+  const view = state.view;
+  state.markdownView = mode;
+  if (mode !== 'reading' && state.markdownEditingMode !== mode) {
+    state.markdownEditingMode = mode;
+    localStorage.setItem('stillnote-markdown-mode', mode);
+  }
+  const selector = $('#note-view-mode');
+  selector.querySelector(`input[value="${mode}"]`).checked = true;
+  selector.hidden = false;
+  const toolbar = mode !== 'reading' && state.toolbarPositions.notes !== 'hidden';
+  $('#note-format-toolbar').hidden = !toolbar;
+  $('#note-editor').classList.toggle('has-markdown-editor', toolbar);
+  view.dispatch({ effects: markdownMode.reconfigure(markdownModeExtensions(mode, liveMarkdown)) });
+  if (focus) view.focus();
+}
+$('#note-view-mode').addEventListener('change', event => setMarkdownView(event.target.value, false));
+
 function wrapEditorSelection(view, marker) {
+  if (view.state.readOnly) return false;
   const selection = view.state.selection.main;
   const selected = view.state.sliceDoc(selection.from, selection.to);
+  const start = selection.from - marker.length, end = selection.to + marker.length;
+  if (start >= 0 && view.state.sliceDoc(start, selection.from) === marker && view.state.sliceDoc(selection.to, end) === marker) {
+    view.dispatch({ changes: { from: start, to: end, insert: selected }, selection: { anchor: start, head: start + selected.length }, scrollIntoView: true });
+    return true;
+  }
   const insert = `${marker}${selected}${marker}`;
-  const anchor = selection.empty ? selection.from + marker.length : selection.from + marker.length;
+  const anchor = selection.from + marker.length;
   const head = selection.empty ? anchor : anchor + selected.length;
   view.dispatch({ changes: { from: selection.from, to: selection.to, insert }, selection: { anchor, head }, scrollIntoView: true });
+  return true;
+}
+function insertMarkdownHardBreak(view) {
+  if (view.state.readOnly || markdownCodeAt(view.state, view.state.selection.main.head)) return false;
+  view.dispatch(view.state.replaceSelection('  \n'), { scrollIntoView: true, userEvent: 'input' });
   return true;
 }
 function setEditorLinePrefix(view, prefix, kind) {
@@ -1042,6 +1124,12 @@ function setEditorLinePrefix(view, prefix, kind) {
   view.focus();
 }
 function openWikiLinkAt(view, event) {
+  const rendered = event.target.closest?.('[data-wiki-target], .cm-wiki-media-preview[data-target]');
+  if (rendered) {
+    event.preventDefault();
+    void openMarkdownLink(rendered.dataset.wikiTarget || rendered.dataset.target);
+    return true;
+  }
   const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (position == null) return false;
   const line = view.state.doc.lineAt(position);
@@ -1053,10 +1141,14 @@ function openWikiLinkAt(view, event) {
     if (syntaxTree(view.state).resolveInner(line.from + match.index + 2).type.is('InlineCode')) return false;
     const target = (match[1] || match[2]).split('|')[0].trim();
     event.preventDefault();
-    void navigateWikiTarget(target);
+    void openMarkdownLink(target);
     return true;
   }
   return false;
+}
+function openMarkdownLink(target) {
+  const url = webUrl(target);
+  return url ? window.stillnote.openWebUrl(url).catch(error => showToast(error.message)) : navigateWikiTarget(target);
 }
 function wordRangeAt(view, position) {
   const line = view.state.doc.lineAt(position), matcher = /[\p{L}]+(?:['’][\p{L}]+)?/gu;
@@ -1494,7 +1586,7 @@ function setExplorerFoldersExpanded(expanded) {
   visit(state.tree); renderFiles();
 }
 async function setVault(vault) {
-  if (state.vault?.path !== vault.path) { stopHomeRun(); stopHomeAgenda(); }
+  if (state.vault?.path !== vault.path) { stopAssistantRun(); stopHomeRun(); stopHomeAgenda(); }
   if (state.vault?.path && state.vault.path !== vault.path) { state.view?.destroy(); state.view = null; state.active = null; $('#editor-content').replaceChildren(); }
   state.vault = vault; state.files = vault.files; state.tree = vault.tree; state.collapsed.clear();
   $('.vault-name').textContent = vault.name; $('.vault-mark').textContent = vault.name.charAt(0).toUpperCase();
@@ -1527,6 +1619,7 @@ function showEmptyVault() {
 async function chooseVault() {
   try {
     await saveActive();
+    if (state.dirty) return;
     const vault = await window.stillnote.chooseVault(); if (!vault) return;
     await setVault(vault);
     if (explorerFilePaths().length) await openNote(explorerFilePaths()[0]);
@@ -1675,13 +1768,16 @@ function setupHomeTabs() {
 }
 async function openHome() {
   if (state.home && state.homeRun) return;
+  stopAssistantRun();
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
+  try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
+  if (state.dirty) return;
   cancelMeetingRecording(); $('#meeting-notes-trigger').hidden = true;
   $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
-  try { await saveActive(); } catch (error) { showToast(error.message || 'Could not save the open file.'); return; }
   state.assetViewer?.destroy?.(); state.assetViewer = null; state.assetPath = null; state.assetBytes = null; state.pdfText = null; state.pdfTextPromise = null;
   if (state.view) { state.view.destroy(); state.view = null; }
   state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
+  resetMarkdownView();
   state.structured = null; updateAssistantModeCopy(); state.active = null; state.home = true; state.dirty = false;
   state.assistantOpen = false; $('.workspace').classList.remove('assistant-open');
   stopHomeAgenda();
@@ -1708,10 +1804,9 @@ async function openHome() {
             <button type="button" data-home-mode="work" aria-pressed="false">Work</button>
           </div>
           <form class="home-composer" id="home-form">
-            <textarea id="home-input" rows="3" placeholder="Ask anything about your notes…"></textarea>
-            <button type="submit" class="send-button" id="home-send" aria-label="Send question">${icons.send}</button>
+            <textarea id="home-input" rows="1" aria-label="Message for Home assistant" placeholder="Ask anything about your notes…"></textarea>
+            <button type="submit" class="send-button" id="home-send" aria-label="Send" title="Send">${icons.send}</button>
           </form>
-          <button type="button" class="home-stop" id="home-stop" hidden>Stop</button>
           <div class="home-footnote" id="home-mode-note"></div>
         </div>
       </div>
@@ -1741,7 +1836,6 @@ async function openHome() {
     state.homeMode = button.dataset.homeMode; state.homeSession.mode = state.homeMode;
     localStorage.setItem('stillnote-home-mode',state.homeMode); updateHomeMode(); renderHomeTranscript(); persistHomeChat();
   }));
-  $('#home-stop').addEventListener('click',stopHomeRun);
   $('#home-new-chat').addEventListener('click', () => { startHomeSession(); $('#home-input').focus(); });
   $('#home-history-toggle').addEventListener('click', (event) => {
     const button = event.currentTarget, view = $('.home-view'), history = $('.home-history');
@@ -1763,16 +1857,26 @@ function updateHomeMode() {
   const busy = !!state.homeRun;
   document.querySelectorAll('[data-home-mode]').forEach(button => { button.setAttribute('aria-pressed',String(button.dataset.homeMode === state.homeMode)); button.disabled = busy; });
   if ($('#home-input')) { $('#home-input').disabled = busy; $('#home-input').placeholder = state.homeMode === 'work' ? 'Describe what you want to accomplish…' : 'Ask about your notes, files, and their connections…'; }
-  if ($('#home-send')) { $('#home-send').disabled = busy; $('#home-send').setAttribute('aria-label',state.homeMode === 'work' ? 'Start work' : 'Ask question'); }
+  updateAiSendButton($('#home-send'), state.homeRun);
   if ($('#home-new-chat')) $('#home-new-chat').disabled = busy;
-  if ($('#home-stop')) $('#home-stop').hidden = !busy;
   if ($('#home-mode-note')) $('#home-mode-note').textContent = state.homeMode === 'work' ? 'Work can create and update files and Google Tasks. It asks for details when needed.' : 'Ask reads relevant files and relationships. It does not change your workspace.';
 }
-function stopHomeRun() {
-  const run = state.homeRun; if (!run) return;
-  run.stopped = true; void window.stillnote.cancelHome(run.id).catch(() => {});
-  if ($('#home-stop')) { $('#home-stop').disabled = true; $('#home-stop').textContent = 'Stopping…'; }
+function updateAiSendButton(button, run) {
+  if (!button) return;
+  const label = run?.controller.signal.aborted ? 'Stopping…' : run ? 'Stop' : 'Send';
+  button.disabled = Boolean(run?.controller.signal.aborted);
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.innerHTML = run ? icons.stop : icons.send;
 }
+function stopAiRun(run, button) {
+  if (!run || run.controller.signal.aborted) return;
+  run.controller.abort();
+  void window.stillnote.cancelHome(run.id).catch(() => {});
+  updateAiSendButton(button, run);
+}
+function stopHomeRun() { stopAiRun(state.homeRun, $('#home-send')); }
+function stopAssistantRun() { stopAiRun(state.assistantRun, $('#assistant-send')); }
 async function homeReadTool(name,args,mode,vault) {
   const result = await window.stillnote.homeTool({ tool:name,args,mode,vault });
   if (name !== 'read_file' || result.kind !== 'pdf') return result;
@@ -1791,14 +1895,15 @@ async function homeReadTool(name,args,mode,vault) {
 }
 async function submitHomeMessage(event) {
   event.preventDefault();
-  const input = $('#home-input'), prompt = input?.value.trim(); if (!prompt || state.homeRun) return;
+  if (state.homeRun) { stopHomeRun(); return; }
+  const input = $('#home-input'), prompt = input?.value.trim(); if (!prompt) return;
   const session = state.homeSession, mode = state.homeMode, vault = state.vault?.path, provider = state.aiProvider, model = selectedAiModel(provider);
-  const run = {id:crypto.randomUUID(),stopped:false}; state.homeRun = run; updateHomeMode();
+  const run = {id:crypto.randomUUID(),controller:new AbortController()}; state.homeRun = run; updateHomeMode();
   let progress;
   try {
     const keyStatus = await window.stillnote.aiKeyStatus(provider);
     if (!keyStatus.configured) { openSettings('ai'); return; }
-    if(run.stopped)return;
+    if(run.controller.signal.aborted)return;
     const history=session.messages.slice(-12);
     session.messages.push({role:'user',content:prompt});
     if(session.messages.filter(item=>item.role==='user').length===1)session.title=prompt.slice(0,58);
@@ -1806,8 +1911,11 @@ async function submitHomeMessage(event) {
     progress=document.createElement('section');progress.className='home-run-progress';progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');$('#home-transcript').append(progress);
     const agenda = await readAgenda(vault).then(data => agendaSnapshot(data), () => ({ now: [], upcoming: [], googleStatus: 'agenda_unavailable' }));
     const result=await runHomeAgent({mode,prompt,history,context:session.aiContext?.[mode]||[],
-      stopped:()=>run.stopped||state.vault?.path!==vault,
-      modelStep:request=>window.stillnote.homeStep({...request,provider,model,vault,requestId:run.id,agenda}),
+      stopped:()=>run.controller.signal.aborted||state.vault?.path!==vault,
+      modelStep:request=>requestWithAiHold(
+        () => window.stillnote.homeStep({...request,provider,model,vault,requestId:run.id,agenda}),
+        { signal:run.controller.signal, onStatus:label=>{ const status = progress.querySelector('strong'); if (status) status.textContent = label; } },
+      ),
       tool:(name,args)=>name === 'read_agenda'
         ? window.stillnote.agendaPage({vault, agenda, provider, offset:args.offset})
         : homeReadTool(name,args,mode,vault),
@@ -1818,6 +1926,16 @@ async function submitHomeMessage(event) {
         const count=document.createElement('small');count.textContent=`${events.filter(event=>event.status==='done').length} steps completed`;progress.append(count);
       },
     });
+    if (mode === 'work' && result.kind === 'done' && !run.controller.signal.aborted && state.vault?.path === vault && result.text.includes('|')) {
+      try {
+        const { content, sheets } = await prepareAiTables(vault, 'AI Answer.md', result.text);
+        result.text = content;
+        if (sheets.length) result.context.push({ role:'user', content:`Stillnote created these spreadsheets for the answer: ${JSON.stringify(sheets)}` });
+      } catch (error) {
+        result.kind = 'error';
+        result.text = `Could not create the linked spreadsheet. ${error.message}`;
+      }
+    }
     session.aiContext ||= {};session.aiContext[mode]=result.context;
     session.messages.push({role:'assistant',content:result.text,kind:result.kind,events:result.events,mode});
     if(state.vault?.path===vault){[state.files,state.tree]=await Promise.all([window.stillnote.listNotes(),window.stillnote.getVaultTree()]);renderFiles();if(mode === 'work') void refreshHomeAgenda();}
@@ -1827,7 +1945,6 @@ async function submitHomeMessage(event) {
     if(state.homeSession===session){persistHomeChat();if(state.home)renderHomeTranscript();}
   } finally {
     progress?.remove();if(state.homeRun===run)state.homeRun=null;
-    if($('#home-stop')){$('#home-stop').disabled=false;$('#home-stop').textContent='Stop';}
     updateHomeMode();if(state.home && !$('#home-ai-panel')?.hidden)$('#home-input')?.focus();
   }
 }
@@ -1981,12 +2098,11 @@ async function renderAssetPreview(file, navigationId) {
   }
 }
 async function openNote(file) {
+  stopAssistantRun();
   stopHomeRun();
   stopHomeAgenda();
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   if (meetingStarting) cancelMeetingRecording();
-  $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
-  state.home = false; $('#assistant-toggle').disabled = false; $('#assistant-toggle').removeAttribute('aria-disabled'); $('#home-button').setAttribute('aria-pressed', 'false');
   const navigationId=state.navigationId=(state.navigationId||0)+1;
   try {
     const requestedActive=state.active;
@@ -1995,6 +2111,10 @@ async function openNote(file) {
     const activeBeforeSave = state.active;
     await saveActive();
     if(navigationId!==state.navigationId)return;
+    if (state.dirty) return;
+    $('#note-format-toolbar').hidden = true; $('#note-editor').classList.remove('has-markdown-editor');
+    state.home = false; $('#assistant-toggle').disabled = false; $('#assistant-toggle').removeAttribute('aria-disabled'); $('#home-button').setAttribute('aria-pressed', 'false');
+    resetMarkdownView();
     if (file === activeBeforeSave && state.active !== activeBeforeSave) file = state.active;
     state.assetViewer?.destroy?.(); state.assetViewer = null;
     state.assetPath = null; state.assetBytes = null; state.pdfText = null; state.pdfTextPromise = null;
@@ -2022,20 +2142,12 @@ async function openNote(file) {
       void window.stillnote.rememberNote(file).catch((error) => console.error('Could not save active file:', error));
       return;
     }
-    const noteContents = convertLegacyWebNote(contents);
-    const lineEnding = noteContents.includes('\r\n') ? '\r\n' : '\n';
-    const lines = noteContents.split(/\r?\n/);
     const titleLine = prettyName(file);
-    const firstLineTitle = lines[0].trim().replace(/^#{1,6}\s+/, '').replace(/\.md$/i, '').trim().toLocaleLowerCase();
-    const fileTitle = titleLine.replace(/\.md$/i, '').trim().toLocaleLowerCase();
-    if (/^#\s+/.test(lines[0]) || (firstLineTitle && firstLineTitle === fileTitle)) lines[0] = titleLine;
-    else lines.unshift(titleLine);
-    const normalizedContents = lines.join(lineEnding);
-    if (normalizedContents !== contents) {
-      await window.stillnote.writeNote(file, normalizedContents);
-      contents = normalizedContents;
-    }
-    const structuredFile = decodeStructured(contents);
+    const noteContents = convertLegacyWebNote(contents);
+    const structuredFile = decodeStructured(noteContents);
+    const syncedContents = structuredFile ? noteContents : syncNoteTitle(noteContents, titleLine);
+    if (syncedContents !== contents) { await window.stillnote.writeNote(file, syncedContents); contents = syncedContents; }
+    if(navigationId!==state.navigationId)return;
     if (state.view) { state.view.destroy(); state.view = null; }
     state.structured?.cleanup?.(); state.structured?.desmos?.destroy?.();
     state.structured = null;
@@ -2059,23 +2171,21 @@ async function openNote(file) {
     const theme = EditorView.theme({
       '&': { backgroundColor: 'transparent', color: '#393a37', fontSize: '16px', height: '100%' },
       '.cm-scroller': { fontFamily: '"Iowan Old Style", "Palatino Linotype", Georgia, serif', lineHeight: '1.9', overflow: 'auto' },
-      '.cm-content': { maxWidth: '720px', margin: '0 auto', padding: '42px 28px 90px', caretColor: '#a7795d' },
+      '.cm-content': { maxWidth: '720px', margin: '0 auto', padding: '16px 28px 90px', caretColor: '#a7795d' },
       '.cm-line': { padding: '0 0' }, '.cm-gutters': { display: 'none' },
       '&.cm-focused': { outline: 'none' }, '.cm-activeLine': { backgroundColor: 'transparent' },
       '.cm-selectionBackground, ::selection': { backgroundColor: '#e7ded4 !important' },
       '.cm-cursor': { borderLeftColor: '#a7795d' },
-      '.cm-line:first-child': { fontSize: '30px', fontWeight: '600', letterSpacing: '-.04em', color: '#292a27' },
     }, { dark: false });
     if (state.view) { state.view.destroy(); state.view = null; }
     state.view = new EditorView({
-      state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Autolink, Strikethrough, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, liveMarkdown, EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
+      state: EditorState.create({ doc: contents, extensions: [findReplaceExtension(icons), spellingDecorationsField, lineNumbers(), highlightActiveLineGutter(), drawSelection(), dropCursor(), rectangularSelection(), crosshairCursor(), history(), markdown({ extensions: [Autolink, Strikethrough, Table, TaskList] }), syntaxHighlighting(defaultHighlightStyle), highlightSelectionMatches(), highlightActiveLine(), EditorView.lineWrapping, markdownMode.of(markdownModeExtensions(state.markdownEditingMode, liveMarkdown)), autocompletion({ override: [wikiCompletions(explorerFilePaths)] }), EditorView.contentAttributes.of({ spellcheck: 'false', lang: 'en-US' }), keymap.of([{ key: 'Mod-b', run: (view) => wrapEditorSelection(view, '**') }, { key: 'Mod-i', run: (view) => wrapEditorSelection(view, '*') }, { key: 'Mod-Shift-c', run: (view) => wrapEditorSelection(view, '`') }, { key: 'Mod-Shift-x', run: (view) => wrapEditorSelection(view, '~~') }, { key: 'Shift-Enter', run: insertMarkdownHardBreak }, ...markdownKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap]), theme, EditorView.updateListener.of((update) => { if (update.docChanged) { onEdit(); scheduleSpellcheck(update.view); renderNoteIndexes(update.view); } })] }),
       parent: $('#editor-content'),
     });
     state.view.scrollDOM.addEventListener('scroll', () => updateNoteIndexCurrent(state.view), { passive: true });
     $('#note-editor').dataset.toolbarPosition = state.toolbarPositions.notes;
     $('#meeting-notes-trigger').hidden = false;
-    $('#note-format-toolbar').hidden = state.toolbarPositions.notes === 'hidden';
-    $('#note-editor').classList.toggle('has-markdown-editor', state.toolbarPositions.notes !== 'hidden');
+    setMarkdownView(state.markdownEditingMode, false);
     scheduleSpellcheck(state.view);
     updateWordCount(contents); $('#save-state').textContent = 'Saved'; state.dirty = false;
     const changedNote = state.active !== file;
@@ -2099,19 +2209,23 @@ $('#editor-content').addEventListener('contextmenu', (event) => {
     const line = state.view.state.doc.lineAt(position), matcher = /\$([^$\n]+)\$/g; let match;
     while ((match = matcher.exec(line.text))) if (position >= line.from + match.index && position <= line.from + match.index + match[0].length) { event.preventDefault(); event.stopPropagation(); showDesmosPreview(match[1], event.clientX, event.clientY); return; }
   }
-  void handleEditorContextMenu(state.view, event);
+  if (!state.view.state.readOnly) void handleEditorContextMenu(state.view, event);
+});
+$('#editor-content').addEventListener('click', event => {
+  if (!state.markdownView || !state.view || !event.target.closest('.cm-content')) return;
+  if (state.markdownView === 'reading' || event.metaKey || event.ctrlKey) openWikiLinkAt(state.view, event);
 });
 $('#note-format-toolbar').addEventListener('mousedown', (event) => event.preventDefault());
 $('#note-format-toolbar').addEventListener('click', (event) => {
   const button = event.target.closest('[data-format]');
-  if (!button || !state.view) return;
+  if (!button || !state.view || isReading(state.view)) return;
   const view = state.view;
   const actions = {
     bold: () => wrapEditorSelection(view, '**'), italic: () => wrapEditorSelection(view, '*'),
     code: () => wrapEditorSelection(view, '`'), strike: () => wrapEditorSelection(view, '~~'),
     heading1: () => setEditorLinePrefix(view, '#', 'heading'), heading2: () => setEditorLinePrefix(view, '##', 'heading'),
     bullet: () => setEditorLinePrefix(view, '- ', 'bullet'), ordered: () => setEditorLinePrefix(view, '1. ', 'ordered'),
-    checklist: () => setEditorLinePrefix(view, '- [ ] ', 'task'), highlight: () => wrapEditorSelection(view, '='),
+    checklist: () => setEditorLinePrefix(view, '- [ ] ', 'task'), highlight: () => wrapEditorSelection(view, '=='),
   };
   actions[button.dataset.format]?.(); view.focus();
 });
@@ -2121,12 +2235,6 @@ function onEdit() {
   const documentText = state.view.state.doc.toString();
   scheduleTaskReferenceLinks(state.view);
   updateWordCount(documentText);
-  if (!state.active?.toLowerCase().endsWith('.md')) { clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 650); return; }
-  const title = state.view.state.doc.line(1).text;
-  const invalidCharacter = /[<>:"/\\|?*\u0000-\u001f]/.test(title);
-  const titleError = invalidCharacter ? noteTitleError(title.replace(/\.md$/i, '').trim()) : null;
-  if (titleError && titleError !== state.lastTitleValidationMessage) showToast(titleError);
-  state.lastTitleValidationMessage = titleError;
   clearTimeout(state.saveTimer); state.saveTimer = setTimeout(saveActive, 650);
 }
 function noteTitleCharacterError(character) {
@@ -2222,7 +2330,8 @@ function findNoteAnchor(view, fragment) {
     if (Number.isInteger(number) && number >= 1 && number <= view.state.doc.lines) return view.state.doc.line(number).from;
     return null;
   }
-  const wanted = slugForHeading(decoded);
+  const blockId = /^\^([\w-]+)$/.exec(decoded)?.[1];
+  const wanted = slugForHeading(decoded.split('#').at(-1));
   const doc = view.state.doc;
   let inFence = false, fenceChar = '', fenceLength = 0, slugCounts = new Map();
   for (let number = 1; number <= doc.lines; number++) {
@@ -2234,6 +2343,10 @@ function findNoteAnchor(view, fragment) {
       continue;
     }
     if (inFence) continue;
+    if (blockId) {
+      if (text.trimEnd().endsWith(`^${blockId}`) && /(?:^|\s)\^[\w-]+\s*$/.test(text)) return line.from;
+      continue;
+    }
     const heading = text.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
     if (heading) {
       const base = slugForHeading(heading[1]);
@@ -2247,6 +2360,7 @@ function findNoteAnchor(view, fragment) {
       if (base === wanted || (count && `${base}-${count}` === wanted)) return line.from;
     }
   }
+  if (blockId) return null;
   // A fragment that names a hashtag jumps to its first occurrence.
   const tag = `#${decoded.replace(/^#/, '')}`;
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2471,8 +2585,10 @@ function updateFileLocation(file) {
       button.replaceWith(input);
       input.focus();
       input.select();
+      let finished = false;
       const finish = (commit) => {
-        if (!input.isConnected) return;
+        if (finished || !input.isConnected) return;
+        finished = true;
         const nextName = input.value.trim();
         input.replaceWith(button);
         if (commit && nextName && nextName !== name) {
@@ -3310,6 +3426,21 @@ function serializeLinkedText(element) {
   };
   return [...element.childNodes].map(read).join('');
 }
+async function writeEditorDocument(file, view, contents, markdown) {
+  if (markdown) {
+    const doc = view.state.doc, number = noteTitleLine(doc);
+    const rawTitle = number <= doc.lines ? doc.line(number).text : '';
+    const currentTitle = prettyName(file);
+    const title = rawTitle.trim() === currentTitle ? currentTitle : noteTitleName(rawTitle);
+    if (title !== currentTitle) {
+      const titleError = noteTitleError(title);
+      if (titleError) throw new Error(titleError);
+      return window.stillnote.renameEntry(file, `${title}.md`, contents);
+    }
+  }
+  await window.stillnote.writeNote(file, contents);
+  return file;
+}
 async function saveActive() {
   if (state.savePromise) {
     await state.savePromise;
@@ -3328,49 +3459,19 @@ async function saveActive() {
   let writeSucceeded = false;
   const operation = (async () => {
     try {
-      if (!oldPath.toLowerCase().endsWith('.md')) {
-        const contents = view.state.doc.toString(); await window.stillnote.writeNote(oldPath, contents); writeSucceeded = true;
-        if (state.view === view && state.active === oldPath) { state.dirty = view.state.doc.toString() !== contents; $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved'; }
-        return;
-      }
-      const firstLine = view.state.doc.line(1);
-      const typedTitle = firstLine.text.trim();
-      const title = (typedTitle || prettyName(oldPath)).replace(/\.md$/i, '').trim() || prettyName(oldPath);
-      if (firstLine.text !== title) view.dispatch({ changes: { from: firstLine.from, to: firstLine.to, insert: title } });
       const contents = view.state.doc.toString();
-      await window.stillnote.writeNote(oldPath, contents);
-      writeSucceeded = true; scheduleBacklinks();
-
-      const titleError = noteTitleError(typedTitle.replace(/\.md$/i, '').trim());
-      if (titleError) {
-        state.dirty = view.state.doc.toString() !== contents;
-        $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
-        if (state.lastTitleValidationMessage !== titleError) showToast(titleError);
-        state.lastTitleValidationMessage = titleError;
-        return;
-      }
-
-      let savedPath = oldPath;
-      const currentTitle = prettyName(oldPath);
-      if (title !== currentTitle) {
-        try { savedPath = await window.stillnote.renameEntry(oldPath, title); }
-        catch (error) {
-          state.dirty = view.state.doc.toString() !== contents;
-          $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
-          showToast(`Note saved, but it could not be renamed: ${error.message}`);
-          return;
-        }
-      }
-      if (savedPath !== oldPath) {
+      const savedPath = await writeEditorDocument(oldPath, view, contents, state.markdownView);
+      writeSucceeded = true;
+      scheduleBacklinks();
+      if (state.view === view && state.active === oldPath) {
         state.active = savedPath;
-        [state.files, state.tree] = await Promise.all([window.stillnote.listNotes(), window.stillnote.getVaultTree()]);
-        renderFiles();
-        updateFileLocation(savedPath);
-        void window.stillnote.rememberNote(savedPath).catch((error) => console.error('Could not save active note:', error));
-      }
-      if (state.view === view && state.active === savedPath) {
         state.dirty = view.state.doc.toString() !== contents;
         $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
+        if (savedPath !== oldPath) {
+          updateFileLocation(savedPath);
+          void window.stillnote.rememberNote(savedPath).catch(error => console.warn('Could not remember the renamed note:', error.message));
+          await refreshExplorer();
+        }
       }
     } catch (error) {
       $('#save-state').textContent = 'Save failed'; showToast(error.message);
@@ -3908,7 +4009,7 @@ function closeLinkPicker({ focusEditor = true } = {}) {
 }
 function insertPickedLink(value) {
   const view = linkPickerView;
-  if (!view || view !== state.view) { closeLinkPicker({ focusEditor: false }); return; }
+  if (!view || view !== state.view || view.state?.readOnly) { closeLinkPicker({ focusEditor: false }); return; }
   const selection = view.state.selection.main;
   view.dispatch({ changes: { from: selection.from, to: selection.to, insert: value }, selection: { anchor: selection.from + value.length }, scrollIntoView: true });
   closeLinkPicker();
@@ -3934,6 +4035,7 @@ function selectLinkPickerSource(id) {
 }
 async function openLinkPicker() {
   if (!state.view || !state.active?.toLocaleLowerCase().endsWith('.md')) { showToast('Open a Markdown note to insert a link.'); return; }
+  if (state.view.state?.readOnly) return;
   linkPickerView = state.view; activeLinkPickerSource = 'files';
   $('#link-picker-overlay').hidden = false; $('#link-picker-tabs').innerHTML = '<button class="link-picker-tab active" type="button" role="tab" aria-selected="true" data-source="files">Files</button>'; $('#link-picker-results').innerHTML = '<div class="link-picker-empty">Loading task sheets…</div>';
   $('#link-picker-query').value = ''; $('#link-picker-query').placeholder = 'Filter files…'; requestAnimationFrame(() => $('#link-picker-query').focus());
@@ -4005,7 +4107,7 @@ function setToolbarPosition(type, position) {
     state.toolbarPositions.notes = position;
     localStorage.setItem('stillnote-notes-toolbar-position', position);
     const editor = $('#note-editor'); editor.dataset.toolbarPosition = position;
-    const visible = Boolean(state.view && !state.structured && position !== 'hidden');
+    const visible = Boolean(state.markdownView && state.markdownView !== 'reading' && position !== 'hidden');
     $('#note-format-toolbar').hidden = !visible;
     editor.classList.toggle('has-markdown-editor', visible);
   } else {
@@ -4210,10 +4312,20 @@ function setupPanelResizers() {
   });
   setWidths();
 }
-function appendChatBubble(role, text) {
+function appendChatBubble(role, text, sheets = []) {
   const bubble = document.createElement('div');
   bubble.className = `chat-bubble ${role}`;
-  bubble.textContent = text;
+  if (!sheets.length) bubble.textContent = text;
+  else {
+    for (const part of text.split(/(<\[[^\]]+\]>)/g)) {
+      const file = part.startsWith('<[') && part.endsWith(']>') && part.slice(2, -2);
+      if (!sheets.includes(file)) { bubble.append(part); continue; }
+      const link = document.createElement('button');
+      link.type = 'button'; link.className = 'home-file-link'; link.textContent = fileLabel(file);
+      link.addEventListener('click', () => void openNote(file));
+      bubble.append(link);
+    }
+  }
   $('#assistant-messages').append(bubble);
   $('#assistant-messages').scrollTop = $('#assistant-messages').scrollHeight;
   return bubble;
@@ -4230,7 +4342,7 @@ function updateAssistantModeCopy() {
   const documentLabel = taskSheet ? 'task sheet' : structuredLabel || (isEditableAsset(state.active || '') ? 'code file' : 'note');
   $('#assistant-input').placeholder = pdf ? 'Ask about this PDF…' : state.assistantMode === 'edit' ? (taskSheet ? 'Describe tasks to add…' : `Describe a change to this ${documentLabel}…`) : `Ask about this ${documentLabel}…`;
 }
-async function addAiTasksToSheet(specs, notePath, originalDocument) {
+async function addAiTasksToSheet(specs, notePath, originalDocument, signal) {
   const owner = state.structured;
   if (!owner || owner.type !== 'tasks' || state.active !== notePath || activeDocumentText() !== originalDocument) throw new Error('The task sheet changed while the assistant was working. Please try again.');
   if (!Array.isArray(specs) || !specs.length) return 0;
@@ -4249,6 +4361,7 @@ async function addAiTasksToSheet(specs, notePath, originalDocument) {
   let added = 0;
   try {
     for (const item of additions) {
+      if (signal.aborted) break;
       if (state.structured !== owner || state.active !== notePath) throw new Error('The task sheet was closed before all tasks were added.');
       const parent = item.parentTitle ? taskByTitle.get(item.parentTitle.toLocaleLowerCase()) : null;
       if (item.parentTitle && !parent) throw new Error(`Could not find parent task “${item.parentTitle}”. Add parent tasks before their subtasks.`);
@@ -4275,6 +4388,9 @@ async function addAiTasksToSheet(specs, notePath, originalDocument) {
   }
   renderStructured('tasks', owner.data, notePath, owner.title || prettyName(notePath));
   return added;
+}
+function prepareAiTables(vault, path, content, original = '') {
+  return window.stillnote.homeTool({ vault, mode:'work', tool:'prepare_note_tables', args:{ path, content, original } });
 }
 function appendAppliedEdit(container, text, notePath, originalDocument) {
   if (state.active !== notePath || activeDocumentText() !== originalDocument) {appendChatBubble('assistant error', 'The document changed while I was working, so I did not apply the edit. Please send the request again.');return false;}
@@ -4342,55 +4458,108 @@ async function loadLinkedAssistantContext(request, current) {
 async function submitAssistantMessage(event) {
   event.preventDefault();
   const prompt = $('#assistant-input').value.trim();
+  if (state.assistantRun) { stopAssistantRun(); return; }
   if (!prompt) return;
   const notePath = state.active, vault = state.vault?.path, navigation = state.navigationId, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
   if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, geometry, 3D calculator, spreadsheet, graph, or task sheet before using the assistant.'); return; }
   const provider = state.aiProvider, model = selectedAiModel(provider);
-  let keyStatus;
-  try { keyStatus = await window.stillnote.aiKeyStatus(provider); }
-  catch (error) { showToast(error.message || 'Could not check AI key status.'); return; }
-  if (!keyStatus.configured) { openSettings('ai'); return; }
   const mode = isPdf ? 'ask' : state.assistantMode;
   const documentType = isPdf ? 'pdf' : state.structured?.type || (isEditableAsset(notePath) ? 'code' : 'markdown');
-  localStorage.setItem(aiModelStorageKey(provider), model);
-  const welcome = $('.assistant-welcome'); if (welcome) welcome.remove();
-  appendChatBubble('user', prompt);
-  const loading = appendChatBubble('assistant loading', 'Thinking…');
-  $('#assistant-input').value = ''; $('#assistant-send').disabled = true;
+  const run = { id:crypto.randomUUID(), controller:new AbortController() };
+  const { signal } = run.controller;
+  const input = $('#assistant-input');
+  const current = () => state.active === notePath && state.vault?.path === vault && state.navigationId === navigation;
+  state.assistantRun = run;
+  updateAiSendButton($('#assistant-send'), run);
+  input.disabled = true;
+  let loading;
   try {
+    const keyStatus = await window.stillnote.aiKeyStatus(provider);
+    signal.throwIfAborted();
+    if (!keyStatus.configured) { openSettings('ai'); return; }
+    localStorage.setItem(aiModelStorageKey(provider), model);
+    $('.assistant-welcome')?.remove();
+    appendChatBubble('user', prompt);
+    loading = appendChatBubble('assistant loading', 'Thinking…');
+    loading.setAttribute('role', 'status');
+    input.value = '';
     const documentText = isPdf ? await extractActivePdfText(notePath) : activeDocumentText();
-    const current = () => state.active === notePath && state.vault?.path === vault && state.navigationId === navigation;
+    signal.throwIfAborted();
     if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
     loading.textContent = 'Reading linked files…';
     const [linkedContext, agenda] = await Promise.all([
       loadLinkedAssistantContext({ provider, vault, notePath, document: documentText }, current),
       readAgenda(vault, { file: notePath, contents: documentText }).then(data => agendaSnapshot(data), () => null),
     ]);
+    signal.throwIfAborted();
     if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
     const scopedAgenda = agenda && relevantAgenda(agenda, {
       file: notePath, prompt, document: documentText, paths: linkedContext.files.map(file => file.path),
     });
     loading.textContent = 'Thinking…';
-    const result = await window.stillnote.askAi({ provider, vault, notePath, mode, model, noteName: prettyName(notePath), documentType, document: documentText, linkedContext, agenda: scopedAgenda, prompt, history: state.chatHistory });
+    const request = { requestId:run.id, provider, vault, notePath, mode, model, noteName:prettyName(notePath), documentType, document:documentText, linkedContext, agenda:scopedAgenda, prompt, history:state.chatHistory.slice() };
+    const result = await requestWithAiHold(() => {
+      if (!current()) throw new Error('The active file or vault changed. Please send the request again.');
+      return window.stillnote.askAi(request);
+    }, { signal, onStatus:label=>{ loading.textContent = label; } });
+    if (!current()) return;
     loading.remove();
     if (documentType === 'tasks' && result.kind === 'tasks') {
-      const added = await addAiTasksToSheet(result.tasks, notePath, documentText);
+      const added = await addAiTasksToSheet(result.tasks, notePath, documentText, signal);
+      if (!current()) return;
+      if (signal.aborted) {
+        appendChatBubble('assistant', added ? `Stopped after adding ${added} ${added === 1 ? 'task' : 'tasks'} to Google Tasks.` : 'Stopped.');
+        return;
+      }
       const responseText = added ? `Added ${added} ${added === 1 ? 'task' : 'tasks'} to Google Tasks.` : 'No tasks were added.';
       appendChatBubble('assistant', responseText);
       state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: responseText });
     } else if (mode === 'edit' && result.kind === 'edit') {
+      let text = result.text;
+      let sheets = [];
+      if (!state.structured && /\.md$/i.test(notePath) && text.includes('|') && current() && activeDocumentText() === documentText) {
+        ({ content:text, sheets } = await prepareAiTables(vault, notePath, text, documentText));
+        if (sheets.length && state.vault?.path === vault) {
+          void refreshExplorer({ paths:sheets, forceLinks:true }).catch(error => console.warn('Could not refresh vault:', error.message));
+        }
+        if (signal.aborted || !current() || activeDocumentText() !== documentText) {
+          if (sheets.length) showToast('The spreadsheets were saved beside the note. The note changed or the edit was stopped before links were inserted.');
+          else if (current() && !signal.aborted) appendChatBubble('assistant error', 'The document changed while I was working. Please send the request again.');
+          return;
+        }
+      }
       const bubble = document.createElement('div'); bubble.className = 'chat-bubble assistant'; $('#assistant-messages').append(bubble);
-      const applied = appendAppliedEdit(bubble, result.text, notePath, documentText);
+      const applied = appendAppliedEdit(bubble, text, notePath, documentText);
       if (!applied) bubble.remove();
       else state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: 'Applied the requested changes to the document.' });
     } else {
-      appendChatBubble('assistant', result.text);
-      state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: result.text });
+      let text = result.text;
+      let sheets = [];
+      if (mode === 'edit' && text.includes('|')) {
+        const answerPath = notePath.replace(/[^/]+$/, 'AI Answer.md');
+        ({ content:text, sheets } = await prepareAiTables(vault, answerPath, text));
+        if (sheets.length && state.vault?.path === vault) {
+          void refreshExplorer({ paths:sheets, forceLinks:true }).catch(error => console.warn('Could not refresh vault:', error.message));
+        }
+        if (!current() || signal.aborted) {
+          if (sheets.length) showToast('The spreadsheets were saved beside the open file before the request stopped.');
+          return;
+        }
+      }
+      appendChatBubble('assistant', text, sheets);
+      state.chatHistory.push({ role: 'user', content: prompt }, { role: 'assistant', content: text });
     }
     state.chatHistory = state.chatHistory.slice(-8);
   } catch (error) {
-    loading.remove(); appendChatBubble('assistant error', error.message || 'The assistant could not respond.');
-  } finally { $('#assistant-send').disabled = false; }
+    loading?.remove();
+    if (current() && loading) appendChatBubble(signal.aborted ? 'assistant' : 'assistant error', signal.aborted ? 'Stopped.' : error.message || 'The assistant could not respond.');
+    else if (current() && !signal.aborted) showToast(error.message || 'Could not check AI key status.');
+  } finally {
+    state.assistantRun = null;
+    input.disabled = false;
+    updateAiSendButton($('#assistant-send'), null);
+    if (current() && state.assistantOpen && document.activeElement === $('#assistant-send')) input.focus();
+  }
 }
 let meetingRecording = false;
 let meetingStarting = false;
@@ -4743,7 +4912,7 @@ document.querySelectorAll('.assistant-mode').forEach((button) => button.addEvent
 $('#assistant-form').addEventListener('submit', submitAssistantMessage);
 $('#assistant-input').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault(); $('#assistant-form').requestSubmit();
+    event.preventDefault(); if (!state.assistantRun) $('#assistant-form').requestSubmit();
   }
 });
 function handleAppEscape(event) {
@@ -4767,6 +4936,7 @@ function handleAppEscape(event) {
   if ([...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(dialog => dialog.getClientRects().length)) return;
   const nativePicker = event.target.closest?.('select,input[type="date"],input[type="color"],input[type="file"]');
   if (nativePicker) return close(() => nativePicker.blur());
+  if (state.markdownView && event.target.closest?.('.cm-editor') && (completionStatus(state.view.state) || state.view.state.selection.ranges.some(range => !range.empty))) return;
   if (state.active && !state.home && !event.metaKey && !event.ctrlKey && !event.altKey) close(() => { void openHome(); });
 }
 document.addEventListener('keydown', (event) => {
@@ -4777,6 +4947,9 @@ document.addEventListener('keydown', (event) => {
   if(state.structured?.type==='canvas'&&event.key==='Backspace'&&state.structured.deleteCanvasSelection&&!event.target.closest('input,textarea,[contenteditable="true"]')&&state.structured.data.elements.length){const hasSelection=document.querySelector('.canvas-svg .is-selected');if(hasSelection){event.preventDefault();state.structured.deleteCanvasSelection();return;}}
   if(state.structured&&mod&&event.key.toLowerCase()==='z'&&!event.target.closest('.canvas-text-edit')){event.preventDefault();void applyStructuredHistory(event.shiftKey?'redo':'undo');return;}
   if(state.structured&&mod&&event.key.toLowerCase()==='y'){event.preventDefault();void applyStructuredHistory('redo');return;}
+  if (mod && !event.shiftKey && event.key.toLowerCase() === 'e' && state.markdownView) {
+    event.preventDefault(); setMarkdownView(state.markdownView === 'reading' ? state.markdownEditingMode : 'reading'); return;
+  }
   if (mod && !event.shiftKey && (event.key.toLowerCase() === 'f' || (!event.metaKey && event.key.toLowerCase() === 'h'))) {
     event.preventDefault();
     if (state.view && !state.home) openSearchPanel(state.view);
@@ -4794,7 +4967,18 @@ document.addEventListener('keydown', (event) => {
   if (mod && event.shiftKey && event.key.toLowerCase() === 'a') { event.preventDefault(); setAssistantOpen(!state.assistantOpen); }
 });
 document.addEventListener('keyup', (event) => { if (event.key === 'Enter') state.contextDeleteBypass = false; });
-window.addEventListener('beforeunload', () => { state.assetViewer?.destroy?.(); if (state.dirty && state.active && state.view) window.stillnote.writeNote(state.active, state.view.state.doc.toString()); else if(state.dirty&&state.active&&state.structured)window.stillnote.writeNote(state.active,encodeStructured(state.structured.type,state.structured.title||prettyName(state.active),state.structured.data)); });
+window.addEventListener('beforeunload', () => {
+  state.assetViewer?.destroy?.();
+  if (!state.dirty || !state.active || state.savePromise) return;
+  const file = state.active;
+  if (state.view) {
+    const contents = state.view.state.doc.toString();
+    void writeEditorDocument(file, state.view, contents, state.markdownView)
+      .catch(() => window.stillnote.writeNote(file, contents)).catch(() => {});
+  } else if (state.structured) {
+    void window.stillnote.writeNote(file, encodeStructured(state.structured.type, state.structured.title || prettyName(file), state.structured.data));
+  }
+});
 window.stillnote.onStorageRecovered((kind) => {
   showToast(kind === 'credentials' ? 'Unreadable credentials backed up. Re-enter your API keys and reconnect Google Tasks in Settings.' : 'Unreadable personal dictionary backed up. You can add words again in Settings.');
 });
