@@ -2,6 +2,8 @@
 
 ## 2026-11-19
 
+- Fixed macOS release builds when signing secrets are absent and allowed retrying an existing version tag from the corrected workflow.
+
 - Prepared version 1.5.1 for npm and GitHub release, including the pending app improvements and installer update support.
 
 ## 2026-11-18
