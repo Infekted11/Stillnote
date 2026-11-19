@@ -2,7 +2,13 @@
 
 ## 2026-11-19
 
+- Prepared version 1.5.2 with canvas clipboard support, stable undo and redo views, and cropped canvas previews.
+
+- Cropped linked canvas previews to their objects with a small margin, sized them to their content, and made empty canvases compact; PDF exports use the same crop.
+
 - Fixed macOS release builds when signing secrets are absent and allowed retrying an existing version tag from the corrected workflow.
+
+- Added canvas copy, cut, and paste for objects, text, and images, and kept the current view in place when undoing or redoing.
 
 - Prepared version 1.5.1 for npm and GitHub release, including the pending app improvements and installer update support.
 

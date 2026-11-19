@@ -660,12 +660,20 @@ class WikiMediaWidget extends WidgetType {
       } else if (isCanvas) {
         const canvas = decodeStructured(asset);
         if (canvas?.type !== 'canvas' || !Array.isArray(canvas.data?.elements)) throw new Error('Invalid canvas');
-        const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        drawing.setAttribute('viewBox', `${canvas.data.originX || 0} ${canvas.data.originY || 0} ${canvas.data.width || 1200} ${canvas.data.height || 760}`);
-        drawing.setAttribute('role', 'img'); drawing.setAttribute('aria-label', this.file);
-        drawing.classList.add('cm-wiki-canvas-preview');
-        drawCanvasElements(drawing, canvas.data, color => state.theme === 'dark' && ['#20211e', '#353630', '#373832', '#000', '#000000'].includes(color || '#20211e') ? '#ffffff' : color || '#20211e', new Set(), true);
-        preview.append(drawing);
+        const box = canvasPreviewBounds(canvas.data);
+        if (box) {
+          const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          drawing.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+          drawing.setAttribute('width', box.w); drawing.setAttribute('height', box.h);
+          drawing.setAttribute('role', 'img'); drawing.setAttribute('aria-label', this.file);
+          drawing.classList.add('cm-wiki-canvas-preview');
+          preview.style.width = `${Math.min(560, box.w, 420*box.w/box.h)}px`;
+          drawCanvasElements(drawing, canvas.data, color => state.theme === 'dark' && ['#20211e', '#353630', '#373832', '#000', '#000000'].includes(color || '#20211e') ? '#ffffff' : color || '#20211e', new Set(), true);
+          preview.append(drawing);
+        } else {
+          const empty = document.createElement('span'); empty.className = 'cm-wiki-media-loading'; empty.textContent = 'Empty canvas';
+          preview.style.width = 'auto'; preview.append(empty);
+        }
       } else if (isPlayable) {
         const player = createMediaPlayer(asset, this.file, { embedded: true, settingsKey: `${state.vault?.path}/${this.file}` });
         player.media.addEventListener('loadedmetadata', () => { if (preview.isConnected) view.requestMeasure(); });
@@ -1333,7 +1341,10 @@ async function prepareNotePdf(markdownText) {
         if (!el.missing) delete el.link;
       }));
       const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      drawing.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); drawing.setAttribute('viewBox', `0 0 ${data.width || 1200} ${data.height || 760}`);
+      const box = canvasPreviewBounds(data);
+      if (!box) return '<span class="pdf-embed">Empty canvas</span>';
+      drawing.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); drawing.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+      drawing.setAttribute('width', box.w); drawing.setAttribute('height', box.h);
       drawCanvasElements(drawing, data, color => color || '#20211e', new Set(), true);
       return `<span class="pdf-embed">${drawing.outerHTML}</span>`;
     }
@@ -2491,6 +2502,7 @@ async function applyStructuredHistory(direction){
   const structured=state.structured;if(!structured)return;
   const from=direction==='undo'?structured.undoStack:structured.redoStack,to=direction==='undo'?structured.redoStack:structured.undoStack;
   if(!from.length)return;
+  const canvasViewport = structured.getCanvasViewport?.();
   clearTimeout(structured.historyTimer);structured.historyPending=false;
   to.push(JSON.stringify({title:structured.title||prettyName(state.active),data:structured.data}));
   const snapshot=from.pop();const restored=JSON.parse(snapshot);const type=structured.type,history={undoStack:structured.undoStack,redoStack:structured.redoStack};
@@ -2511,7 +2523,8 @@ async function applyStructuredHistory(direction){
     catch(error){showToast(`Could not restore the file name: ${error.message}`);}
   }
   renderStructured(type,restored.data,active,restored.title||prettyName(active));
-  Object.assign(state.structured,history,{historySnapshot:type === 'gantt' ? state.structured.historySnapshot : snapshot,historyPending:false});
+  if (canvasViewport) state.structured.restoreCanvasViewport(canvasViewport);
+  Object.assign(state.structured,history,{historySnapshot:type === 'canvas' ? JSON.stringify({title:state.structured.title,data:state.structured.data}) : type === 'gantt' ? state.structured.historySnapshot : snapshot,historyPending:false});
   state.dirty=true;$('#save-state').textContent='Unsaved changes';clearTimeout(state.saveTimer);state.saveTimer=setTimeout(saveActive,250);updateStructuredHistoryButtons();
 }
 function renderStructured(type, rawData, file, title) {
@@ -2823,6 +2836,13 @@ function canvasSelectionFrame(elements, rotation = 0) {
   const cx = left+w/2, cy = top+h/2, center = { x: cx*cos-cy*sin, y: cx*sin+cy*cos };
   return { x: center.x-w/2, y: center.y-h/2, w, h, rotation, center };
 }
+// Crop linked previews independently of the editor's growable drawing area.
+function canvasPreviewBounds(data) {
+  const box = canvasSelectionFrame(data.elements);
+  if (!box) return null;
+  const padding = 16; // Include thick strokes and line endpoint markers.
+  return { x:box.x-padding, y:box.y-padding, w:box.w+padding*2, h:box.h+padding*2 };
+}
 function expandCanvasBounds(data, content = canvasSelectionFrame(data.elements), padding = 120) {
   const oldX = data.originX || 0, oldY = data.originY || 0;
   if (!content) return { x: 0, y: 0 };
@@ -2960,6 +2980,72 @@ function drawCanvasElements(svg, data, displayColor, selected = new Set(), readO
       if(el.type!=='stroke'&&el.rotation) node.setAttribute('transform',`rotate(${el.rotation} ${elementBounds.x+elementBounds.w/2} ${elementBounds.y+elementBounds.h/2})`);
       node.dataset.index = i; if (selected.has(i)) node.classList.add('is-selected'); svg.append(node);
     });
+}
+// Use world coordinates so history can restore a view even when its origin changes.
+function canvasViewport(surface, data) {
+  return { x: (data.originX || 0)+surface.scrollLeft, y: (data.originY || 0)+surface.scrollTop, w: surface.clientWidth, h: surface.clientHeight };
+}
+function restoreCanvasViewport(surface, data, viewport, syncSize) {
+  syncSize(viewport);
+  surface.scrollLeft = viewport.x-(data.originX || 0);
+  surface.scrollTop = viewport.y-(data.originY || 0);
+}
+function readCanvasClipboard(text) {
+  try {
+    const value = JSON.parse(text);
+    if (value.type !== 'stillnote-canvas' || value.version !== 1 || !Array.isArray(value.elements) || !value.elements.length) return null;
+    const finite = (el, keys) => keys.every(key => Number.isFinite(el[key]));
+    if (!value.elements.every(el => el &&
+      (el.type === 'stroke' ? Array.isArray(el.points) && el.points.length && el.points.every(p => p && finite(p, ['x','y'])) :
+       el.type === 'line' ? finite(el, ['x1','y1','x2','y2']) :
+       ['shape','rect','ellipse','text','image'].includes(el.type) && finite(el, ['x','y','w','h'])) &&
+      (el.rotation === undefined || Number.isFinite(el.rotation)))) return null;
+    return value.elements;
+  } catch { return null; }
+}
+function placeCanvasElements(data, elements, position) {
+  const frame = canvasSelectionFrame(elements);
+  const dx = position.x-frame.x, dy = position.y-frame.y;
+  const copies = structuredClone(elements);
+  for (const el of copies) {
+    if (el.type === 'stroke') el.points = el.points.map(p => ({ x:p.x+dx, y:p.y+dy }));
+    else if (el.type === 'line') { el.x1+=dx; el.y1+=dy; el.x2+=dx; el.y2+=dy; }
+    else { el.x+=dx; el.y+=dy; }
+  }
+  const start = data.elements.length;
+  data.elements.push(...copies);
+  return new Set(copies.map((_,i) => start+i));
+}
+function attachCanvasClipboard(root, { copy, paste, cut }) {
+  const textField = node => node?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]');
+  const allowed = event => root.isConnected && !event.defaultPrevented && event.clipboardData &&
+    !textField(event.target) && !textField(document.activeElement) &&
+    (!document.activeElement || document.activeElement === document.body || root.contains(document.activeElement)) &&
+    (event.target === document.body || root.contains(event.target));
+  const onCopy = event => {
+    if (!allowed(event)) return;
+    const elements = copy();
+    if (!elements.length) return;
+    event.clipboardData.setData('text/plain', JSON.stringify({ type:'stillnote-canvas', version:1, elements }));
+    event.preventDefault();
+    if (event.type === 'cut') cut();
+  };
+  const onPaste = event => {
+    if (!allowed(event)) return;
+    const text = event.clipboardData.getData('text/plain');
+    const image = [...(event.clipboardData.files || [])].find(file => file.type.startsWith('image/'));
+    if (!text && !image) return;
+    event.preventDefault();
+    void paste({ elements:readCanvasClipboard(text), text, image });
+  };
+  document.addEventListener('copy', onCopy);
+  document.addEventListener('cut', onCopy);
+  document.addEventListener('paste', onPaste);
+  return () => {
+    document.removeEventListener('copy', onCopy);
+    document.removeEventListener('cut', onCopy);
+    document.removeEventListener('paste', onPaste);
+  };
 }
 function attachCanvasOptionsShortcut(root, onToggle) {
   let pending = false;
@@ -3158,7 +3244,7 @@ function renderCanvas(root, data) {
   lineMenu.querySelectorAll('button[data-endpoint][data-style]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='line'){target[`${button.dataset.endpoint}Marker`]=button.dataset.style;paint();setStructuredDirty();}}));
   toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
   const point = e => { const p = svg.createSVGPoint(); p.x=e.clientX;p.y=e.clientY; const q=p.matrixTransform(svg.getScreenCTM().inverse()); return {x:q.x,y:q.y}; };
-  const updateToolHelp=()=>{const help={select:'First click selects text for dragging; click it again to edit. Alt + drag moves selected text. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=[help[tool], 'Press Shift to show or hide selected object options.'].filter(Boolean).join(' ');toolHelp.hidden=false;};
+  const updateToolHelp=()=>{const help={select:'First click selects text for dragging; click it again to edit. Alt + drag moves selected text. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=[help[tool], 'Copy, cut, and paste with Ctrl/Cmd+C, X, and V. Press Shift to show or hide selected object options.'].filter(Boolean).join(' ');toolHelp.hidden=false;};
   updateToolHelp();
   svg.addEventListener('pointerdown', e => {const textEditor=e.target.closest('.canvas-text-edit');
     if (textEditor && tool === 'select' && !e.altKey && document.activeElement === textEditor) return;
@@ -3296,8 +3382,45 @@ function renderCanvas(root, data) {
   });
   paint();
   state.structured.refreshCanvas=paint;
+  state.structured.getCanvasViewport = () => canvasViewport(surface, data);
+  state.structured.restoreCanvasViewport = viewport => restoreCanvasViewport(surface, data, viewport, syncCanvasSize);
+  const owner = state.structured;
+  let pasteCount = 0, lastPaste = '';
+  const removeClipboard = attachCanvasClipboard(root, {
+    copy: () => [...selected].sort((a,b) => a-b).map(i => data.elements[i]).filter(Boolean),
+    cut: deleteSelected,
+    paste: async ({ elements, text, image }) => {
+      if (draft || interaction) return;
+      try {
+        const view = canvasViewport(surface, data);
+        if (!elements && image) {
+          const src = await new Promise((resolve, reject) => {
+            const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader.readAsDataURL(image);
+          });
+          const bitmap = new Image();
+          await new Promise((resolve, reject) => { bitmap.onload = resolve; bitmap.onerror = () => reject(new Error('Could not paste this image.')); bitmap.src = src; });
+          const scale = Math.min(1, Math.max(100, view.w*.8)/bitmap.naturalWidth, Math.max(100, view.h*.8)/bitmap.naturalHeight);
+          elements = [{ type:'image', src, name:image.name || 'Pasted image', x:0, y:0, w:bitmap.naturalWidth*scale, h:bitmap.naturalHeight*scale }];
+        }
+        if (state.structured !== owner || !root.isConnected) return;
+        elements ||= [{ type:'text', text, x:0, y:0, w:220, h:Math.max(60, text.split('\n').length*textSize*1.4), fontSize:textSize, color:selectedColor }];
+        const signature = JSON.stringify(elements);
+        pasteCount = signature === lastPaste ? pasteCount+1 : 0; lastPaste = signature;
+        // Preserve copied placement when visible; bring off-screen content into view.
+        const frame = canvasSelectionFrame(elements);
+        const visible = frame.x >= view.x && frame.y >= view.y && frame.x < view.x+view.w && frame.y < view.y+view.h;
+        const position = { x:(visible ? frame.x : view.x)+24*(pasteCount+1), y:(visible ? frame.y : view.y)+24*(pasteCount+1) };
+        clearTimeout(owner.historyTimer); owner.historyPending = false;
+        selected = placeCanvasElements(data, elements, position);
+        tool = 'select'; svg.dataset.tool = tool;
+        toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button => { const active = button.dataset.tool === tool; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+        updateToolHelp(); paint(); setStructuredDirty();
+        owner.historyPending = false;
+      } catch (error) { if (state.structured === owner) showToast(error.message || 'Could not paste into the canvas.'); }
+    },
+  });
   const removeOptionsShortcut = attachCanvasOptionsShortcut(root, () => { optionsVisible = !optionsVisible; paintSelection(); });
-  state.structured.cleanup=()=>{cancelAnimationFrame(scrollFrame);removeOptionsShortcut();};
+  state.structured.cleanup=()=>{cancelAnimationFrame(scrollFrame);removeOptionsShortcut();removeClipboard();};
 }
 async function renderGraph(root, data) {
   const toolbar = root.querySelector('.structured-toolbar');

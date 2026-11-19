@@ -486,7 +486,7 @@ body.resizing-panels *{cursor:col-resize!important;user-select:none!important}
 
 /* Inline canvas and playable media use the same link editing controls as images. */
 .cm-wiki-media-preview.is-canvas,.cm-wiki-media-preview.is-playable{display:inline-flex;flex-direction:column;width:min(100%,560px);max-width:min(100%,560px);vertical-align:top}
-.cm-wiki-canvas-preview{display:block;width:100%;height:auto;min-height:100px;max-height:420px}
+.cm-wiki-canvas-preview{display:block;width:100%;height:auto;max-height:420px}
 .cm-wiki-canvas-preview .canvas-text-edit{font:18px/1.4 'DM Sans',sans-serif;white-space:pre-wrap}
 .asset-media-player{display:block;width:100%;max-width:100%;max-height:70vh}
 .cm-wiki-media-preview video{max-height:340px;background:#161714}

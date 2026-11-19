@@ -55,7 +55,9 @@ test('linked canvas renders its shapes, strokes, arrows and rotated text without
   await flush();
   const drawing = preview.children[1];
   assert.equal(drawing.tagName, 'SVG');
-  assert.equal(drawing.attributes.viewBox, '0 0 1200 760');
+  const [x,y,w,h] = drawing.attributes.viewBox.split(' ').map(Number);
+  assert(x < 5 && y < 8); assert(w < 1200 && h < 760);
+  assert.equal(preview.style.width, `${w}px`);
   assert.equal(drawing.children.length, 4);
   assert.match(drawing.children[1].attributes.transform, /rotate\(45/);
   assert.equal(drawing.children[2].children.length, 2);
@@ -315,11 +317,44 @@ test('text sizes persist through save and render in editable and embedded canvas
     }
   }
 });
-test('embedded canvases retain expanded negative origins', async () => {
+test('embedded canvases crop empty margins at negative coordinates without changing saved bounds', async () => {
   const context = harness({ canvas: true });
-  context.window.stillnote.readNote = async () => '<!-- stillnote:type=canvas -->\n```stillnote-canvas\n' + JSON.stringify({ originX: -240, originY: -160, width: 1800, height: 1000, elements: [] }) + '\n```';
+  const data = { originX:-2400, originY:-1600, width:6000, height:5000, elements:[{type:'rect',x:-200,y:-100,w:80,h:40}] };
+  const saved = JSON.stringify(data);
+  context.window.stillnote.readNote = async () => '<!-- stillnote:type=canvas -->\n```stillnote-canvas\n' + saved + '\n```';
   const preview = new context.Widget('Canvas.md', 0, 13).toDOM({ requestMeasure() {} }); await flush();
-  assert.equal(preview.children[1].attributes.viewBox, '-240 -160 1800 1000');
+  assert.equal(preview.children[1].attributes.viewBox, '-216 -116 112 72');
+  assert.equal(preview.children[1].attributes.width, '112');
+  assert.equal(preview.children[1].attributes.height, '72');
+  assert.equal(preview.style.width, '112px');
+  assert.equal(JSON.stringify(data), saved);
+});
+test('empty linked canvases show a compact placeholder', async () => {
+  const context = harness({ canvas:true });
+  context.window.stillnote.readNote = async () => '<!-- stillnote:type=canvas -->\n```stillnote-canvas\n' + JSON.stringify({width:5000,height:4000,elements:[]}) + '\n```';
+  const preview = new context.Widget('Canvas.md',0,13).toDOM({requestMeasure(){}}); await flush();
+  assert.equal(preview.children[1].textContent,'Empty canvas');
+  assert.equal(preview.style.width,'auto');
+  assert.equal(context.canvasPreviewBounds({elements:[]}),null);
+});
+test('preview bounds include rotated objects, strokes, images and line endpoint padding', () => {
+  const context = harness();
+  const elements = [
+    {type:'image',x:0,y:0,w:100,h:40,rotation:90},
+    {type:'stroke',points:[{x:-50,y:0},{x:0,y:0}]},
+    {type:'line',x1:50,y1:0,x2:140,y2:20},
+    {type:'text',x:20,y:10,w:50,h:60,text:'Hello'},
+  ];
+  const box = context.canvasPreviewBounds({elements});
+  assert.equal(box.x,-66); assert.equal(box.y,-46);
+  assert.equal(box.w,222); assert.equal(box.h,132);
+});
+test('tall linked canvases shrink proportionally to fit the preview height', async () => {
+  const context = harness({canvas:true});
+  context.window.stillnote.readNote = async () => '<!-- stillnote:type=canvas -->\n```stillnote-canvas\n' + JSON.stringify({elements:[{type:'rect',x:900,y:700,w:100,h:1000}]}) + '\n```';
+  const preview = new context.Widget('Canvas.md',0,13).toDOM({requestMeasure(){}}); await flush();
+  assert.equal(preview.children[1].attributes.viewBox,'884 684 132 1032');
+  assert.equal(preview.style.width,`${420*132/1032}px`);
 });
 
 test('spreadsheet preview trims trailing empty rows and columns, counting zeros and formulas', () => {
