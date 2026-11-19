@@ -25,7 +25,7 @@ export function createAgendaView(panel, { icons, openLink, fileLabel }) {
     header.innerHTML = task.kind === 'gantt' ? icons.gantt : icons.tasks;
     header.append(task.origin ? linkButton(task.origin, task.source) : document.createTextNode(task.source));
     if (task.cached) header.append(element('span', 'agenda-cached', 'Cached'));
-    const title = element('h3', 'agenda-card-title', task.title);
+    const title = element('h3', 'agenda-card-title', task.instanceNumber ? `${task.title} · Instance ${task.instanceNumber}` : task.title);
     const schedule = element('p', 'agenda-schedule');
     const dates = task.kind === 'gantt' ? (task.allDay ? formatDate : formatTime) : null;
     if (dates) {

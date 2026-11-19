@@ -1,4 +1,4 @@
-export const HOME_READ_TOOLS = new Set(['list_files','search_files','read_file','file_relations','analyze_data','list_task_lists','list_tasks','read_agenda']);
+export const HOME_READ_TOOLS = new Set(['list_files','search_files','read_file','read_gantt','file_relations','analyze_data','list_task_lists','list_tasks','read_agenda']);
 export function compactHomeContext(messages, limit = 170000) {
   if (!messages.length) return [];
   const clip = message => ({role:message.role,content:message.content.length > 50000 ? message.content.slice(0,50000)+'\n[Content truncated; reread the source if needed.]' : message.content});
@@ -38,7 +38,7 @@ export async function runHomeAgent({ mode, prompt, history = [], context = [], m
         if (mode !== 'work' && !HOME_READ_TOOLS.has(name)) throw new Error('Ask mode is read-only. Switch to Work mode to change files or tasks.');
         const result = await tool(name,action.args || {});
         event.status = 'done'; event.path = result?.path; event.summary = result?.summary;
-        event.facts = Object.fromEntries(['path','id','listId','taskId','revision','reference','line','sheets'].filter(key => result?.[key] !== undefined).map(key => [key,result[key]]));
+        event.facts = Object.fromEntries(['path','format','id','listId','taskId','taskNumbers','revision','reference','line','sheets'].filter(key => result?.[key] !== undefined).map(key => [key,result[key]]));
         results.push({tool:name,result});
       } catch(error) {
         event.status = 'error'; event.summary = error.message;

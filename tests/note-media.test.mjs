@@ -182,6 +182,19 @@ test('canvas text paste inserts plain text through the browser editing history',
   assert.equal(prevented, true);
   assert.deepEqual(calls, [['insertText', false, 'Pasted\ntext']]);
 });
+test('canvas text cannot enter editing or rewrite links when selection is disabled', () => {
+  const context = harness();
+  const data = { elements: [{ type: 'text', x: 0, y: 0, text: '<[Notes.md]>' }] };
+  const drawing = new Element('svg'); let blurred = false, focused = 0;
+  context.drawCanvasElements(drawing, data, color => color, new Set(), false, () => { focused++; return false; });
+  const editor = drawing.children[0].editor;
+  editor.innerText = 'Notes.md';
+  editor.blur = () => { blurred = true; editor.listeners.blur(); };
+  editor.listeners.focus();
+  assert.equal(focused, 1); assert.equal(blurred, true);
+  assert.equal(editor.contentEditable, 'false');
+  assert.equal(data.elements[0].text, '<[Notes.md]>');
+});
 
 test('single rotated selection frame stays aligned with the object', () => {
   const context = harness();
@@ -231,6 +244,82 @@ test('duplicate selection offsets independent copies and preserves stacking, rot
   data.elements[5].points[0].x = 999;
   assert.equal(data.elements[1].points[0].x, 1);
   assert.equal(data.elements[0].x, 10);
+});
+
+test('canvas expands on all sides without moving objects or shrinking on later edits', () => {
+  const context = harness();
+  const data = { width: 1200, height: 760, elements: [
+    { type: 'shape', x: -100, y: -80, w: 50, h: 40 },
+    { type: 'text', x: 1180, y: 740, w: 200, h: 80, fontSize: 36 },
+  ] };
+  const originals = structuredClone(data.elements);
+  const shift = context.expandCanvasBounds(data);
+  assert(data.originX < -100 && data.originY < -80);
+  assert(data.originX+data.width > 1380 && data.originY+data.height > 820);
+  assert.equal(shift.x, -data.originX); assert.equal(shift.y, -data.originY);
+  assert.deepEqual(data.elements, originals);
+  const saved = JSON.stringify(data);
+  context.expandCanvasBounds(data);
+  assert.equal(JSON.stringify(data), saved);
+  data.elements = [];
+  context.expandCanvasBounds(data);
+  assert.equal(data.width, JSON.parse(saved).width);
+});
+test('canvas growth includes rotated corners, line endpoints, and freehand strokes', () => {
+  const context = harness();
+  for (const element of [
+    { type: 'image', x: 1170, y: 720, w: 20, h: 20, rotation: 45 },
+    { type: 'line', x1: 40, y1: 30, x2: 1600, y2: -300 },
+    { type: 'stroke', points: [{ x: -500, y: 30 }, { x: 80, y: 2000 }] },
+  ]) {
+    const data = { width: 1200, height: 760, elements: [element] };
+    context.expandCanvasBounds(data);
+    const box = context.canvasSelectionFrame([element]);
+    assert(data.originX <= box.x && data.originY <= box.y);
+    assert(data.originX+data.width >= box.x+box.w && data.originY+data.height >= box.y+box.h);
+  }
+});
+test('grid snapping handles negative coordinates and can be fully disabled', () => {
+  const context = harness(), box = { x: 33, y: -32, w: 50, h: 40 };
+  const grid = context.snapCanvasBounds(box, [], { grid: true, objects: false });
+  assert.equal(grid.x, 40); assert.equal(grid.y, -40);
+  const free = context.snapCanvasBounds(box, [{ x: 34, y: -31, w: 50, h: 40 }], { grid: false, objects: false });
+  assert.equal(free.x, 33); assert.equal(free.y, -32); assert.equal(free.guides.length, 0);
+});
+test('object snapping aligns centers and opposite edges with visible guides', () => {
+  const context = harness();
+  const targets = [{ x: 100, y: 300, w: 100, h: 80 }];
+  const center = context.snapCanvasBounds({ x: 128, y: 501, w: 40, h: 60 }, targets);
+  assert.equal(center.x+20, 150); assert.equal(center.y, 501);
+  assert.equal(center.guides.length, 1); assert.equal(center.guides[0].position, 150);
+  const edge = context.snapCanvasBounds({ x: 64, y: 222, w: 40, h: 80 }, targets);
+  assert.equal(edge.x+40, 100); assert.equal(edge.y+80, 300);
+  assert.equal(edge.guides.length, 2);
+});
+test('nearest object alignment wins over grid and distant objects do not attract', () => {
+  const context = harness();
+  const box = { x: 103, y: 513, w: 40, h: 40 };
+  const snapped = context.snapCanvasBounds(box, [{ x: 108, y: 900, w: 100, h: 80 }, { x: 104, y: 1000, w: 100, h: 80 }], { grid: true });
+  assert.equal(snapped.x, 104); assert.equal(snapped.y, 520);
+  const distant = context.snapCanvasBounds(box, [{ x: 500, y: 900, w: 100, h: 80 }]);
+  assert.equal(distant.x, 103); assert.equal(distant.y, 513);
+});
+test('text sizes persist through save and render in editable and embedded canvases', () => {
+  const context = harness();
+  for (const [fontSize, expected] of [[undefined,20],[36,36],[1,8],[500,200],['invalid',20]]) {
+    const data = JSON.parse(JSON.stringify({ elements: [{ type: 'text', x: -100, y: -40, w: 200, h: 100, text: 'Title', fontSize }] }));
+    for (const readOnly of [true,false]) {
+      const drawing = new Element('svg');
+      context.drawCanvasElements(drawing, data, color => color, new Set(), readOnly);
+      assert.equal(drawing.children[0].editor.style.fontSize, `${expected}px`);
+    }
+  }
+});
+test('embedded canvases retain expanded negative origins', async () => {
+  const context = harness({ canvas: true });
+  context.window.stillnote.readNote = async () => '<!-- stillnote:type=canvas -->\n```stillnote-canvas\n' + JSON.stringify({ originX: -240, originY: -160, width: 1800, height: 1000, elements: [] }) + '\n```';
+  const preview = new context.Widget('Canvas.md', 0, 13).toDOM({ requestMeasure() {} }); await flush();
+  assert.equal(preview.children[1].attributes.viewBox, '-240 -160 1800 1000');
 });
 
 test('spreadsheet preview trims trailing empty rows and columns, counting zeros and formulas', () => {

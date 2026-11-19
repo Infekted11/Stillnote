@@ -82,16 +82,17 @@ test('Home retries Groq JSON generation errors once and validates the fallback r
   const failure = {error:{message:"Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.",code:'json_validate_failed',failed_generation:'private invalid output'}};
   const messages = [{role:'system',content:'Home prompt'},{role:'user',content:'List files'}];
   const reply = {kind:'step',text:null,plan:[],actions:[{tool:'list_files',label:'List files',args:null}]};
-  const send = secondResponse => {
+  const send = (secondResponse, firstFailure = failure) => {
     let attempts = 0;
     return groqChat({apiKey:'gsk_test',messages,schema:HOME_RESPONSE_SCHEMA,fetchImpl:async(_url,options)=>{
       const body = JSON.parse(options.body);
       assert.equal(body.model, DEFAULT_GROQ_MODEL);
       assert.deepEqual(body.messages.slice(1), messages.slice(1));
       assert(body.messages[0].content.startsWith(messages[0].content));
+      assert.match(body.messages[0].content, /Never emit native tool calls/);
       if (++attempts === 1) {
         assert.equal(body.response_format.type, 'json_schema');
-        return response(failure,400);
+        return response(firstFailure,400);
       }
       assert.equal(attempts, 2);
       assert.deepEqual(body.response_format, {type:'json_object'});
@@ -105,6 +106,9 @@ test('Home retries Groq JSON generation errors once and validates the fallback r
   const invalidReply = {...reply,actions:[{tool:'create_file',label:'Write',args:{path:'Plan.md'}}]};
   await assert.rejects(send(response(completion(JSON.stringify(invalidReply)))),/invalid assistant response/);
   await assert.rejects(send(response(failure,400)),error=>error.status===400&&/could not generate a valid Home reply/.test(error.message)&&!error.message.includes(failure.error.failed_generation));
+  const nativeCallFailure = {error:{message:'Tool choice is none, but model called a tool',code:'tool_use_failed'}};
+  assert.deepEqual(JSON.parse(await send(response(completion(JSON.stringify(reply))), nativeCallFailure)), JSON.parse(result));
+  await assert.rejects(send(response(nativeCallFailure,400), nativeCallFailure), /could not generate a valid Home reply/);
 });
 
 test('response extraction rejects truncation, refusals and reasoning-only replies',()=>{

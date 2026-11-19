@@ -15,9 +15,14 @@ export function parseVaultLink(value) {
   return {linkOnly,target,previewSize:size ? {width:Number(size[1]),height:Number(size[2])} : null,path:(hash<0?target:target.slice(0,hash)).trim(),fragment:hash<0?'':target.slice(hash+1).trim(),label:separator<0?'':body.slice(separator+1)};
 }
 export function ganttTaskNumber(fragment) {
-  const match = /^(?:task-)?([1-9][0-9]*)$/i.exec(fragment);
-  const number = match ? Number(match[1]) : NaN;
-  return Number.isSafeInteger(number) ? number : null;
+  return ganttTaskReference(fragment)?.taskNumber ?? null;
+}
+export function ganttTaskReference(fragment) {
+  const match = /^(?:task-)?([1-9][0-9]*)(?:-instance-([1-9][0-9]*))?$/i.exec(fragment);
+  if (!match) return null;
+  const taskNumber = Number(match[1]), instanceNumber = match[2] ? Number(match[2]) : null;
+  return Number.isSafeInteger(taskNumber) && (instanceNumber === null || Number.isSafeInteger(instanceNumber))
+    ? { taskNumber, instanceNumber } : null;
 }
 export function shouldRenderFileLink(value,format,extension) {
   const { linkOnly, fragment } = parseVaultLink(value);

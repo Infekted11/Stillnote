@@ -54,7 +54,7 @@ async function groqChat({apiKey,model=DEFAULT_GROQ_MODEL,messages,schema=NOTE_RE
   const isHome = schema === HOME_RESPONSE_SCHEMA;
   const responseSchema = isHome ? GROQ_HOME_RESPONSE_SCHEMA : schema;
   const instruction='Respond only with the requested JSON object. Include every required field, using null or empty arrays for unused values. Do not include reasoning text.'
-    + (isHome ? ' For actions that take no parameters, set args to null.' : '');
+    + (isHome ? ' Describe requested tool actions as entries in the JSON actions array. Never emit native tool calls. For actions that take no parameters, set args to null.' : '');
   const system={role:'system',content:[...messages.filter(message=>message.role==='system').map(message=>message.content),instruction].join('\n\n')};
   const reasoning=model.startsWith('openai/gpt-oss-')?{include_reasoning:false}:{reasoning_format:'hidden'};
   const body={model,stream:false,max_completion_tokens:4096,...reasoning,
@@ -72,7 +72,11 @@ async function groqChat({apiKey,model=DEFAULT_GROQ_MODEL,messages,schema=NOTE_RE
     if(response.ok)return completionText(data,responseSchema);
     // Retry generation once with a simpler response format. Both paths validate locally.
     const error = data?.error;
-    if (isHome && response.status === 400 && (error?.code === 'json_validate_failed' || /^Failed to generate JSON\b/i.test(error?.message ?? error))) {
+    const message = error?.message ?? error;
+    const generationRejected = error?.code === 'json_validate_failed'
+      || /^Failed to generate JSON\b/i.test(message)
+      || /\bTool choice is none, but model called a tool\b/i.test(message);
+    if (isHome && response.status === 400 && generationRejected) {
       if (usedJsonFallback) {
         throw Object.assign(new Error('Groq could not generate a valid Home reply. Try a smaller request or another Groq model.'), {status:response.status});
       }

@@ -26,3 +26,16 @@ test('removing a pending graph preview prevents late mounting',async()=>{
   const preview=createGraphPreview(h.host,'graph',{state:{}},{...h.deps,getKey:()=>new Promise(resolve=>{resolveKey=resolve;})});
   preview.destroy();resolveKey('key');await preview.ready;assert.equal(h.calls.length,0);
 });
+
+test('a new graph previews its initial expressions before the editor saves Desmos state', async () => {
+  const h = harness();
+  let expressions;
+  h.api.GraphingCalculator = () => ({
+    setExpressions: value => { expressions = value; },
+    destroy() {},
+  });
+  const data = { state: null, expressions: ['y=x^2'] };
+  await createGraphPreview(h.host, 'graph', data, h.deps).ready;
+  assert.deepEqual(expressions, [{ id: 'initial_0', latex: 'y=x^2' }]);
+  assert.equal(data.state, null);
+});

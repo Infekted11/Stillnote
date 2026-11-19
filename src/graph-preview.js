@@ -1,10 +1,16 @@
+export function seedGraphExpressions(calculator, data) {
+  calculator.setExpressions(data.expressions.map((latex, index) => ({ id: 'initial_' + index, latex })));
+}
+
 // Each preview owns a separate Desmos instance and never saves changes to its source.
 export function createGraphPreview(host, type, data, {getKey,loadApi,isCurrent=()=>host.isConnected,onResize=()=>{}}) {
   let calculator=null,disposed=false;
   const current=()=>!disposed&&isCurrent();
   const destroy=()=>{disposed=true;calculator?.destroy();calculator=null;};
   const ready=(async()=>{
-    if(!data?.state||typeof data.state!=='object')throw new Error('Open and save this graph file to create its preview.');
+    const hasState = data?.state && typeof data.state === 'object';
+    const hasExpressions = type === 'graph' && Array.isArray(data?.expressions) && data.expressions.length;
+    if(!hasState && !hasExpressions)throw new Error('Open and save this graph file to create its preview.');
     const key=await getKey();if(!current())return;
     if(!key)throw new Error('Add a Desmos API key in Settings → Graphing to show this preview.');
     const api=await loadApi(key);if(!current())return;
@@ -13,7 +19,8 @@ export function createGraphPreview(host, type, data, {getKey,loadApi,isCurrent=(
     if(!factory||typeof api[factory]!=='function'||feature&&api.enabledFeatures?.[feature]===false)throw new Error('This Desmos API key does not have access to this graph type.');
     const options={expressions:false,expressionsTopbar:false,keypad:false,settingsMenu:false,zoomButtons:false,showResetButtonOnGraphpaper:false,pointsOfInterest:false,trace:false,actions:false,lockViewport:true,autosize:true,border:false,invertedColors:false};
     calculator=api[factory](host,options);
-    calculator.setState(structuredClone(data.state));
+    if (hasState) calculator.setState(structuredClone(data.state));
+    else seedGraphExpressions(calculator, data);
     calculator.updateSettings?.(options);
     calculator.clearHistory?.();onResize();
   })().catch(error=>{destroy();throw error;});

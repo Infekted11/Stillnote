@@ -1,109 +1,46 @@
 import { addDatePickers, styleFormValidation } from './form-controls.js';
+import { colors, day, ganttColorName, ganttInstanceRange, ganttInstances, ganttTaskColor, ganttTasks, hour, hourMs, hourValue, lastGanttInstanceNumber, numberGanttTasks, predecessors, primaryGanttInstanceNumber, removeGanttInstance, removeGanttTask } from '../electron/gantt-model.mjs';
 
-const dayMs = 86_400_000;
-
-function day(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return NaN;
-  const time = Date.parse(value);
-  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value ? time / dayMs : NaN;
-}
-
-const hourMs = dayMs / 24;
-const colors = {
-  Lavender: '#cdc1eb', Peach: '#f3c7b1', Mint: '#bde0cd',
-  Sky: '#b9d9ee', Rose: '#edbfd2', Butter: '#f1e2a8',
-  Lilac: '#e1c1e8', Coral: '#f4bdb7', Sage: '#d4dfb5',
-  Aqua: '#b4e2de', Periwinkle: '#bcc9f4', Sand: '#e8d2bb',
-  Green: '#28bf43', Blue: '#1989ef', Magenta: '#df42ce',
-};
-const colorNames = Object.keys(colors);
-const defaultColors = colorNames.slice(0, 12);
-const taskColor = (row, index) => Object.hasOwn(colors, row.color) ? row.color : defaultColors[index % defaultColors.length];
-
-function hour(value, end = false) {
-  if (Number.isFinite(day(value))) return day(value) * 24 + (end ? 24 : 0);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value ?? '')) return NaN;
-  const timestamp = Date.parse(`${value}Z`);
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 16) === value
-    ? timestamp / hourMs : NaN;
-}
-
-export const hourValue = (value) => new Date(Math.round(value * hourMs)).toISOString().slice(0, 16);
+export { ganttTasks, hourValue } from '../electron/gantt-model.mjs';
 
 const tickIntervals = [1, 2, 4, 6, 12, 24, 48, 72, 168, 336, 672];
 export const nowHour = (now = new Date()) => (now.getTime() - now.getTimezoneOffset() * 60_000) / hourMs;
 
 const dateValue = value => hourValue(value).slice(0, 10);
-const progressValue = row => row.googleTask?.status === 'completed' ? 100 : Math.min(100, Math.max(0, Number(row.progress) || 0));
 
-export function ganttTasks(rows, lastTaskNumber = 0) {
-  if (!Number.isSafeInteger(lastTaskNumber) || lastTaskNumber < 0) lastTaskNumber = 0;
-  const tasks = rows.map((row, index) => ({ row, index, children: [] }));
-  const byId = new Map(tasks.filter(task => task.row.id).map(task => [task.row.id, task]));
-  const roots = [];
+export function ganttInstanceAt(row, source, cursorHour) {
+  const range = ganttInstanceRange(source, row.milestone);
+  const allDay = Number.isFinite(day(source.start)) || !Number.isFinite(range.start);
+  const start = allDay ? Math.floor(cursorHour / 24) * 24 : Math.round(cursorHour * 4) / 4;
+  const duration = Number.isFinite(range.start) ? range.end - range.start : 24;
+  const from = allDay ? dateValue(start) : hourValue(start);
+  return {
+    number: lastGanttInstanceNumber(row) + 1,
+    start: from,
+    end: row.milestone ? from : allDay && Number.isFinite(day(source.end ?? dateValue(start)))
+      ? dateValue(start + duration - 24) : hourValue(start + duration),
+  };
+}
+export function ganttScheduleStatus(tasks, now) {
+  let upcoming, upcomingStart = Infinity;
   for (const task of tasks) {
-    const parent = byId.get(task.row.parentId);
-    let ancestor = parent;
-    while (ancestor && ancestor !== task) ancestor = ancestor.parent;
-    if (parent && !ancestor && !parent.row.milestone) {
-      task.parent = parent;
-      parent.children.push(task);
-    } else roots.push(task);
-  }
-  const ordered = [];
-  function visit(task, depth) {
-    task.depth = depth;
-    ordered.push(task);
-    for (const child of task.children) visit(child, depth + 1);
-    const scheduled = task.children.filter(child => Number.isFinite(child.start));
-    if (scheduled.length) {
-      task.start = Math.min(...scheduled.map(child => child.start));
-      task.end = Math.max(...scheduled.map(child => child.end));
-      const total = scheduled.reduce((sum, child) => sum + child.weight, 0);
-      task.progress = total ? scheduled.reduce((sum, child) => sum + child.weight * child.progress, 0) / total : 0;
-      task.weight = total;
-    } else {
-      const start = hour(task.row.start);
-      const end = task.row.milestone ? start : hour(task.row.end, true);
-      task.start = end > start || (task.row.milestone && Number.isFinite(start)) ? start : NaN;
-      task.end = end;
-      task.progress = progressValue(task.row);
-      task.weight = Number.isFinite(task.start) ? Math.max(0, end - start) : 0;
+    if (task.children.length || task.progress === 100) continue;
+    for (const range of task.ranges) {
+      if (range.start <= now && now < range.end) return { label: 'Happening now', task, range };
+      if (range.start >= now && range.start < upcomingStart) {
+        upcoming = { label: 'Upcoming', task, range };
+        upcomingStart = range.start;
+      }
     }
   }
-  for (const root of roots) visit(root, 0);
-  const numbered = new Map();
-  for (const task of ordered) {
-    const number = task.row.taskNumber;
-    if (!Number.isSafeInteger(number) || number < 1 || numbered.has(number)) continue;
-    task.number = number;
-    numbered.set(number, task);
-    lastTaskNumber = Math.max(lastTaskNumber, number);
-  }
-  for (const task of ordered) {
-    if (task.number) continue;
-    task.number = ++lastTaskNumber;
-    numbered.set(task.number, task);
-  }
-  return { ordered, byId, numbered, lastTaskNumber };
-}
-
-export function ganttScheduleStatus(tasks, now) {
-  let upcoming;
-  for (const task of tasks) {
-    const { start, end, children, progress } = task;
-    if (children.length || progress === 100 || !Number.isFinite(start)) continue;
-    if (start <= now && now < end) return { label: 'Happening now', task };
-    if (start >= now && (!upcoming || start < upcoming.start)) upcoming = task;
-  }
-  return upcoming ? { label: 'Upcoming', task: upcoming } : null;
+  return upcoming ?? null;
 }
 
 function visibleTasks(tasks, collapsed, query) {
   const matches = new Set();
   if (query) {
     for (const task of tasks) {
-      if (!String(task.row.title ?? '').toLocaleLowerCase().includes(query) && String(task.number) !== query) continue;
+      if (!String(task.row.title ?? '').toLocaleLowerCase().includes(query) && task.displayNumber !== query) continue;
       for (let match = task; match && !matches.has(match); match = match.parent) matches.add(match);
     }
     return tasks.filter(task => matches.has(task));
@@ -149,11 +86,11 @@ export function ganttLayout(rows, viewport, tasks = ganttTasks(rows).ordered) {
   return { first, last, step, bars };
 }
 
-function wireTaskDrag(handle, bar, track, edge, row, draw, editor) {
-  const initial = () => ({ start: hour(row.start), end: hour(row.milestone ? row.start : row.end, !row.milestone) });
+function wireTaskDrag(handle, bar, track, edge, row, instance, number, draw, editor) {
+  const initial = () => ganttInstanceRange(instance, row.milestone, number);
   const adjust = (range, delta) => {
     if (edge === 'move') return { start: range.start + delta, end: range.end + delta };
-    const duration = Math.min(editor.snap(row), range.end - range.start);
+    const duration = Math.min(editor.snap(instance), range.end - range.start);
     if (edge === 'start') return { ...range, start: Math.min(range.end - duration, range.start + delta) };
     return { ...range, end: Math.max(range.start + duration, range.end + delta) };
   };
@@ -161,7 +98,7 @@ function wireTaskDrag(handle, bar, track, edge, row, draw, editor) {
     const delta = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
     if (!delta) return;
     event.preventDefault();
-    editor.resizeTask(row, adjust(initial(), delta * (event.shiftKey ? 24 : editor.snap(row))), edge);
+    editor.resizeTask(row, instance, number, adjust(initial(), delta * (event.shiftKey ? 24 : editor.snap(instance))), edge);
   });
   handle.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
@@ -176,7 +113,7 @@ function wireTaskDrag(handle, bar, track, edge, row, draw, editor) {
     bar.classList.add('is-dragging');
     const rangeAt = (pointer) => {
       const distance = pointer.clientX - track.getBoundingClientRect().left - origin;
-      const snap = editor.snap(row);
+      const snap = editor.snap(instance);
       const delta = Math.round(distance / editor.pixelsPerHour / snap) * snap;
       return delta ? adjust(range, delta) : range;
     };
@@ -192,7 +129,7 @@ function wireTaskDrag(handle, bar, track, edge, row, draw, editor) {
       bar.classList.remove('is-dragging');
       editor.dragging = false;
       const next = endEvent.type === 'pointerup' ? rangeAt(endEvent) : range;
-      if (next.start !== range.start || next.end !== range.end) editor.resizeTask(row, next, edge, false);
+      if (next.start !== range.start || next.end !== range.end) editor.resizeTask(row, instance, number, next, edge, false);
       else draw(range);
       editor.onDragEnd();
     };
@@ -290,6 +227,15 @@ function monthStart(value, offset = 0) {
   return date.getTime() / hourMs;
 }
 
+export function ganttDependencyPaths(from, to, y1, y2) {
+  const bend = from + Math.max(12, (to - from) / 2);
+  const mid = (y1 + y2) / 2;
+  const line = to - from > 25
+    ? `M${from},${y1} H${bend} V${y2} H${to}`
+    : `M${from},${y1} H${bend} V${mid} H${to - 12} V${y2} H${to}`;
+  return { line, arrow: `M${to},${y2} l-7,-4 v8 z` };
+}
+
 function dependencyLayer(tasks, positions, layout, width = 640) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('gantt-dependencies');
@@ -319,20 +265,13 @@ function dependencyLayer(tasks, positions, layout, width = 640) {
       const to = x(positions.get(task).start) - (task.row.milestone ? 8 : 0);
       const y1 = (laneIndex.get(source) + 0.5) * laneHeight;
       const y2 = (index + 0.5) * laneHeight;
-      const bend = from + Math.max(12, (to - from) / 2);
-      const mid = y1 + (y2 - y1) / 2;
-      path.setAttribute('d', to - from > 25
-        ? `M${from},${y1} H${bend} V${y2} H${to}`
-        : `M${from},${y1} H${bend} V${mid} H${to - 12} V${y2} H${to}`);
-      arrow.setAttribute('d', `M${to},${y2} l-7,-4 v8 z`);
+      const shapes = ganttDependencyPaths(from, to, y1, y2);
+      path.setAttribute('d', shapes.line);
+      arrow.setAttribute('d', shapes.arrow);
     }
   };
   update();
   return { svg, update };
-}
-
-function predecessors(row) {
-  return Array.isArray(row.predecessors) ? row.predecessors : [];
 }
 
 export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).ordered) {
@@ -342,6 +281,8 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
     timeline.textContent = 'Add a task with dates to start the timeline.';
     return timeline;
   }
+  const numberWidth = tasks.reduce((width, task) => Math.max(width, task.displayNumber.length), 0);
+  if (numberWidth > 2) timeline.style.setProperty('--gantt-id-width', `clamp(34px, ${numberWidth + 2}ch, 88px)`);
   if (editor) {
     timeline.classList.add('is-scrollable');
     timeline.style.setProperty('--gantt-track-width', `${editor.width}px`);
@@ -377,12 +318,13 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
   const positions = new Map();
   let dependencies;
   for (const task of tasks) {
-    const { row, index, number, depth, children, start, end, progress } = task;
+    const { row, index, number, displayNumber, depth, children, ranges, progress } = task;
     const lane = element('div', 'gantt-lane');
     const label = element('div', 'gantt-task-label');
     label.dataset.taskIndex = String(index);
     if (children.length) lane.classList.add('is-summary');
-    lane.classList.toggle('is-linked-task', editor?.linkedTaskNumber === number);
+    const isLinked = editor?.linkedTaskNumber === number;
+    lane.classList.toggle('is-linked-task', isLinked);
     const taskName = () => row.title || 'Untitled task';
     if (editor) {
       const grip = actionButton('gantt-grip', `Reorder ${taskName()}`, '⠿');
@@ -390,10 +332,12 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
       label.append(grip);
       lane.addEventListener('contextmenu', event => {
         event.preventDefault();
-        editor.openMenu(task, event.clientX, event.clientY);
+        editor.openMenu(task, event.clientX, event.clientY, null, track.contains(event.target) ? track : null);
       });
     }
-    label.append(element('span', 'gantt-row-id', String(number)));
+    const taskId = element('span', 'gantt-row-id', displayNumber);
+    taskId.title = `Task ${displayNumber}`;
+    label.append(taskId);
     const nameCell = element('div', 'gantt-name-cell');
     nameCell.style.paddingInlineStart = `${Math.min(depth, 8) * 13 + 6}px`;
     if (editor && children.length) {
@@ -405,25 +349,25 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
       nameCell.append(toggle);
     } else if (editor) nameCell.append(element('span', 'gantt-expand-spacer'));
     const name = element(editor ? 'input' : 'span', 'gantt-lane-name');
-    let taskBar;
+    const redrawBars = [];
     if (editor) {
       name.type = 'text';
       name.maxLength = 200;
       name.placeholder = 'Untitled task';
       name.value = row.title ?? '';
-      name.setAttribute('aria-label', `Task ${number} name`);
+      name.setAttribute('aria-label', `Task ${displayNumber} name`);
       name.addEventListener('input', () => {
         row.title = name.value;
         editor.onChange();
         editor.updateScheduleStatus();
-        if (taskBar) taskBar({ start, end });
+        redrawBars.forEach(redraw => redraw());
       });
       name.addEventListener('keydown', event => { if (event.key === 'Enter') name.blur(); });
     } else name.textContent = taskName();
     nameCell.append(name);
     label.append(nameCell);
     if (editor) {
-      const actions = actionButton('gantt-task-actions', `Actions for task ${number}`, '⋮');
+      const actions = actionButton('gantt-task-actions', `Actions for task ${displayNumber}`, '⋮');
       actions.addEventListener('click', () => {
         const bounds = actions.getBoundingClientRect();
         editor.openMenu(task, bounds.right, bounds.bottom);
@@ -433,18 +377,31 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
     lane.append(label);
 
     const track = element('div', 'gantt-track');
-    if (Number.isFinite(start)) {
+    const positionsByInstance = new Map(ranges.map(range => [range.number, range]));
+    if (ranges.length) positions.set(task, { start: task.start, end: task.end });
+    for (const occurrence of ranges) {
+      const { instance, number: instanceNumber } = occurrence;
       const bar = element('div', 'gantt-bar');
       bar.dataset.barIndex = String(index);
+      if (instanceNumber !== null) bar.dataset.instanceNumber = String(instanceNumber);
+      bar.classList.toggle('is-linked-instance', isLinked && (editor.linkedInstanceNumber == null || editor.linkedInstanceNumber === instanceNumber));
       bar.classList.toggle('is-milestone', Boolean(row.milestone));
-      bar.style.setProperty('--gantt-bar-color', colors[taskColor(row, index)]);
+      bar.style.setProperty('--gantt-bar-color', ganttTaskColor(task));
       const fill = element('span', 'gantt-bar-fill');
       bar.append(fill);
       const button = editor ? actionButton('gantt-bar-body', taskName(), '') : element('span', 'gantt-bar-body');
       if (!editor) button.setAttribute('role', 'img');
       bar.append(button);
-      const draw = (range) => {
-        positions.set(task, range);
+      const draw = (changedRange) => {
+        if (changedRange) {
+          positionsByInstance.set(instanceNumber, changedRange);
+          const positionsForTask = [...positionsByInstance.values()];
+          positions.set(task, {
+            start: Math.min(...positionsForTask.map(item => item.start)),
+            end: Math.max(...positionsForTask.map(item => item.end)),
+          });
+        }
+        const range = positionsByInstance.get(instanceNumber);
         const left = Math.max(first, range.start);
         const right = Math.min(last, range.end);
         bar.hidden = row.milestone ? range.start < first || range.start >= last : right <= left;
@@ -460,28 +417,35 @@ export function renderGanttTimeline(rows, editor, tasks = ganttTasks(rows).order
         const endLabel = hourValue(range.end).replace('T', ' ');
         const dates = row.milestone ? startLabel : `${startLabel} – ${endLabel}`;
         bar.dataset.dragLabel = dates;
-        bar.title = `${taskName()} · ${dates}${row.milestone ? '' : ` · ${Math.round(progress)}%`}`;
+        const identity = instanceNumber == null ? `Task ${displayNumber}` : `Task ${displayNumber}, instance ${instanceNumber}`;
+        bar.title = `${identity} · ${taskName()} · ${dates}${row.milestone ? '' : ` · ${Math.round(progress)}%`}`;
         button.title = bar.title;
         button.setAttribute('aria-label', bar.title);
         dependencies?.update();
       };
-      taskBar = draw;
-      draw({ start, end });
+      redrawBars.push(draw);
+      draw();
       if (editor) {
-        button.addEventListener('dblclick', () => editor.editTask(row));
+        bar.addEventListener('contextmenu', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          editor.openMenu(task, event.clientX, event.clientY, instanceNumber, track);
+        });
+        const editBar = () => instance ? editor.editInstance(task, occurrence) : editor.editTask(row);
+        button.addEventListener('dblclick', editBar);
         button.addEventListener('keydown', event => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
-          editor.editTask(row);
+          editBar();
         });
-        if (!children.length) {
+        if (instance) {
           button.classList.add('is-move');
-          wireTaskDrag(button, bar, track, 'move', row, draw, editor);
+          wireTaskDrag(button, bar, track, 'move', row, instance, instanceNumber, draw, editor);
           if (!row.milestone) {
             for (const edge of ['start', 'end']) {
               const handle = actionButton(`gantt-handle is-${edge}`, `Resize task ${edge}`, '');
               bar.append(handle);
-              wireTaskDrag(handle, bar, track, edge, row, draw, editor);
+              wireTaskDrag(handle, bar, track, edge, row, instance, instanceNumber, draw, editor);
             }
           }
         }
@@ -602,7 +566,7 @@ function wireChartScrollbars(area, chart, extendScroll) {
   };
 }
 
-export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHistory, copyTaskLink }) {
+export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHistory, copyTaskLink, exportPng }) {
   if (!Array.isArray(data.rows)) data.rows = [];
   const toolbar = root.querySelector('.structured-toolbar');
   const surface = root.querySelector('.structured-surface');
@@ -615,6 +579,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     <button type="button" data-zoom="fit" title="Zoom to fit" aria-label="Zoom to fit">${icons.fit}</button>
     <button type="button" data-today title="Jump to today" aria-label="Jump to today">${icons.ganttToday}</button>
     <div class="gantt-utility">
+      <button type="button" data-export-png title="Export PNG" aria-label="Export PNG">${icons.download}</button>
       <button type="button" data-google title="Link Google Task" aria-label="Link Google Task">${icons.link}</button>
       <button type="button" data-history="undo" title="Undo" aria-label="Undo">${icons.undo}</button>
       <button type="button" data-history="redo" title="Redo" aria-label="Redo">${icons.redo}</button>
@@ -631,7 +596,15 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
         <div tabindex="0" role="scrollbar" aria-label="Scroll task rows vertically" aria-controls="gantt-chart" aria-orientation="vertical" aria-valuemin="0"></div>
       </div>
     </div>
-    <div class="canvas-color-palette gantt-color-menu" popover aria-label="Task actions"></div>
+    <div class="canvas-color-palette gantt-color-menu" popover="manual" aria-label="Task actions"></div>
+    <dialog class="gantt-instance-dialog rename-dialog" aria-labelledby="gantt-instance-heading">
+      <form method="dialog">
+        <h3 id="gantt-instance-heading"></h3>
+        <label>Start<input class="settings-input" name="start" required autofocus></label>
+        <label>End<input class="settings-input" name="end" required></label>
+        <div class="rename-actions"><button class="secondary-button" type="button" data-cancel title="Cancel" aria-label="Cancel">${icons.close}</button><button class="primary-button" value="save" title="Save instance" aria-label="Save instance">${icons.statusCheck}</button></div>
+      </form>
+    </dialog>
     <dialog class="gantt-details rename-dialog" aria-labelledby="gantt-details-heading">
       <form method="dialog">
         <h3 id="gantt-details-heading"></h3>
@@ -641,6 +614,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
           <label><input class="stillnote-checkbox" type="checkbox" name="allDay"> All day</label>
           <label><input class="stillnote-checkbox" type="checkbox" name="milestone"> Milestone</label>
         </div>
+        <span data-primary-instance></span>
         <div class="gantt-date-fields">
           <div class="gantt-date-field">
             <label for="gantt-start-date">Start</label>
@@ -653,6 +627,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
             <input class="settings-input gantt-time" name="endTime" aria-label="End time (24-hour)" title="End time (HH:mm)" placeholder="HH:mm" maxlength="5" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" required data-required-message="Enter an end time." data-format-message="Use 24-hour time (HH:mm).">
           </div>
         </div>
+        <fieldset class="gantt-instances" hidden><legend>Additional instances</legend><div data-instances></div><button class="secondary-button" type="button" data-add-instance>Add instance</button></fieldset>
         <label>Progress (%)<input class="settings-input" name="progress" type="number" min="0" max="100"></label>
         <label>Parent task<select class="settings-input" name="parent"></select></label>
         <fieldset class="gantt-predecessors"><legend>Predecessors</legend><div></div></fieldset>
@@ -663,6 +638,17 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
   surface.prepend(toolbar);
   const chart = surface.querySelector('.gantt-chart');
   const menu = surface.querySelector('.gantt-color-menu');
+  const dismissMenu = event => {
+    if (!menu.matches(':popover-open')) return;
+    if (event.type === 'keydown') {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (event.composedPath().includes(menu)) return;
+    menu.hidePopover();
+  };
+  document.addEventListener('pointerdown', dismissMenu, true);
+  document.addEventListener('keydown', dismissMenu, true);
   const status = toolbar.querySelector('[role=status]');
   const search = toolbar.querySelector('[type=search]');
   const picker = surface.querySelector('.gantt-picker');
@@ -673,6 +659,12 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
   picker.querySelector('[data-picker-cancel]').addEventListener('click', () => picker.close());
   const zoomOut = toolbar.querySelector('[data-zoom=out]');
   const zoomIn = toolbar.querySelector('[data-zoom=in]');
+  const exportButton = toolbar.querySelector('[data-export-png]');
+  exportButton.addEventListener('click', async () => {
+    exportButton.disabled = true;
+    try { await exportPng(); }
+    finally { exportButton.disabled = false; }
+  });
   const details = surface.querySelector('.gantt-details');
   const form = details.querySelector('form');
   addDatePickers(form, icons.ganttToday);
@@ -681,6 +673,10 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
   const { title, notes, start, end, startTime, endTime, allDay, milestone, progress, parent } = form.elements;
   details.querySelector('[data-cancel]').addEventListener('click', () => details.close());
   const predecessorList = details.querySelector('.gantt-predecessors div');
+  const instanceFields = details.querySelector('.gantt-instances');
+  const instanceList = details.querySelector('[data-instances]');
+  const primaryInstanceLabel = details.querySelector('[data-primary-instance]');
+  let instanceEdits = [], lastInstanceNumber = 1;
   const buffer = 6000;
   const minScale = 0.125;
   const maxScale = 128;
@@ -700,6 +696,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     resizeTask,
     openMenu,
     editTask,
+    editInstance,
     wireDivider,
     wireReorder,
     updateScheduleStatus,
@@ -733,9 +730,10 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     const status = chart.querySelector('.gantt-schedule-status');
     if (!status) return;
     const next = ganttScheduleStatus(model.ordered, now);
-    const title = next?.task.row.title?.trim() || 'Untitled task';
     status.hidden = !next;
     if (!next) return;
+    const name = next.task.row.title?.trim() || 'Untitled task';
+    const title = next.task.ranges.length > 1 || next.range.number > 1 ? `${name} · Instance ${next.range.number}` : name;
     const [label, task] = status.children;
     if (label.textContent !== next.label) label.textContent = next.label;
     if (task.textContent !== title) {
@@ -858,7 +856,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     const from = source.index;
     const to = target.index;
     for (const task of model.ordered) {
-      if (task.index >= Math.min(from, to) && task.index <= Math.max(from, to)) task.row.color ??= taskColor(task.row, task.index);
+      if (task.index >= Math.min(from, to) && task.index <= Math.max(from, to)) task.row.color ??= ganttColorName(task.row, task.index);
     }
     data.rows.splice(from, 1);
     data.rows.splice(to, 0, source.row);
@@ -867,8 +865,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
   }
 
   function persistTaskNumbers() {
-    for (const task of model.ordered) task.row.taskNumber = task.number;
-    data.lastTaskNumber = model.lastTaskNumber;
+    numberGanttTasks(data, model);
   }
   function save() {
     model = ganttTasks(data.rows, data.lastTaskNumber);
@@ -876,20 +873,55 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     onChange();
     refreshChart();
   }
-  function resizeTask(row, range, edge, focus = true) {
-    const startDateOnly = Number.isFinite(day(row.start));
-    const endDateOnly = Number.isFinite(day(row.end));
-    row.start = startDateOnly && range.start % 24 === 0 ? dateValue(range.start) : hourValue(range.start);
-    if (!row.milestone) row.end = endDateOnly && range.end % 24 === 0 ? dateValue(range.end - 24) : hourValue(range.end);
+  function resizeTask(row, instance, number, range, edge, focus = true) {
+    const startDateOnly = Number.isFinite(day(instance.start));
+    const endDateOnly = Number.isFinite(day(instance.end));
+    instance.start = startDateOnly && range.start % 24 === 0 ? dateValue(range.start) : hourValue(range.start);
+    instance.end = row.milestone ? instance.start : endDateOnly && range.end % 24 === 0 ? dateValue(range.end - 24) : hourValue(range.end);
     save();
     if (focus) {
       const index = data.rows.indexOf(row);
       const handle = edge === 'move' ? '.gantt-bar-body' : `.gantt-handle.is-${edge}`;
-      chart.querySelector(`[data-bar-index="${index}"] ${handle}`)?.focus({ preventScroll: true });
+      chart.querySelector(`[data-bar-index="${index}"][data-instance-number="${number}"] ${handle}`)?.focus({ preventScroll: true });
     }
   }
+  const instanceDialog = surface.querySelector('.gantt-instance-dialog');
+  const instanceForm = instanceDialog.querySelector('form');
+  const { start: instanceStart, end: instanceEnd } = instanceForm.elements;
+  let selectedInstance;
+  styleFormValidation(instanceForm);
+  instanceDialog.querySelector('[data-cancel]').addEventListener('click', () => instanceDialog.close());
+  for (const input of [instanceStart, instanceEnd]) {
+    input.addEventListener('input', () => instanceEnd.setCustomValidity(''));
+  }
+  function editInstance(task, { instance, number }) {
+    const { row } = task;
+    selectedInstance = { row, instance, number };
+    instanceDialog.querySelector('h3').textContent = `Task ${task.displayNumber}, instance ${number}`;
+    instanceStart.type = Number.isFinite(day(instance.start)) ? 'date' : 'datetime-local';
+    instanceEnd.type = Number.isFinite(day(instance.end)) ? 'date' : 'datetime-local';
+    instanceStart.value = instance.start;
+    instanceEnd.value = instance.end ?? '';
+    instanceEnd.disabled = instanceEnd.parentElement.hidden = Boolean(row.milestone);
+    instanceEnd.setCustomValidity('');
+    instanceDialog.showModal();
+  }
+  instanceForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const { row, instance, number } = selectedInstance;
+    const candidate = { start: instanceStart.value, end: row.milestone ? instanceStart.value : instanceEnd.value };
+    if (!Number.isFinite(ganttInstanceRange(candidate, row.milestone).start)) {
+      instanceEnd.setCustomValidity('End must be after the start time.');
+      instanceEnd.reportValidity();
+      return;
+    }
+    Object.assign(instance, candidate);
+    instanceDialog.close();
+    save();
+    chart.querySelector(`[data-bar-index="${data.rows.indexOf(row)}"][data-instance-number="${number}"] .gantt-bar-body`)?.focus({ preventScroll: true });
+  });
   function addRow(row) {
-    row.color ??= taskColor(row, data.rows.length);
+    row.color ??= ganttColorName(row, data.rows.length);
     data.rows.push(row);
     if (row.parentId) editor.collapsed.delete(row.parentId);
     search.value = editor.searching = '';
@@ -913,7 +945,75 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     startTime.disabled = allDay.checked || start.disabled;
     endTime.disabled = allDay.checked || end.disabled;
     progress.disabled = milestone.checked || Boolean(model.ordered.find(task => task.row === editingTask)?.children.length);
+    for (const edit of instanceEdits) {
+      edit.end.disabled = milestone.checked;
+      edit.end.parentElement.hidden = milestone.checked;
+      edit.end.setCustomValidity('');
+    }
   }
+  function addInstanceFields({ number, start: from, end: to }, focus = false) {
+    const fields = element('div', 'gantt-instance');
+    const header = element('div', 'gantt-instance-header');
+    header.append(element('strong', '', `Instance ${number}`));
+    const remove = actionButton('secondary-button gantt-icon-button', `Remove instance ${number}`, icons.trash);
+    header.append(remove);
+    const dates = element('div', 'gantt-date-fields');
+    const timed = Number.isFinite(hour(from)) && !Number.isFinite(day(from));
+    const input = (label, value) => {
+      const container = element('label', '', label);
+      const control = element('input', 'settings-input');
+      control.type = timed ? 'datetime-local' : 'date';
+      control.value = value;
+      control.required = true;
+      container.append(control);
+      dates.append(container);
+      return control;
+    };
+    const first = input('Start', from);
+    const last = input('End', to);
+    const edit = { number, start: first, end: last };
+    const timing = element('label', 'gantt-instance-timing', 'Timed instance');
+    const timedToggle = element('input', 'stillnote-checkbox');
+    timedToggle.type = 'checkbox';
+    timedToggle.checked = timed;
+    timing.prepend(timedToggle);
+    timedToggle.addEventListener('change', () => {
+      const from = hour(first.value), to = hour(last.value, true);
+      first.type = last.type = timedToggle.checked ? 'datetime-local' : 'date';
+      if (Number.isFinite(from)) first.value = timedToggle.checked ? hourValue(from) : dateValue(from);
+      if (Number.isFinite(to)) last.value = timedToggle.checked ? hourValue(to) : dateValue(to > from && to % 24 === 0 ? to - 24 : to);
+      last.setCustomValidity('');
+    });
+    for (const control of [first, last]) control.addEventListener('input', () => last.setCustomValidity(''));
+    remove.addEventListener('click', () => {
+      instanceEdits = instanceEdits.filter(item => item !== edit);
+      fields.remove();
+      instanceList.nextElementSibling.focus();
+    });
+    fields.append(header, dates, timing);
+    instanceList.append(fields);
+    instanceEdits.push(edit);
+    updateDateFields();
+    if (focus) first.focus();
+  }
+  function addInstance() {
+    if (lastInstanceNumber >= Number.MAX_SAFE_INTEGER) return;
+    const previous = instanceEdits.at(-1);
+    const isTimed = previous ? previous.start.type === 'datetime-local' : !allDay.checked;
+    const from = previous?.start.value || (isTimed ? `${start.value}T${startTime.value}` : start.value);
+    const to = previous?.end.value || (isTimed ? `${end.value}T${endTime.value}` : end.value);
+    const range = ganttInstanceRange({ start: from, end: to }, milestone.checked);
+    const duration = Number.isFinite(range.start) ? range.end - range.start : 0;
+    const nextStart = (Number.isFinite(range.start) ? range.start : hour(today())) + Math.max(24, Math.ceil(duration / 24) * 24);
+    const nextEnd = nextStart + duration;
+    addInstanceFields({
+      number: ++lastInstanceNumber,
+      start: isTimed ? hourValue(nextStart) : dateValue(nextStart),
+      end: isTimed ? hourValue(milestone.checked ? nextStart + 1 : Math.max(nextStart + 1, nextEnd))
+        : dateValue(milestone.checked ? nextStart : Math.max(nextStart, nextEnd - 24)),
+    }, true);
+  }
+  details.querySelector('[data-add-instance]').addEventListener('click', addInstance);
   allDay.addEventListener('change', () => {
     if (!allDay.checked && end.value && endTime.value === '00:00' && !milestone.checked) {
       end.value = dateValue(hour(end.value, true));
@@ -923,7 +1023,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     updateDateFields();
   });
   milestone.addEventListener('change', updateDateFields);
-  function editTask(row, suggestedParent = null) {
+  function editTask(row, suggestedParent = null, { instanceNumber } = {}) {
     editingTask = row;
     details.querySelector('h3').textContent = row ? 'Edit task' : suggestedParent ? 'Add subtask' : 'Add task';
     const task = model.ordered.find(item => item.row === row);
@@ -946,12 +1046,23 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     end.value = endValue.slice(0, 10);
     endTime.value = endValue.slice(11, 16);
     allDay.disabled = start.disabled = Boolean(summary);
+    const primaryNumber = primaryGanttInstanceNumber(row ?? {});
+    primaryInstanceLabel.hidden = Boolean(summary);
+    primaryInstanceLabel.textContent = `Instance ${primaryNumber}`;
+    instanceFields.hidden = Boolean(task?.children.length);
+    instanceFields.disabled = instanceFields.hidden;
+    instanceList.replaceChildren();
+    instanceEdits = [];
+    lastInstanceNumber = lastGanttInstanceNumber(row ?? {});
+    if (!instanceFields.hidden && row) {
+      for (const { instance } of ganttInstances(row).slice(1)) addInstanceFields(instance);
+    }
     end.setCustomValidity('');
     endTime.setCustomValidity('');
     progress.value = Math.round(task?.progress ?? 0);
     parent.replaceChildren(new Option('None', ''));
     predecessorList.replaceChildren();
-    const taskLabel = item => `${item.number}. ${item.row.title || 'Untitled task'}`;
+    const taskLabel = item => `${item.displayNumber} · ${item.row.title || 'Untitled task'}`;
     function dependsOnTask(item, visited = new Set()) {
       if (item === task) return true;
       if (!item || visited.has(item)) return false;
@@ -976,6 +1087,8 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     parent.value = task?.parent ? String(task.parent.index) : suggestedParent ? String(data.rows.indexOf(suggestedParent)) : '';
     updateDateFields();
     details.showModal();
+    if (instanceNumber === primaryNumber) start.focus();
+    else instanceEdits.find(edit => edit.number === instanceNumber)?.start.focus();
   }
   for (const input of [start, end, startTime, endTime, allDay, milestone]) {
     input.addEventListener('input', () => {
@@ -995,12 +1108,27 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
       return;
     }
     const row = editingTask ?? {};
+    const instances = [];
+    for (const edit of instanceEdits) {
+      const instance = { number: edit.number, start: edit.start.value, end: milestone.checked ? edit.start.value : edit.end.value };
+      if (!Number.isFinite(ganttInstanceRange(instance, milestone.checked).start)) {
+        edit.end.setCustomValidity('End must be after the start time.');
+        edit.end.reportValidity();
+        return;
+      }
+      instances.push(instance);
+    }
+    const addedOccurrence = instances.some(instance => instance.number > lastGanttInstanceNumber(row));
     row.title = title.value.trim() || 'Untitled task';
     if (notes.value.trim() || row.notes || row.description) row.notes = notes.value.trim();
     if (!start.disabled) {
       row.start = startValue;
       row.end = milestone.checked ? startValue : endValue;
       row.milestone = milestone.checked;
+    }
+    if (!instanceFields.disabled && (instances.length || Array.isArray(row.instances))) {
+      row.instances = instances;
+      row.lastInstanceNumber = lastInstanceNumber;
     }
     if (!progress.disabled) row.progress = Number(progress.value);
     const group = parent.value === '' ? null : data.rows[Number(parent.value)];
@@ -1010,24 +1138,32 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     } else delete row.parentId;
     row.predecessors = Array.from(predecessorList.querySelectorAll('input:checked'), checkbox => ensureId(data.rows[Number(checkbox.value)]));
     details.close('save');
-    if (editingTask) save();
+    if (editingTask) {
+      save();
+      if (addedOccurrence) zoomToFit();
+    }
     else addRow(row);
   });
 
-  function openMenu(task, x, y) {
+  function openMenu(task, x, y, instanceNumber, track) {
     const { row } = task;
+    const bounds = track?.getBoundingClientRect();
+    const atCursor = bounds && x >= bounds.left && x <= bounds.right;
+    const source = task.ranges.find(range => range.number === instanceNumber)?.instance ?? row;
+    const cursorHour = atCursor ? editor.first + (x - bounds.left) / editor.pixelsPerHour
+      : Math.max(nowHour(), Number.isFinite(task.end) ? Math.ceil(task.end / 24) * 24 : -Infinity);
     if (menu.matches(':popover-open')) menu.hidePopover();
     menu.replaceChildren();
     const palette = document.createElement('div');
     palette.className = 'gantt-swatch-grid';
-    for (const [name, value] of Object.entries(colors)) {
+    for (const [name, value] of task.parent ? [] : Object.entries(colors)) {
       const swatch = document.createElement('button');
       swatch.type = 'button';
       swatch.className = 'canvas-color-swatch';
       swatch.style.setProperty('--swatch', value);
       swatch.title = name;
       swatch.setAttribute('aria-label', `${name} color`);
-      const active = taskColor(row, task.index) === name;
+      const active = ganttColorName(row, task.index) === name;
       swatch.setAttribute('aria-pressed', String(active));
       swatch.classList.toggle('active', active);
       swatch.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg>';
@@ -1038,7 +1174,7 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
       });
       palette.append(swatch);
     }
-    menu.append(palette);
+    if (palette.childElementCount) menu.append(palette);
     const actions = element('div', 'gantt-menu-actions');
     menu.append(actions);
     const action = (label, icon, run) => {
@@ -1046,12 +1182,26 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
       button.addEventListener('click', () => { menu.hidePopover(); run(); });
       actions.append(button);
     };
-    action('Edit task', icons.ganttEdit, () => editTask(row));
+    action('Edit task', icons.ganttEdit, () => editTask(row, null, { instanceNumber }));
+    if (!task.children.length && lastGanttInstanceNumber(row) < Number.MAX_SAFE_INTEGER) {
+      const add = element('button', 'secondary-button', 'Add instance');
+      add.type = 'button';
+      add.addEventListener('click', () => {
+        menu.hidePopover();
+        const instance = ganttInstanceAt(row, source, cursorHour);
+        row.instances = [...(Array.isArray(row.instances) ? row.instances : []), instance];
+        row.lastInstanceNumber = instance.number;
+        save();
+        if (!atCursor) focusTask(task.number, instance.number);
+      });
+      actions.append(add);
+    }
     if (!row.milestone) action('Add subtask', icons.folderPlus, () => editTask(null, row));
-    action('Copy task link', icons.duplicate, async () => {
+    const isInstance = instanceNumber != null;
+    action(isInstance ? 'Copy instance link' : 'Copy task link', icons.duplicate, async () => {
       try {
-        await copyTaskLink(task.number);
-        if (root.isConnected) status.textContent = 'Task link copied.';
+        await copyTaskLink(task.number, instanceNumber);
+        if (root.isConnected) status.textContent = isInstance ? 'Instance link copied.' : 'Task link copied.';
       } catch (error) { if (root.isConnected) status.textContent = error.message || 'Could not copy task link.'; }
     });
     if (row.googleTask) {
@@ -1074,24 +1224,19 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
       });
       action('Unlink Google Task', icons.ganttUnlink, () => { delete row.googleTask; save(); });
     } else action('Link Google Task', icons.link, () => void openTaskPicker(row));
-    action('Remove task', icons.trash, () => {
-      for (const child of task.children) {
-        if (task.parent) child.row.parentId = task.parent.row.id;
-        else delete child.row.parentId;
+    const removeInstance = isInstance && ganttInstances(row).length > 1;
+    action(removeInstance ? 'Remove instance' : 'Remove task', icons.trash, () => {
+      if (removeInstance) removeGanttInstance(row, instanceNumber);
+      else {
+        removeGanttTask(data.rows, task);
+        editor.collapsed.delete(row.id);
       }
-      if (row.id) {
-        for (const item of data.rows) {
-          if (predecessors(item).includes(row.id)) item.predecessors = item.predecessors.filter(id => id !== row.id);
-        }
-      }
-      data.rows.splice(data.rows.indexOf(row), 1);
-      editor.collapsed.delete(row.id);
       save();
     });
     menu.showPopover();
     menu.style.left = `${Math.max(4, Math.min(x, innerWidth - menu.offsetWidth - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(y, innerHeight - menu.offsetHeight - 4))}px`;
-    palette.querySelector('.active')?.focus();
+    (palette.querySelector('.active') ?? actions.querySelector('button'))?.focus({ preventScroll: true });
   }
   for (const button of toolbar.querySelectorAll('[data-history]')) {
     button.addEventListener('click', () => onHistory(button.dataset.history));
@@ -1158,20 +1303,23 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
   });
   persistTaskNumbers();
   zoomToFit();
-  function focusTask(number) {
+  function focusTask(number, instanceNumber = null) {
     const task = model.numbered.get(number);
     if (!task || editor.dragging) return false;
+    const range = instanceNumber === null ? task : task.ranges.find(item => item.number === instanceNumber);
+    if (!range) return false;
     editor.linkedTaskNumber = number;
+    editor.linkedInstanceNumber = instanceNumber;
     search.value = editor.searching = '';
     for (let group = task.parent; group; group = group.parent) editor.collapsed.delete(group.row.id);
-    if (Number.isFinite(task.start)) {
+    if (Number.isFinite(range.start)) {
       const width = availableWidth();
-      const taskDuration = task.end - task.start;
-      if (taskDuration < 24 && !Number.isFinite(day(task.row.start))) {
+      const taskDuration = range.end - range.start;
+      if (taskDuration < 24 && !Number.isFinite(day((range.instance ?? task.row).start))) {
         editor.pixelsPerHour = Math.min(32, (width - 40) / Math.max(1, taskDuration));
       }
       const duration = Math.min(taskDuration, (width - 40) / editor.pixelsPerHour);
-      const center = task.start + duration / 2;
+      const center = range.start + duration / 2;
       editor.first = center - (buffer + width / 2) / editor.pixelsPerHour;
       refreshChart(buffer);
     } else refreshChart();
@@ -1183,13 +1331,16 @@ export function renderGanttEditor(root, data, { icons, tasksApi, onChange, onHis
     if (bounds.top < viewport.top + header || bounds.bottom > viewport.bottom) {
       chart.scrollTop += bounds.top - viewport.top - header;
     }
-    label.querySelector('input').focus({ preventScroll: true });
+    const bar = instanceNumber === null ? null : row.querySelector(`[data-instance-number="${instanceNumber}"] .gantt-bar-body`);
+    (bar ?? label.querySelector('input')).focus({ preventScroll: true });
     return true;
   }
   const statusTimer = setInterval(updateScheduleStatus, 10_000);
   return {
     focusTask,
     cleanup() {
+      document.removeEventListener('pointerdown', dismissMenu, true);
+      document.removeEventListener('keydown', dismissMenu, true);
       clearInterval(statusTimer);
       scrollbars.cleanup();
     },

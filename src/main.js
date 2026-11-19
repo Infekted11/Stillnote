@@ -1,13 +1,16 @@
 import { autocompletion, completionStatus } from '@codemirror/autocomplete';
 import { isReading, markdownCodeAt, markdownMode, markdownModeExtensions, wikiCompletions } from './markdown-editor.js';
 import { noteTitleLine, noteTitleName, syncNoteTitle } from '../electron/note-title.mjs';
+import { applyGanttChanges } from '../electron/gantt-ai.mjs';
 import { requestWithAiHold } from './ai-hold.js';
 import { renderGanttEditor, renderGanttTimeline } from './gantt.js';
+import { renderGanttPng } from './gantt-png.js';
 import { addDatePickers, styleFormValidation } from './form-controls.js';
 import stillnoteLogo from '../Stillnote-site/logo.svg';
 import noteSyntaxGuide from '../electron/note-syntax.html?raw';
-import { ganttTaskNumber, parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
-import { createGraphPreview } from './graph-preview.js';
+import { ganttTaskReference, parseVaultLink, setVaultLinkPreviewSize, shouldRenderFileLink } from './vault-links.js';
+import { lastGanttInstanceNumber } from '../electron/gantt-model.mjs';
+import { createGraphPreview, seedGraphExpressions } from './graph-preview.js';
 import { findReplaceExtension } from './find-replace.js';
 import { fileDisplayName, fileDisplayParts } from './file-labels.js';
 import { runHomeAgent } from './home-agent.js';
@@ -185,6 +188,7 @@ const icons = {
   panel: svgIcon('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/>'),
   home: svgIcon('<path d="m3.5 10 8.5-7 8.5 7v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M9 21v-8h6v8"/>'),
   ganttToday: svgIcon('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 4v4m8-4v4M4 10h16"/><path d="M12 14v2m-1-1h2"/>'),
+  download: svgIcon('<path d="M12 4v10m-4-4 4 4 4-4M5 15v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4"/>'),
   fit: svgIcon('<path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5M4 4l5 5m11-5-5 5M4 20l5-5m11 5-5-5"/>'),
   zoomIn: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6m-3-3v6"/>'),
   zoomOut: svgIcon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4M7.5 10.5h6"/>'),
@@ -292,7 +296,7 @@ app.innerHTML = `
               <label title="Live Preview"><input type="radio" name="note-view" value="live" aria-label="Live Preview" checked>${icons.ganttEdit}</label>
               <label title="Source mode"><input type="radio" name="note-view" value="source" aria-label="Source mode">${icons.formatCode}</label>
               <label title="Reading view"><input type="radio" name="note-view" value="reading" aria-label="Reading view">${icons.book}</label>
-            </div></div></div>
+            </div><button type="button" class="icon-button small" id="note-menu-button" title="Note options" aria-label="Note options" aria-haspopup="menu" aria-expanded="false" aria-controls="explorer-context-menu">${icons.menu}</button></div></div>
             <nav class="note-indexes" id="note-indexes" aria-label="Note indexes" hidden></nav>
             <div class="editor-content" id="editor-content"></div>
             <nav class="note-format-toolbar" id="note-format-toolbar" aria-label="Note formatting" hidden>
@@ -326,13 +330,13 @@ app.innerHTML = `
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="settings-modal-header"><div><div class="eyebrow">PREFERENCES</div><h2 id="settings-title">Settings</h2></div><button class="icon-button" id="settings-close" aria-label="Close settings">${icons.close}</button></header>
         <div class="settings-modal-body">
-          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Editor layout</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button></nav>
+          <nav class="settings-tabs" aria-label="Settings sections"><button class="settings-tab active" data-tab="theme">${icons.gear}<span>Theme</span></button><button class="settings-tab" data-tab="directory" aria-label="Directory"><span class="app-icon">${icons.folder}</span><span>Directory</span><span class="settings-health-indicator is-off" data-health="directory" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="ai" aria-label="AI settings"><span class="app-icon">${icons.assistant}</span><span>AI settings</span><span class="settings-health-indicator is-off" data-health="ai" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="tasks" aria-label="Google Tasks"><span class="app-icon">${icons.formatCheck}</span><span>Google Tasks</span><span class="settings-health-indicator is-off" data-health="tasks" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="desmos" aria-label="Graphing"><span class="app-icon">${icons.graph}</span><span>Graphing</span><span class="settings-health-indicator is-off" data-health="desmos" aria-hidden="true">${icons.statusX}</span></button><button class="settings-tab" data-tab="dictionary">${icons.book}<span>Dictionary</span></button><button class="settings-tab" data-tab="toolbar">${icons.formatBullet}<span>Editor layout</span></button><button class="settings-tab" data-tab="equations"><span class="equation-tab-icon">∑</span><span>Note syntax</span></button><button class="settings-tab" data-tab="shortcuts"><span class="shortcut-tab-icon">⌘</span><span>Shortcuts</span></button><button class="settings-tab" data-tab="version">${icons.refresh}<span>Version</span></button></nav>
           <div class="settings-content">
             <section class="settings-section active" data-section="theme"><div class="settings-section-heading"><span class="eyebrow">APPEARANCE</span><h3>Choose a theme</h3><p>Set the tone for your writing space.</p></div><div class="theme-cards"><button class="theme-card" data-theme="light" aria-pressed="false"><span class="theme-preview preview-light"><i></i><i></i><i></i></span><span>Light</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="sepia" aria-pressed="false"><span class="theme-preview preview-sepia"><i></i><i></i><i></i></span><span>Sepia</span><span class="theme-card-check">✓</span></button><button class="theme-card" data-theme="dark" aria-pressed="false"><span class="theme-preview preview-dark"><i></i><i></i><i></i></span><span>Dark</span><span class="theme-card-check">✓</span></button></div></section>
             <section class="settings-section" data-section="directory" hidden><div class="settings-section-heading"><span class="eyebrow">YOUR FILES</span><h3>Vault directory</h3><p>Your notes and files stay in this folder on your computer.</p></div><div class="directory-card"><span class="directory-icon">${icons.folder}</span><div><strong id="directory-name">No folder open</strong><span id="directory-path">Choose a folder to see its location.</span></div></div><button class="secondary-button" id="change-directory">Choose a folder</button><div class="supported-file-types"><h4>Supported file types</h4><div class="supported-file-row"><strong>Edit as text</strong><code>Markdown and code files: JS · TS · Python · HTML · CSS · JSON · Java · C/C++ · Rust · Go · SQL · Shell · XML · YAML · TOML · Swift · Kotlin · Ruby · PHP</code></div><div class="supported-file-row"><strong>Interactive documents</strong><code>Canvas · Geometry · 3D Calculator · Spreadsheet · Graph · Google Tasks</code></div><div class="supported-file-row"><strong>Preview images</strong><code>.png · .jpg · .jpeg · .webp · .heic · .icns · .svg</code></div><div class="supported-file-row"><strong>Play audio and video</strong><code>MP4 · WebM · OGV · MOV · M4V · MP3 · WAV · OGG · M4A · AAC · FLAC · Opus (codec support varies)</code></div><div class="supported-file-row"><strong>Preview documents</strong><code>.pdf</code></div><div class="supported-file-row"><strong>Interactive 3D preview</strong><code>.obj · .stl · .step · .stp</code></div><p>Ask the AI about open code files, PDFs, Geometry, and 3D Calculator files. Scanned PDFs need selectable text; OCR isn’t built in.</p></div></section>
             <section class="settings-section" data-section="ai" hidden>
               <div class="settings-section-heading"><span class="eyebrow">CLOUD AI</span><h3>AI assistant</h3><p>Ask questions about your current note or request an edit. On Home, Ask compares files and their connections; Work handles multi-step requests across files and tasks.</p></div>
-              <label class="field-label" for="ai-provider">Provider</label><select class="settings-input" id="ai-provider" aria-describedby="ai-provider-info"><option value="groq">Groq — free daily limits</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option></select><p class="settings-note" id="ai-provider-info"></p>
+              <label class="field-label" for="ai-provider">Provider</label><select class="settings-input" id="ai-provider" aria-describedby="ai-provider-info"><option value="cohere">Cohere — free monthly evaluation</option><option value="mistral">Mistral</option><option value="groq">Groq — free daily limits</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option></select><p class="settings-note" id="ai-provider-info"></p>
               <label class="field-label" for="ai-model">Cloud model</label><select class="settings-input" id="ai-model" aria-describedby="ai-model-status"></select><p class="settings-note" id="ai-model-status">Save a Groq API key to load available models.</p>
               <label class="field-label" for="ai-key" id="ai-key-label">Groq API key</label><input class="settings-input" id="ai-key" type="password" placeholder="Paste your Groq API key" autocomplete="new-password"><div class="key-actions"><button class="primary-button" id="save-ai-key">Save key</button><button class="secondary-button" id="remove-ai-key">Remove key</button><span class="key-status" id="ai-key-status">Checking secure storage…</span></div>
               <p class="settings-note" id="ai-key-help"></p><p class="settings-note">Keys are encrypted in this vault and can only be opened on this device. Each provider has its own key and model preference.</p>
@@ -346,6 +350,10 @@ app.innerHTML = `
 
             <section class="settings-section" data-section="toolbar" hidden><div class="settings-section-heading"><span class="eyebrow">EDITOR LAYOUT</span><h3>Editor layout</h3></div><button class="settings-switch" id="wrap-around-previews" type="button" role="switch" aria-checked="false"><span>Wrap note text around images and previews</span><span class="settings-switch-track" aria-hidden="true"><span class="settings-switch-thumb"></span></span></button><label class="field-label" for="notes-toolbar-position">Notes toolbar</label><select class="settings-input toolbar-position-select" id="notes-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option><option value="hidden">Hidden</option></select><label class="field-label" for="canvas-toolbar-position">Canvas toolbar</label><select class="settings-input toolbar-position-select" id="canvas-toolbar-position"><option value="left">Left</option><option value="right">Right</option><option value="bottom">Bottom</option></select><p class="settings-note">Hidden applies only to the notes toolbar.</p></section>
 
+            <section class="settings-section" data-section="version" hidden>
+              <div class="settings-section-heading"><h3>Stillnote <span id="installed-version"></span></h3><p id="app-update-status" role="status"></p></div>
+              <button class="primary-button" id="app-update-button" type="button" disabled>Check for updates</button>
+            </section>
             <section class="settings-section" data-section="equations" hidden>${noteSyntaxGuide}</section>
             <section class="settings-section" data-section="shortcuts" hidden><div class="settings-section-heading"><span class="eyebrow">KEYBOARD</span><h3>Keyboard shortcuts</h3><p>Use these shortcuts to move around and format notes quickly.</p></div><div class="shortcut-groups"><div class="shortcut-group"><h4>Workspace</h4><div class="shortcut-row"><span>Search notes</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>New note</span><kbd>⌘ / Ctrl N</kbd></div><div class="shortcut-row"><span>New folder</span><kbd>⌘ / Ctrl ${icons.shift} N</kbd></div><div class="shortcut-row"><span>Save note</span><kbd>⌘ / Ctrl S</kbd></div><div class="shortcut-row"><span>Export note as PDF</span><kbd>⌘ / Ctrl P</kbd></div><div class="shortcut-row"><span>Choose vault folder</span><kbd>⌘ / Ctrl O</kbd></div><div class="shortcut-row"><span>Open settings</span><kbd>⌘ / Ctrl ,</kbd></div><div class="shortcut-row"><span>Toggle AI assistant</span><kbd>⌘ / Ctrl ${icons.shift} A</kbd></div><div class="shortcut-row"><span>Close popup or assistant; otherwise go Home from a file</span><kbd>Esc</kbd></div></div><div class="shortcut-group"><h4>Explorer</h4><div class="shortcut-row"><span>Add or remove an item from selection</span><kbd>${icons.shift} Click</kbd></div><div class="shortcut-row"><span>Delete from the context menu without confirmation</span><kbd>Hold Enter + Delete</kbd></div></div><div class="shortcut-group"><h4>Editor</h4><div class="shortcut-row"><span>Find and replace in file</span><kbd>⌘ / Ctrl F</kbd></div><div class="shortcut-row"><span>Next / previous match</span><kbd>Enter / ${icons.shift} Enter</kbd></div><div class="shortcut-row"><span>Bold selection</span><kbd>⌘ / Ctrl B</kbd></div><div class="shortcut-row"><span>Italic selection</span><kbd>⌘ / Ctrl I</kbd></div><div class="shortcut-row"><span>Inline code</span><kbd>⌘ / Ctrl ${icons.shift} C</kbd></div><div class="shortcut-row"><span>Strikethrough</span><kbd>⌘ / Ctrl ${icons.shift} X</kbd></div><div class="shortcut-row"><span>Undo / redo</span><kbd>⌘ / Ctrl Z / ${icons.shift} Z</kbd></div></div><div class="shortcut-group"><h4>AI prompt</h4><div class="shortcut-row"><span>Send prompt</span><kbd>Enter</kbd></div><div class="shortcut-row"><span>New line</span><kbd>${icons.shift} Enter</kbd></div></div></div></section>
           </div>
@@ -368,11 +376,13 @@ app.innerHTML = `
   </div>`;
 
 const AI_PROVIDERS = {
+  cohere: { name: 'Cohere', defaultModel: 'command-a-03-2025' },
+  mistral: { name: 'Mistral', defaultModel: 'mistral-small-latest' },
   groq: { name: 'Groq', defaultModel: 'openai/gpt-oss-120b' },
   openai: { name: 'OpenAI', defaultModel: 'gpt-6.1-sol' },
   anthropic: { name: 'Anthropic', defaultModel: 'claude-sonnet-5-5' },
 };
-function resolveAiProvider(value) { return Object.hasOwn(AI_PROVIDERS, value) ? value : 'groq'; }
+function resolveAiProvider(value) { return Object.hasOwn(AI_PROVIDERS, value) ? value : 'mistral'; }
 const state = { markdownEditingMode: localStorage.getItem('stillnote-markdown-mode') === 'source' ? 'source' : 'live', markdownView: null, aiProvider: resolveAiProvider(localStorage.getItem('stillnote-ai-provider')), vault: null, files: [], tree: [], collapsed: new Set(), active: null, home: false, homeChats: loadHomeChats(), homeSession: null, homeMode: localStorage.getItem('stillnote-home-mode') === 'work' ? 'work' : 'ask', homeRun: null, view: null, structured: null, assetViewer: null, assetPath: null, assetBytes: null, pdfText: null, pdfTextPromise: null, toolbarPositions: loadToolbarPositions(), saveTimer: null, savePromise: null, dirty: false, lastTitleValidationMessage: null, sidebarOpen: true, sidebarWidth: Number(localStorage.getItem('stillnote-sidebar-width')) || 258, assistantWidth: Number(localStorage.getItem('stillnote-assistant-width')) || 360, theme: 'light', assistantOpen: false, assistantRun:null, assistantMode: 'ask', chatHistory: [], draggedItem: null, explorerSelection: new Set(), contextDeleteBypass: false, taskLinkStates: new Map(), workspaceRestored: false, pendingDeepLinks: [] };
 {
   const workspaceShortcuts = [...document.querySelectorAll('.shortcut-group')].find((group) => group.querySelector('h4')?.textContent === 'Workspace');
@@ -651,7 +661,7 @@ class WikiMediaWidget extends WidgetType {
         const canvas = decodeStructured(asset);
         if (canvas?.type !== 'canvas' || !Array.isArray(canvas.data?.elements)) throw new Error('Invalid canvas');
         const drawing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        drawing.setAttribute('viewBox', `0 0 ${canvas.data.width || 1200} ${canvas.data.height || 760}`);
+        drawing.setAttribute('viewBox', `${canvas.data.originX || 0} ${canvas.data.originY || 0} ${canvas.data.width || 1200} ${canvas.data.height || 760}`);
         drawing.setAttribute('role', 'img'); drawing.setAttribute('aria-label', this.file);
         drawing.classList.add('cm-wiki-canvas-preview');
         drawCanvasElements(drawing, canvas.data, color => state.theme === 'dark' && ['#20211e', '#353630', '#373832', '#000', '#000000'].includes(color || '#20211e') ? '#ffffff' : color || '#20211e', new Set(), true);
@@ -1878,7 +1888,9 @@ function stopAiRun(run, button) {
 function stopHomeRun() { stopAiRun(state.homeRun, $('#home-send')); }
 function stopAssistantRun() { stopAiRun(state.assistantRun, $('#assistant-send')); }
 async function homeReadTool(name,args,mode,vault) {
-  const result = await window.stillnote.homeTool({ tool:name,args,mode,vault });
+  const operation = window.stillnote.homeTool({ tool:name,args,mode,vault });
+  if (name === 'edit_gantt' && state.homeRun) state.homeRun.pendingGanttEdit = operation;
+  const result = await operation;
   if (name !== 'read_file' || result.kind !== 'pdf') return result;
   if (state.vault?.path !== vault) throw new Error('The active vault changed.');
   if (result.bytes > 20*1024*1024) throw new Error('This PDF exceeds the 20 MB Home reading limit.');
@@ -2099,12 +2111,15 @@ async function renderAssetPreview(file, navigationId) {
 }
 async function openNote(file) {
   stopAssistantRun();
+  const pendingGanttEdit = state.homeRun?.pendingGanttEdit;
   stopHomeRun();
   stopHomeAgenda();
   if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
   if (meetingStarting) cancelMeetingRecording();
   const navigationId=state.navigationId=(state.navigationId||0)+1;
   try {
+    if (pendingGanttEdit) await pendingGanttEdit.catch(() => {});
+    if (navigationId !== state.navigationId) return;
     const requestedActive=state.active;
     if(state.pendingStructuredRename)await state.pendingStructuredRename;
     if(file===requestedActive&&state.active!==requestedActive)file=state.active;
@@ -2307,8 +2322,11 @@ async function navigateWikiTarget(target) {
   // Keep the current editor mounted for same-file jumps.
   if (file !== state.active || (!state.view && !currentGantt)) await openNote(file);
   if (fragment && state.active === file && state.structured?.type === 'gantt') {
-    const number = ganttTaskNumber(fragment);
-    if (number !== null && !state.structured.focusTask?.(number)) showToast(`No task ${number} found in ${prettyName(file)}.`);
+    const ref = ganttTaskReference(fragment);
+    if (ref && !state.structured.focusTask?.(ref.taskNumber, ref.instanceNumber)) {
+      const identity = ref.instanceNumber === null ? `task ${ref.taskNumber}` : `task ${ref.taskNumber}, instance ${ref.instanceNumber}`;
+      showToast(`No ${identity} found in ${prettyName(file)}.`);
+    }
     return;
   }
   if (fragment && state.view && state.active === file) {
@@ -2478,6 +2496,13 @@ async function applyStructuredHistory(direction){
   const snapshot=from.pop();const restored=JSON.parse(snapshot);const type=structured.type,history={undoStack:structured.undoStack,redoStack:structured.redoStack};
   if (type === 'gantt') {
     restored.data.lastTaskNumber = Math.max(restored.data.lastTaskNumber ?? 0, structured.data.lastTaskNumber ?? 0);
+    const currentRows = new Map(structured.data.rows.map(row => [row.taskNumber, row]));
+    for (const row of restored.data.rows) {
+      const current = currentRows.get(row.taskNumber);
+      if (current && lastGanttInstanceNumber(current) > lastGanttInstanceNumber(row)) {
+        row.lastInstanceNumber = lastGanttInstanceNumber(current);
+      }
+    }
   }
   structured.data=restored.data;structured.title=restored.title;structured.historySnapshot=snapshot;
   let active=state.active;
@@ -2541,11 +2566,22 @@ function renderStructured(type, rawData, file, title) {
     const chart = state.structured;
     const gantt = renderGanttEditor(root, data, {
       icons, tasksApi: window.stillnote, onChange: setStructuredDirty, onHistory: applyStructuredHistory,
-      copyTaskLink: async number => {
+      exportPng: async () => {
+        const source = state.active;
+        try {
+          const png = await renderGanttPng(data.rows, chart.title || prettyName(source), getComputedStyle(root));
+          const saved = await window.stillnote.exportGanttPng(source, await png.arrayBuffer());
+          if (saved) showToast('PNG exported');
+        } catch (error) {
+          showToast(error.message || 'Could not export the Gantt chart.');
+        }
+      },
+      copyTaskLink: async (number, instanceNumber) => {
         const pendingRename = state.pendingStructuredRename;
         if (pendingRename) await pendingRename;
         if (state.structured !== chart) throw new Error('The chart is no longer open.');
-        await navigator.clipboard.writeText(`<[${state.active}#task-${number}]>`);
+        const instance = instanceNumber == null ? '' : `-instance-${instanceNumber}`;
+        await navigator.clipboard.writeText(`<[${state.active}#task-${number}${instance}]>`);
       },
     });
     Object.assign(chart, gantt);
@@ -2787,6 +2823,42 @@ function canvasSelectionFrame(elements, rotation = 0) {
   const cx = left+w/2, cy = top+h/2, center = { x: cx*cos-cy*sin, y: cx*sin+cy*cos };
   return { x: center.x-w/2, y: center.y-h/2, w, h, rotation, center };
 }
+function expandCanvasBounds(data, content = canvasSelectionFrame(data.elements), padding = 120) {
+  const oldX = data.originX || 0, oldY = data.originY || 0;
+  if (!content) return { x: 0, y: 0 };
+  const x = content.x < oldX ? Math.floor((content.x-padding)/20)*20 : oldX;
+  const y = content.y < oldY ? Math.floor((content.y-padding)/20)*20 : oldY;
+  const right = oldX + (data.width || 1200), bottom = oldY + (data.height || 760);
+  data.width = Math.max(right, content.x+content.w > right ? Math.ceil((content.x+content.w+padding)/20)*20 : right)-x;
+  data.height = Math.max(bottom, content.y+content.h > bottom ? Math.ceil((content.y+content.h+padding)/20)*20 : bottom)-y;
+  data.originX = x; data.originY = y;
+  return { x: oldX-x, y: oldY-y };
+}
+function canvasTextSize(value) {
+  return Number.isFinite(Number(value)) && Number(value) > 0 ? Math.max(8, Math.min(200, Number(value))) : 20;
+}
+// Resolve each axis from the raw pointer position so a grid cannot pull an object
+// away from a nearby alignment. Group bounds keep selected objects together.
+function snapCanvasBounds(box, targets, { grid = false, objects = true, threshold = 7 } = {}) {
+  const result = { x: box.x, y: box.y, guides: [] };
+  for (const [axis, size, other, otherSize] of [['x','w','y','h'],['y','h','x','w']]) {
+    const anchors = [box[axis], box[axis]+box[size]/2, box[axis]+box[size]];
+    let best;
+    if (objects) for (const target of targets) {
+      for (const position of [target[axis], target[axis]+target[size]/2, target[axis]+target[size]]) {
+        for (const anchor of anchors) {
+          const delta = position-anchor;
+          if (Math.abs(delta) <= threshold && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, position, target };
+        }
+      }
+    }
+    if (best) {
+      result[axis] += best.delta;
+      result.guides.push({ axis, position: best.position, start: Math.min(box[other], best.target[other])-16, end: Math.max(box[other]+box[otherSize], best.target[other]+best.target[otherSize])+16 });
+    } else if (grid) result[axis] = Math.round(box[axis]/20)*20;
+  }
+  return result;
+}
 function duplicateCanvasElements(data, indices, offset = 24) {
   const copies = [...indices].sort((a,b) => a-b).filter(i => data.elements[i]).map(i => {
     const copy = structuredClone(data.elements[i]);
@@ -2803,11 +2875,11 @@ function insertCanvasImage(data, src, width, height, name) {
   const canvasWidth = data.width || 1200, canvasHeight = data.height || 760;
   const scale = Math.min(1, canvasWidth * .8 / width, canvasHeight * .8 / height);
   const w = width * scale, h = height * scale;
-  const image = { type: 'image', src, name, x: (canvasWidth - w) / 2, y: (canvasHeight - h) / 2, w, h };
+  const image = { type: 'image', src, name, x: (data.originX || 0) + (canvasWidth - w) / 2, y: (data.originY || 0) + (canvasHeight - h) / 2, w, h };
   data.elements.unshift(image);
   return image;
 }
-function drawCanvasElements(svg, data, displayColor, selected = new Set(), readOnly = false, onTextFocus = () => {}) {
+function drawCanvasElements(svg, data, displayColor, selected = new Set(), readOnly = false, onTextFocus = () => {}, onTextLayout = () => {}) {
     data.elements.forEach((el, i) => {
       let node;
       if (el.type === 'image') {
@@ -2838,7 +2910,7 @@ function drawCanvasElements(svg, data, displayColor, selected = new Set(), readO
         for(const [which,x,y,style,sign] of [['start',el.x1,el.y1,el.startMarker||'none',-1],['end',el.x2,el.y2,el.endMarker||'arrow',1]]){if(style==='none')continue;const ux=dx/length*sign,uy=dy/length*sign;if(style==='circle'){const mark=document.createElementNS('http://www.w3.org/2000/svg','circle');mark.setAttribute('cx',x);mark.setAttribute('cy',y);mark.setAttribute('r',5);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else if(style==='square'){const mark=document.createElementNS('http://www.w3.org/2000/svg','rect');mark.setAttribute('x',x-4);mark.setAttribute('y',y-4);mark.setAttribute('width',8);mark.setAttribute('height',8);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else if(style==='diamond'){const mark=document.createElementNS('http://www.w3.org/2000/svg','polygon');mark.setAttribute('points',`${x},${y-5} ${x+5},${y} ${x},${y+5} ${x-5},${y}`);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}else{const bx=x-ux*12,by=y-uy*12,px=-uy*5,py=ux*5,mark=document.createElementNS('http://www.w3.org/2000/svg','polygon');mark.setAttribute('points',`${x},${y} ${bx+px},${by+py} ${bx-px},${by-py}`);mark.setAttribute('fill',displayColor(el.color));node.append(mark);}}
       }
       else if(el.type==='shape'){
-        const x=el.x,y=el.y,w=el.w,h=el.h;node=document.createElementNS('http://www.w3.org/2000/svg',el.shape==='rectangle'?'rect':el.shape==='ellipse'?'ellipse':'polygon');
+        const {x,y,w,h}=canvasElementBounds(el);node=document.createElementNS('http://www.w3.org/2000/svg',el.shape==='rectangle'?'rect':el.shape==='ellipse'?'ellipse':'polygon');
         if(el.shape==='rectangle'){node.setAttribute('x',x);node.setAttribute('y',y);node.setAttribute('width',w);node.setAttribute('height',h);}
         else if(el.shape==='ellipse'){node.setAttribute('cx',x+w/2);node.setAttribute('cy',y+h/2);node.setAttribute('rx',w/2);node.setAttribute('ry',h/2);}
         else if(el.shape==='triangle'){const vertices=el.vertices||[[.5,0],[1,1],[0,1]];node.setAttribute('points',vertices.map(([vx,vy])=>`${x+vx*w},${y+vy*h}`).join(' '));}
@@ -2857,13 +2929,22 @@ function drawCanvasElements(svg, data, displayColor, selected = new Set(), readO
           const showSource = () => { if (editor.querySelector('.sheet-wiki-link')) editor.textContent = el.text || ''; };
           // Expand rendered links before the browser places the caret.
           editor.addEventListener('pointerdown', () => { if (editor.contentEditable === 'true') showSource(); });
-          editor.addEventListener('focus', () => { editor.contentEditable = 'true'; showSource(); onTextFocus(i); });
-          editor.addEventListener('input', () => { el.text = editor.innerText; setStructuredDirty(); });
+          editor.addEventListener('focus', () => {
+            if (onTextFocus(i) === false) { editor.blur(); return; }
+            editor.contentEditable = 'true'; showSource();
+          });
+          editor.addEventListener('input', () => {
+            el.text = editor.innerText;
+            el.h = Math.max(el.h || 60, (editor.scrollHeight || 0)+2);
+            node.setAttribute('height', el.h);
+            onTextLayout(); setStructuredDirty();
+          });
           editor.addEventListener('paste', event => {
             event.preventDefault(); event.stopPropagation();
             document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
           });
           editor.addEventListener('blur', () => {
+            if (editor.contentEditable !== 'true') return;
             const text = editor.innerText;
             if (text !== (el.text || '')) { el.text = text; setStructuredDirty(); }
             editor.contentEditable = 'false';
@@ -2873,27 +2954,55 @@ function drawCanvasElements(svg, data, displayColor, selected = new Set(), readO
         editor.contentEditable = 'false';
         if (!readOnly) editor.tabIndex = -1;
         editor.style.color=displayColor(el.color);
+        editor.style.fontSize = `${canvasTextSize(el.fontSize)}px`;
       }
       const elementBounds=canvasElementBounds(el);
       if(el.type!=='stroke'&&el.rotation) node.setAttribute('transform',`rotate(${el.rotation} ${elementBounds.x+elementBounds.w/2} ${elementBounds.y+elementBounds.h/2})`);
       node.dataset.index = i; if (selected.has(i)) node.classList.add('is-selected'); svg.append(node);
     });
 }
+function attachCanvasOptionsShortcut(root, onToggle) {
+  let pending = false;
+  const textField = node => node?.closest?.('input,textarea,select,.canvas-text-edit,[contenteditable]:not([contenteditable="false"]),[role="textbox"]');
+  const allowed = event => root.isConnected && !event.defaultPrevented && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey &&
+    !textField(event.target) && !textField(document.activeElement) &&
+    (!document.activeElement || document.activeElement === document.body || root.contains(document.activeElement));
+  const keydown = event => {
+    if (event.key !== 'Shift') { pending = false; return; }
+    if (!event.repeat) pending = allowed(event);
+  };
+  const keyup = event => {
+    if (event.key !== 'Shift') return;
+    const toggle = pending && allowed(event); pending = false;
+    if (toggle) onToggle();
+  };
+  const cancel = () => { pending = false; };
+  document.addEventListener('keydown', keydown);
+  document.addEventListener('keyup', keyup);
+  document.addEventListener('pointerdown', cancel, true);
+  window.addEventListener('blur', cancel);
+  return () => {
+    document.removeEventListener('keydown', keydown);
+    document.removeEventListener('keyup', keyup);
+    document.removeEventListener('pointerdown', cancel, true);
+    window.removeEventListener('blur', cancel);
+  };
+}
 function renderCanvas(root, data) {
   const toolbar = root.querySelector('.structured-toolbar');
   const colors=[['red','#d94d48'],['yellow','#d9ae23'],['green','#348562'],['blue','#397dc2'],['black','#20211e']];
-  toolbar.innerHTML = `<div class="canvas-tool-group" role="toolbar" aria-label="Canvas tools">${[['select','Select and move',icons.cursor],['draw','Pen tool',icons.draw],['shape','Shape tool',icons.shape],['line','Line tool',icons.line],['text','Insert text',icons.text]].map(([tool,label,icon])=>`<button class="canvas-tool${tool==='select'?' active':''}" data-tool="${tool}" title="${label}" aria-label="${label}" aria-pressed="${tool==='select'}">${icon}</button>`).join('')}<button class="canvas-tool" data-action="image" title="Add image" aria-label="Add image">${icons.image}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-action="rotate" title="Rotate selected 15° clockwise" aria-label="Rotate selected 15 degrees clockwise">${icons.rotate}</button><button class="canvas-tool canvas-delete" data-tool="delete" title="Delete selected" aria-label="Delete selected">${icons.trash}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button class="canvas-tool" data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button></div>`;
+  toolbar.innerHTML = `<div class="canvas-tool-group" role="toolbar" aria-label="Canvas tools">${[['select','Select and move',icons.cursor],['draw','Pen tool',icons.draw],['shape','Shape tool',icons.shape],['line','Line tool',icons.line],['text','Insert text',icons.text]].map(([tool,label,icon])=>`<button class="canvas-tool${tool==='select'?' active':''}" data-tool="${tool}" title="${label}" aria-label="${label}" aria-pressed="${tool==='select'}">${icon}</button>`).join('')}<button class="canvas-tool" data-action="image" title="Add image" aria-label="Add image">${icons.image}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-snap="grid" title="Snap to grid" aria-label="Snap to grid" aria-pressed="false">${svgIcon('<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>')}</button><button class="canvas-tool" data-snap="objects" title="Snap to object centers and edges" aria-label="Snap to objects" aria-pressed="true">${svgIcon('<rect x="3" y="5" width="6" height="14" rx="1"/><rect x="15" y="8" width="6" height="8" rx="1"/><path d="M1 12h22"/>')}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-action="rotate" title="Rotate selected 15° clockwise" aria-label="Rotate selected 15 degrees clockwise">${icons.rotate}</button><button class="canvas-tool canvas-delete" data-tool="delete" title="Delete selected" aria-label="Delete selected">${icons.trash}</button><span class="canvas-tool-divider"></span><button class="canvas-tool" data-history="undo" title="Undo (⌘Z)" aria-label="Undo">${icons.undo}</button><button class="canvas-tool" data-history="redo" title="Redo (⌘⇧Z)" aria-label="Redo">${icons.redo}</button></div>`;
   const surface = root.querySelector('.structured-surface');
   surface.innerHTML = `<svg class="canvas-svg" viewBox="0 0 ${data.width || 1200} ${data.height || 760}" style="width:${data.width || 1200}px;height:${data.height || 760}px;max-width:none" role="img" aria-label="Drawing canvas" xmlns="http://www.w3.org/2000/svg"></svg>`;
   const svg = surface.querySelector('svg');
   const palette=document.createElement('div');palette.className='canvas-color-palette';palette.setAttribute('role','group');palette.setAttribute('aria-label','Selected item actions');
-  palette.innerHTML=colors.map(([name,color])=>`<button class="canvas-color-swatch" data-color="${color}" style="--swatch:${color}" title="${name[0].toUpperCase()+name.slice(1)}" aria-label="${name[0].toUpperCase()+name.slice(1)} color" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg></button>`).join('') + `<button type="button" class="canvas-duplicate" aria-label="Duplicate selection" title="Duplicate selection">${icons.duplicate}</button>`;surface.append(palette);
+  palette.innerHTML=colors.map(([name,color])=>`<button class="canvas-color-swatch" data-color="${color}" style="--swatch:${color}" title="${name[0].toUpperCase()+name.slice(1)}" aria-label="${name[0].toUpperCase()+name.slice(1)} color" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3.2 3.2L13 4.8"/></svg></button>`).join('') + `<button type="button" class="canvas-duplicate" aria-label="Duplicate selection" title="Duplicate selection">${icons.duplicate}</button><label class="canvas-font-size" hidden title="Text size">Aa<input type="number" min="8" max="200" step="1" aria-label="Text size" value="20"></label>`;surface.append(palette);
   const shapeMenu=document.createElement('div');shapeMenu.className='canvas-shape-menu';shapeMenu.setAttribute('role','group');shapeMenu.setAttribute('aria-label','Shape options');
   shapeMenu.innerHTML=`<div class="canvas-shape-options">${[['rectangle','Rectangle',icons.rectangle],['ellipse','Ellipse',icons.ellipse],['triangle','Triangle',icons.triangle],['star','Star',icons.star],['speech','Speech bubble',icons.speech]].map(([shape,label,icon])=>`<button type="button" data-shape="${shape}" title="${label}" aria-label="${label}" aria-pressed="false">${icon}</button>`).join('')}</div><label class="canvas-star-points" hidden>Points <select aria-label="Star points">${Array.from({length:9},(_,i)=>`<option value="${i+4}"${i===1?' selected':''}>${i+4}</option>`).join('')}</select></label>`;surface.append(shapeMenu);
   const lineMenu=document.createElement('div');lineMenu.className='canvas-line-menu';lineMenu.setAttribute('role','group');lineMenu.setAttribute('aria-label','Line endpoint styles');
   lineMenu.innerHTML=`${[['start','Start'],['end','End']].map(([endpoint,label])=>`<div class="canvas-endpoint-menu" data-endpoint-menu="${endpoint}" role="group" aria-label="${label} endpoint style">${[['none','None',icons.markerNone],['arrow','Arrow',icons.markerArrow],['circle','Circle',icons.markerCircle],['square','Square',icons.markerSquare],['diamond','Diamond',icons.markerDiamond]].map(([style,title,icon])=>`<button type="button" data-endpoint="${endpoint}" data-style="${style}" title="${label}: ${title}" aria-label="${label}: ${title}" aria-pressed="false">${icon}</button>`).join('')}</div>`).join('')}`;surface.append(lineMenu);
   const toolHelp=document.createElement('div');toolHelp.className='canvas-tool-help';toolHelp.setAttribute('aria-live','polite');root.append(toolHelp);
-  let tool = 'select'; let selected = new Set(); let draft = null; let interaction = null; let selectionBox = null; let selectedColor='#20211e';
+  let tool = 'select'; let selected = new Set(); let draft = null; let interaction = null; let selectionBox = null; let selectedColor='#20211e'; let textSize = 20; let snapGuides = []; let optionsVisible = false;
   const displayColor=color=>{const value=String(color||selectedColor).toLowerCase();return state.theme==='dark'&&['#20211e','#353630','#373832','#000','#000000'].includes(value)?'#ffffff':(color||selectedColor);};
   const bounds = canvasElementBounds;
   let selectionRotation = 0, selectionMembers = [];
@@ -2911,6 +3020,14 @@ function renderCanvas(root, data) {
     for(const i of selected){const el=data.elements[i];if(el.type==='stroke')el.points=el.points.map(p=>rotatedPoint(p.x,p.y,center,angle));else if(el.type==='line'){const a=rotatedPoint(el.x1,el.y1,center,angle),b=rotatedPoint(el.x2,el.y2,center,angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(el),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,center,angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((el.rotation||0)+degrees)%360;}}
     selectionRotation += degrees;
     paint();setStructuredDirty();
+  };
+  const syncCanvasSize = (extraBounds = null) => {
+    const shift = expandCanvasBounds(data);
+    if (extraBounds) { const extraShift = expandCanvasBounds(data, extraBounds); shift.x += extraShift.x; shift.y += extraShift.y; }
+    svg.setAttribute('viewBox', `${data.originX || 0} ${data.originY || 0} ${data.width || 1200} ${data.height || 760}`);
+    svg.style.width = `${data.width || 1200}px`; svg.style.height = `${data.height || 760}px`;
+    svg.style.backgroundPosition = `${-(data.originX || 0)}px ${-(data.originY || 0)}px`;
+    surface.scrollLeft += shift.x; surface.scrollTop += shift.y;
   };
   const paintSelection = () => {
     svg.querySelector('.canvas-selection-overlay')?.remove();
@@ -2932,30 +3049,81 @@ function renderCanvas(root, data) {
       for(const i of selected){const el=data.elements[i];if(el.type==='shape'&&el.shape==='triangle'){const center={x:el.x+el.w/2,y:el.y+el.h/2};(el.vertices||[[.5,0],[1,1],[0,1]]).forEach(([vx,vy],pointIndex)=>{const p=rotatedPoint(el.x+vx*el.w,el.y+vy*el.h,center,(el.rotation||0)*Math.PI/180),handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',p.x);handle.setAttribute('cy',p.y);handle.setAttribute('r',5);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2);handle.dataset.pointHandle=String(pointIndex);handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');overlay.append(handle);});}else if(el.type==='line'){for(const [which,x,y] of [['start',el.x1,el.y1],['end',el.x2,el.y2]]){const handle=document.createElementNS('http://www.w3.org/2000/svg','circle');handle.setAttribute('cx',x);handle.setAttribute('cy',y);handle.setAttribute('r',8);handle.setAttribute('fill','#fff');handle.setAttribute('stroke','#9a765a');handle.setAttribute('stroke-width',2.5);handle.setAttribute('pointer-events','all');handle.dataset.pointHandle=which;handle.dataset.index=String(i);handle.classList.add('canvas-point-handle');overlay.append(handle);}}}
     }
     if(selectionBox){const box=document.createElementNS('http://www.w3.org/2000/svg','rect');box.setAttribute('x',Math.min(selectionBox.start.x,selectionBox.current.x));box.setAttribute('y',Math.min(selectionBox.start.y,selectionBox.current.y));box.setAttribute('width',Math.abs(selectionBox.current.x-selectionBox.start.x));box.setAttribute('height',Math.abs(selectionBox.current.y-selectionBox.start.y));box.setAttribute('class','canvas-marquee');box.setAttribute('pointer-events','none');overlay.append(box);}
+    for (const guide of snapGuides) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      const vertical = guide.axis === 'x';
+      for (const [key,value] of Object.entries({ x1: vertical ? guide.position : guide.start, x2: vertical ? guide.position : guide.end, y1: vertical ? guide.start : guide.position, y2: vertical ? guide.end : guide.position })) line.setAttribute(key,value);
+      line.setAttribute('class','canvas-snap-guide'); overlay.append(line);
+    }
+    const textElements = [...selected].map(i => data.elements[i]).filter(el => el.type === 'text');
+    const fontControl = palette.querySelector('.canvas-font-size'), fontInput = fontControl.querySelector('input');
+    fontControl.hidden = !textElements.length;
+    if (textElements.length && document.activeElement !== fontInput) {
+      const sizes = new Set(textElements.map(el => canvasTextSize(el.fontSize)));
+      fontInput.value = sizes.size === 1 ? [...sizes][0] : ''; fontInput.placeholder = sizes.size > 1 ? 'Mix' : '';
+      if (sizes.size === 1) textSize = [...sizes][0];
+    }
     const box=selected.size?selectionBounds(selected):null;
-    palette.hidden=!box;
+    palette.hidden=!box || !optionsVisible;
     const showColors = [...selected].some(i => data.elements[i].type !== 'image');
     palette.querySelectorAll('[data-color]').forEach(button => button.hidden = !showColors);
     const one=selected.size===1?data.elements[[...selected][0]]:null,shapeTarget=one?.type==='shape'||one?.type==='rect'||one?.type==='ellipse'?one:null,lineTarget=one?.type==='line'?one:null;
-    shapeMenu.hidden=!shapeTarget;lineMenu.hidden=!lineTarget;
+    shapeMenu.hidden=!shapeTarget || !optionsVisible;lineMenu.hidden=!lineTarget || !optionsVisible;
     if(shapeTarget){const shapeName=shapeTarget.shape||(shapeTarget.type==='rect'?'rectangle':shapeTarget.type==='ellipse'?'ellipse':'');shapeMenu.querySelectorAll('[data-shape]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.shape===shapeName)));shapeMenu.querySelector('.canvas-star-points').hidden=shapeName!=='star';shapeMenu.querySelector('select').value=String(shapeTarget.points||5);}
     if(lineTarget){for(const endpoint of ['start','end']){const style=lineTarget[`${endpoint}Marker`]||(endpoint==='end'?'arrow':'none');lineMenu.querySelectorAll(`[data-endpoint="${endpoint}"][data-style]`).forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.style===style)));}}
-    if(box){const scale=svg.clientWidth/Math.max(1,data.width||1200);const right=(box.x+box.w)*scale+10;const left=right+palette.offsetWidth<=svg.clientWidth?right:Math.max(4,box.x*scale-palette.offsetWidth-10);palette.style.left=`${left}px`;palette.style.top=`${Math.max(8,box.y*scale)}px`;const menuLeft=Math.min(Math.max(4,left),Math.max(4,svg.clientWidth-190));shapeMenu.style.left=`${menuLeft}px`;const menuTop=Math.max(8,box.y*scale+palette.offsetHeight+8);shapeMenu.style.top=`${menuTop}px`;}
-    if(lineTarget){const scale=svg.clientWidth/Math.max(1,data.width||1200);for(const [endpoint,x,y] of [['start',lineTarget.x1,lineTarget.y1],['end',lineTarget.x2,lineTarget.y2]]){const menu=lineMenu.querySelector(`[data-endpoint-menu="${endpoint}"]`),left=x*scale-menu.offsetWidth-9;menu.style.left=`${left>=2?left:x*scale+10}px`;menu.style.top=`${Math.max(2,y*scale-menu.offsetHeight/2)}px`;}}
+    if(box){const scale=svg.clientWidth/Math.max(1,data.width||1200);const right=(box.x+box.w-(data.originX||0))*scale+10;const left=right+palette.offsetWidth<=svg.clientWidth?right:Math.max(4,(box.x-(data.originX||0))*scale-palette.offsetWidth-10);palette.style.left=`${left}px`;palette.style.top=`${Math.max(8,(box.y-(data.originY||0))*scale)}px`;const menuLeft=Math.min(Math.max(4,left),Math.max(4,svg.clientWidth-190));shapeMenu.style.left=`${menuLeft}px`;const menuTop=Math.max(8,(box.y-(data.originY||0))*scale+palette.offsetHeight+8);shapeMenu.style.top=`${menuTop}px`;}
+    if(lineTarget){const scale=svg.clientWidth/Math.max(1,data.width||1200);for(const [endpoint,x,y] of [['start',lineTarget.x1,lineTarget.y1],['end',lineTarget.x2,lineTarget.y2]]){const menu=lineMenu.querySelector(`[data-endpoint-menu="${endpoint}"]`),left=(x-(data.originX||0))*scale-menu.offsetWidth-9;menu.style.left=`${left>=2?left:(x-(data.originX||0))*scale+10}px`;menu.style.top=`${Math.max(2,(y-(data.originY||0))*scale-menu.offsetHeight/2)}px`;}}
     palette.querySelectorAll('[data-color]').forEach(swatch=>{const active=swatch.dataset.color.toLowerCase()===selectedColor.toLowerCase();swatch.classList.toggle('active',active);swatch.setAttribute('aria-pressed',String(active));});
   };
   const paint = () => {
+    syncCanvasSize();
     svg.replaceChildren();
-    drawCanvasElements(svg, data, displayColor, selected, false, index => {
+    drawCanvasElements(svg, data, displayColor, selected, tool !== 'select', index => {
+      if (tool !== 'select') return false;
       selected = new Set([index]); selectedColor = data.elements[index].color || selectedColor;
       paintSelection();
-    });
+    }, () => { syncCanvasSize(); paintSelection(); });
     paintSelection();
   };
+  const snapOptions = () => ({ grid: data.snapToGrid === true, objects: data.snapToObjects !== false });
+  const snapTargets = () => data.elements.filter((el,i) => el !== draft && !selected.has(i)).map(el => canvasSelectionFrame([el])).filter(Boolean);
+  const snapPoint = p => {
+    const snapped = snapCanvasBounds({ ...p, w: 0, h: 0 }, snapTargets(), snapOptions());
+    snapGuides = snapped.guides;
+    return { x: snapped.x, y: snapped.y };
+  };
+  const updateSnapButtons = () => toolbar.querySelectorAll('[data-snap]').forEach(button => {
+    const active = button.dataset.snap === 'grid' ? snapOptions().grid : snapOptions().objects;
+    button.classList.toggle('active',active); button.setAttribute('aria-pressed',String(active));
+  });
+  toolbar.querySelectorAll('[data-snap]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.snap === 'grid') data.snapToGrid = !snapOptions().grid;
+    else data.snapToObjects = !snapOptions().objects;
+    snapGuides = []; updateSnapButtons(); paintSelection(); setStructuredDirty();
+  }));
+  updateSnapButtons();
+  palette.querySelector('.canvas-font-size input').addEventListener('input', event => {
+    if (!event.target.value || !event.target.validity.valid) return;
+    textSize = canvasTextSize(event.target.value);
+    for (const i of selected) {
+      const el = data.elements[i]; if (el.type !== 'text') continue;
+      el.fontSize = textSize;
+      const editor = svg.querySelector(`[data-index="${i}"] .canvas-text-edit`);
+      if (editor) { editor.style.fontSize = `${textSize}px`; el.h = Math.max(el.h || 60, editor.scrollHeight+2); }
+    }
+    paint(); setStructuredDirty();
+  });
   svg.dataset.tool=tool;
   const deleteSelected=()=>{if(!selected.size)return;for(const i of [...selected].sort((a,b)=>b-a))data.elements.splice(i,1);selected.clear();paint();setStructuredDirty();};
   state.structured.deleteCanvasSelection=deleteSelected;
-  toolbar.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => { if (button.dataset.tool === 'delete') { deleteSelected(); return; } tool = button.dataset.tool; svg.dataset.tool=tool; toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(b => {const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});updateToolHelp(); }));
+  toolbar.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.tool === 'delete') { deleteSelected(); return; }
+    if (document.activeElement?.closest('.canvas-text-edit')) document.activeElement.blur();
+    tool = button.dataset.tool; svg.dataset.tool=tool;
+    if (tool !== 'select') { selected.clear(); selectionBox = null; snapGuides = []; }
+    toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(b => {const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
+    updateToolHelp(); paint();
+  }));
   toolbar.querySelector('[data-action="image"]').addEventListener('click', () => {
     const owner = state.structured;
     openCanvasImagePicker(async (reference, stillOpen) => {
@@ -2990,7 +3158,7 @@ function renderCanvas(root, data) {
   lineMenu.querySelectorAll('button[data-endpoint][data-style]').forEach(button=>button.addEventListener('click',()=>{const target=selected.size===1?data.elements[[...selected][0]]:null;if(target?.type==='line'){target[`${button.dataset.endpoint}Marker`]=button.dataset.style;paint();setStructuredDirty();}}));
   toolbar.querySelectorAll('[data-history]').forEach(button=>button.addEventListener('click',()=>applyStructuredHistory(button.dataset.history)));
   const point = e => { const p = svg.createSVGPoint(); p.x=e.clientX;p.y=e.clientY; const q=p.matrixTransform(svg.getScreenCTM().inverse()); return {x:q.x,y:q.y}; };
-  const updateToolHelp=()=>{const help={select:'First click selects text for dragging; click it again to edit. Alt + drag moves selected text. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=help[tool]||'';toolHelp.hidden=!help[tool];};
+  const updateToolHelp=()=>{const help={select:'First click selects text for dragging; click it again to edit. Alt + drag moves selected text. Use the corner handles to resize and the top handle to rotate.',draw:'Drag to draw freehand with the pen.',shape:'Drag to create a bounding box, then choose Rectangle, Ellipse, Triangle, Star, or Speech bubble from the shape menu.',line:'Drag to draw a line. Move either endpoint, or choose its start and end markers from the line menu.'};toolHelp.textContent=[help[tool], 'Press Shift to show or hide selected object options.'].filter(Boolean).join(' ');toolHelp.hidden=false;};
   updateToolHelp();
   svg.addEventListener('pointerdown', e => {const textEditor=e.target.closest('.canvas-text-edit');
     if (textEditor && tool === 'select' && !e.altKey && document.activeElement === textEditor) return;
@@ -2999,7 +3167,8 @@ function renderCanvas(root, data) {
       textEditor.contentEditable = 'true';
       return;
     }
-    if (document.activeElement?.closest('.canvas-text-edit')) document.activeElement.blur(); const p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
+    if (e.button !== 0) return;
+    if (document.activeElement?.closest('.canvas-text-edit')) document.activeElement.blur(); let p=point(e); const ix=Number(e.target.closest('[data-index]')?.dataset.index);
     if(tool==='select') {
       const endpointHandle=e.target.closest('[data-point-handle]');
       if(endpointHandle&&Number.isInteger(ix)){interaction={kind:'point',index:ix,handle:endpointHandle.dataset.pointHandle,original:structuredClone(data.elements[ix])};svg.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();return;}
@@ -3009,17 +3178,38 @@ function renderCanvas(root, data) {
       if(!e.shiftKey&&!e.metaKey&&!e.ctrlKey)selected.clear();selectionBox={start:p,current:p,additive:e.shiftKey||e.metaKey||e.ctrlKey};svg.setPointerCapture(e.pointerId);paint();return;
     }
     if(tool==='erase' && Number.isInteger(ix)){data.elements.splice(ix,1);selected.clear();paint();setStructuredDirty();return;}
-    if((tool==='draw'||tool==='shape'||tool==='line') && Number.isInteger(ix) && data.elements[ix]?.type !== 'image') return;
-    svg.setPointerCapture(e.pointerId); if(tool==='draw')draft={type:'stroke',points:[p],color:selectedColor}; else if(tool==='shape')draft={type:'shape',shape:'rectangle',x:p.x,y:p.y,w:0,h:0,color:selectedColor}; else if(tool==='line')draft={type:'line',x1:p.x,y1:p.y,x2:p.x,y2:p.y,startMarker:'none',endMarker:'arrow',color:selectedColor}; else if(tool==='text')draft={type:'text',x:p.x,y:p.y,w:0,h:0,text:'',color:selectedColor};
-    if(draft){data.elements.push(draft);selected=new Set([data.elements.length-1]);setStructuredDirty();}
+    e.preventDefault();
+    selected.clear(); if (tool !== 'draw') p = snapPoint(p);
+    svg.setPointerCapture(e.pointerId); if(tool==='draw')draft={type:'stroke',points:[p],color:selectedColor}; else if(tool==='shape')draft={type:'shape',shape:'rectangle',x:p.x,y:p.y,w:0,h:0,color:selectedColor}; else if(tool==='line')draft={type:'line',x1:p.x,y1:p.y,x2:p.x,y2:p.y,startMarker:'none',endMarker:'arrow',color:selectedColor}; else if(tool==='text')draft={type:'text',x:p.x,y:p.y,w:0,h:0,text:'',fontSize:textSize,color:selectedColor};
+    if(draft){data.elements.push(draft);setStructuredDirty();}
   });
-  svg.addEventListener('pointermove',e=>{
-    const p=point(e);
+  let scrollFrame = 0, dragPointer = null, scrollTime = 0;
+  const autoScroll = time => {
+    scrollFrame = 0;
+    if (!root.isConnected || (!draft && !interaction) || !dragPointer) return;
+    const rect = surface.getBoundingClientRect();
+    const speed = (v, start, end) => v < start+32 ? -Math.min(14,(start+32-v)/3) : v > end-32 ? Math.min(14,(v-end+32)/3) : 0;
+    const step = Math.min(2, (time-scrollTime)/16.67 || 1); scrollTime = time;
+    const dx = speed(dragPointer.clientX,rect.left,rect.left+surface.clientWidth)*step;
+    const dy = speed(dragPointer.clientY,rect.top,rect.top+surface.clientHeight)*step;
+    if (!dx && !dy) return;
+    // Add room before scrolling into an edge, including negative world coordinates.
+    const x = (data.originX||0) + surface.scrollLeft, y = (data.originY||0) + surface.scrollTop;
+    syncCanvasSize({ x: x+Math.min(0,dx), y: y+Math.min(0,dy), w: surface.clientWidth+Math.abs(dx), h: surface.clientHeight+Math.abs(dy) });
+    surface.scrollLeft += dx; surface.scrollTop += dy;
+    movePointer(dragPointer);
+    scrollFrame = requestAnimationFrame(autoScroll);
+  };
+  const movePointer = e => {
+    let p=point(e);
     if(draft||interaction){clearTimeout(state.structured.historyTimer);state.structured.historyTimer=setTimeout(()=>{state.structured.historyPending=false;},600);}
     if(selectionBox){selectionBox.current=p;paint();return;}
     if(interaction){
-      const dx=p.x-interaction.start.x,dy=p.y-interaction.start.y;
+      let dx=p.x-interaction.start?.x,dy=p.y-interaction.start?.y;
       if(interaction.kind==='move'){
+        const box = canvasSelectionFrame([...interaction.originals.values()]);
+        const snapped = snapCanvasBounds({ ...box, x: box.x+dx, y: box.y+dy }, snapTargets(), snapOptions());
+        dx = snapped.x-box.x; dy = snapped.y-box.y; snapGuides = snapped.guides;
         for(const [i,original] of interaction.originals){
           const el=data.elements[i];
           if(el.type==='stroke')el.points=original.points.map(point=>({x:point.x+dx,y:point.y+dy}));
@@ -3027,6 +3217,7 @@ function renderCanvas(root, data) {
           else{el.x=original.x+dx;el.y=original.y+dy;}
         }
       } else if(interaction.kind==='point'){
+        p = snapPoint(p);
         const el=data.elements[interaction.index],original=interaction.original;
         if(el.type==='line'){if(interaction.handle==='start'){el.x1=p.x;el.y1=p.y;}else{el.x2=p.x;el.y2=p.y;}}
         else if(el.type==='shape'&&el.shape==='triangle'){const center={x:original.x+original.w/2,y:original.y+original.h/2},local=rotatedPoint(p.x,p.y,center,-(original.rotation||0)*Math.PI/180);el.vertices=(original.vertices||[[.5,0],[1,1],[0,1]]).map(([x,y],index)=>index===Number(interaction.handle)?[Math.max(0,Math.min(1,(local.x-original.x)/original.w)),Math.max(0,Math.min(1,(local.y-original.y)/original.h))]:[x,y]);}
@@ -3035,6 +3226,7 @@ function renderCanvas(root, data) {
         selectionRotation = interaction.rotation + interaction.angle * 180 / Math.PI;
         for(const [i,original] of interaction.originals){const el=data.elements[i];if(el.type==='stroke')el.points=original.points.map(point=>rotatedPoint(point.x,point.y,interaction.center,interaction.angle));else if(el.type==='line'){const a=rotatedPoint(original.x1,original.y1,interaction.center,interaction.angle),b=rotatedPoint(original.x2,original.y2,interaction.center,interaction.angle);el.x1=a.x;el.y1=a.y;el.x2=b.x;el.y2=b.y;}else{const b=bounds(original),moved=rotatedPoint(b.x+b.w/2,b.y+b.h/2,interaction.center,interaction.angle);el.x=moved.x-b.w/2;el.y=moved.y-b.h/2;el.rotation=((original.rotation||0)+interaction.angle*180/Math.PI)%360;}}
       } else {
+        p = snapPoint(p);
         const b=interaction.group,handle=interaction.handle;
         const local = rotatedPoint(p.x, p.y, b.center, -b.rotation*Math.PI/180);
         const right=handle.includes('e'),bottom=handle.includes('s'),left=handle.includes('w'),top=handle.includes('n');
@@ -3055,10 +3247,17 @@ function renderCanvas(root, data) {
       paint();return;
     }
     if(!draft)return;
+    if (draft.type !== 'stroke') p = snapPoint(p);
     if(draft.type==='stroke')draft.points.push(p);else if(draft.type==='line'){draft.x2=p.x;draft.y2=p.y;}else{draft.w=p.x-draft.x;draft.h=p.y-draft.y;}
     paint();
+  };
+  svg.addEventListener('pointermove',e=>{
+    dragPointer = e;
+    movePointer(e);
+    if ((draft || interaction) && !scrollFrame) { scrollTime = performance.now(); scrollFrame = requestAnimationFrame(autoScroll); }
   });
   const finishPointer=()=>{
+    cancelAnimationFrame(scrollFrame); scrollFrame = 0; dragPointer = null; snapGuides = [];
     if(selectionBox){
       const box={x:Math.min(selectionBox.start.x,selectionBox.current.x),y:Math.min(selectionBox.start.y,selectionBox.current.y),w:Math.abs(selectionBox.current.x-selectionBox.start.x),h:Math.abs(selectionBox.current.y-selectionBox.start.y)};
       if(box.w>3||box.h>3){
@@ -3067,7 +3266,7 @@ function renderCanvas(root, data) {
       }
       selectionBox=null;paint();return;
     }
-    if(interaction){interaction=null;setStructuredDirty();}
+    if(interaction){interaction=null;paint();setStructuredDirty();}
     if(draft){
       const draftedType=draft.type;
       const focusText=draft.type==='text'&&Math.max(Math.abs(draft.w),Math.abs(draft.h))>=12;
@@ -3079,10 +3278,10 @@ function renderCanvas(root, data) {
         draft.w=Math.max(draft.type==='text'?180:4,draft.w);
         draft.h=Math.max(draft.type==='text'?60:4,draft.h);
       }
-      draft=null;
-      if(draftedType==='shape'||draftedType==='line'||draftedType==='text'){tool='select';svg.dataset.tool=tool;toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button=>{const active=button.dataset.tool===tool;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});updateToolHelp();}
+      const draftedIndex=data.elements.indexOf(draft);draft=null;
+      if(draftedType==='shape'||draftedType==='line'||draftedType==='text'){tool='select';selected=draftedIndex<0?new Set():new Set([draftedIndex]);svg.dataset.tool=tool;toolbar.querySelectorAll('.canvas-tool[data-tool]').forEach(button=>{const active=button.dataset.tool===tool;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});updateToolHelp();}
       setStructuredDirty();paint();
-      if(focusText){const textIndex=[...selected][0];const textEditor=svg.querySelector('[data-index=\"'+textIndex+'\"] .canvas-text-edit');requestAnimationFrame(()=>textEditor?.focus());}
+      if(focusText){const textIndex=[...selected][0];const textEditor=svg.querySelector('[data-index=\"'+textIndex+'\"] .canvas-text-edit');requestAnimationFrame(()=>{if(tool==='select')textEditor?.focus();});}
     }
   };
   svg.addEventListener('pointerup',finishPointer);
@@ -3097,6 +3296,8 @@ function renderCanvas(root, data) {
   });
   paint();
   state.structured.refreshCanvas=paint;
+  const removeOptionsShortcut = attachCanvasOptionsShortcut(root, () => { optionsVisible = !optionsVisible; paintSelection(); });
+  state.structured.cleanup=()=>{cancelAnimationFrame(scrollFrame);removeOptionsShortcut();};
 }
 async function renderGraph(root, data) {
   const toolbar = root.querySelector('.structured-toolbar');
@@ -3134,7 +3335,11 @@ async function renderGraph(root, data) {
     owner.desmos = calculator;
     setSettingsHealth('desmos', true, 'Graphing API key working');
     if (data.state && typeof data.state === 'object') calculator.setState(data.state);
-    else data.state = calculator.getState();
+    else {
+      if (Array.isArray(data.expressions) && data.expressions.length) seedGraphExpressions(calculator, data);
+      data.state = calculator.getState();
+      delete data.expressions;
+    }
     calculator.clearHistory();
     calculator.observeEvent('change', () => {
       if (state.structured !== owner || !state.active) return;
@@ -3450,9 +3655,32 @@ async function saveActive() {
   if (!state.dirty || !state.active || (!state.view && !state.structured)) return;
   clearTimeout(state.saveTimer);
   if (state.structured) {
-    const active = state.active, structured = state.structured, title = (structured.title || prettyName(active)).trim() || prettyName(active);
-    const operation = (async()=>{try{await window.stillnote.writeNote(active,encodeStructured(structured.type,title,structured.data));state.dirty=false;$('#save-state').textContent='Saved';scheduleBacklinks();}catch(e){$('#save-state').textContent='Save failed';showToast(e.message||'Could not save file.');}})();
-    state.savePromise=operation;try{await operation;}finally{state.savePromise=null;}return;
+    const active = state.active, type = state.structured.type;
+    const snapshot = () => {
+      const { title, data } = state.structured;
+      const fallback = prettyName(active);
+      return encodeStructured(type, (title || fallback).trim() || fallback, data);
+    };
+    const contents = snapshot();
+    let writeSucceeded = false;
+    const operation = (async () => {
+      try {
+        await window.stillnote.writeNote(active, contents);
+        writeSucceeded = true;
+        if (state.active === active && state.structured?.type === type) {
+          state.dirty = snapshot() !== contents;
+          $('#save-state').textContent = state.dirty ? 'Unsaved changes' : 'Saved';
+          scheduleBacklinks();
+        }
+      } catch (error) {
+        $('#save-state').textContent = 'Save failed';
+        showToast(error.message || 'Could not save file.');
+      }
+    })();
+    state.savePromise = operation;
+    try { await operation; } finally { state.savePromise = null; }
+    if (writeSucceeded && state.dirty) return saveActive();
+    return;
   }
   const view = state.view;
   const oldPath = state.active;
@@ -3759,7 +3987,33 @@ for (const target of document.querySelectorAll('.explorer-heading, .explorer-roo
     void moveExplorerEntry(item, '');
   });
 }
+async function revealNote(id = state.active) {
+  if (!state.vault || typeof id !== 'string' || !id.trim()) return;
+  try {
+    const result = await window.stillnote.revealNote(id);
+    if (!result.revealed) showToast(result.message);
+  } catch (error) { showToast(error.message || 'Could not reveal this file.'); }
+}
+function showActiveNoteMenu(event) {
+  event.preventDefault(); event.stopPropagation();
+  const menu = $('#explorer-context-menu'), anchor = $('#note-menu-button');
+  if (!menu.hidden && anchor.getAttribute('aria-expanded') === 'true') { closeExplorerContextMenu(); return; }
+  closeExplorerContextMenu(); menu.replaceChildren();
+  const id = state.active;
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'context-action';
+  button.textContent = 'Reveal in File Manager'; button.setAttribute('role', 'menuitem');
+  button.disabled = !state.vault || typeof id !== 'string' || !id.trim();
+  button.addEventListener('click', () => { closeExplorerContextMenu(); anchor.focus(); void revealNote(id); });
+  menu.append(button); menu.setAttribute('aria-label', 'Note options'); menu.hidden = false;
+  anchor.setAttribute('aria-expanded', 'true');
+  const rect = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8))}px`;
+  if (!button.disabled) button.focus();
+}
+$('#note-menu-button').addEventListener('click', showActiveNoteMenu);
 function showExplorerContextMenu(event, node) {
+  closeExplorerContextMenu();
   event.preventDefault(); event.stopPropagation();
   if (!state.explorerSelection.has(node.path)) state.explorerSelection = new Set([node.path]);
   renderFiles();
@@ -3784,6 +4038,7 @@ function showExplorerContextMenu(event, node) {
     addAction('New folder here', () => createFolder(node.path));
     const separator = document.createElement('div'); separator.className = 'context-separator'; menu.append(separator);
   } else {
+    addAction('Reveal in File Manager', () => { void revealNote(node.path); });
     addAction('Copy link', () => { void window.stillnote.copyFileLink(node.path).then(() => showToast('Link copied')).catch((error) => showToast(error.message || 'Could not copy link.')); });
   }
   addAction('Rename…', () => renameExplorerEntry(node));
@@ -3880,7 +4135,11 @@ function showTaskContextMenu(event, listName, taskName) {
   menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - 198))}px`;
   menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
 }
-function closeExplorerContextMenu() { $('#explorer-context-menu').hidden = true; state.contextDeleteBypass = false; }
+function closeExplorerContextMenu() {
+  $('#explorer-context-menu').hidden = true; state.contextDeleteBypass = false;
+  const anchor = $('#note-menu-button');
+  if (anchor.getAttribute('aria-expanded') === 'true') { anchor.setAttribute('aria-expanded', 'false'); anchor.focus(); }
+}
 function requestRenameValue(currentName, type) {
   return requestNameValue(`Rename ${type}`, currentName, 'Rename');
 }
@@ -4092,12 +4351,69 @@ async function restoreWorkspace() {
   } catch (error) { console.error('Could not restore workspace:', error); }
   finally { state.workspaceRestored = true; await openPendingDeepLinks(); }
 }
+let appUpdateInfo, updateBusy = false;
+function renderAppVersion(message) {
+  const button = $('#app-update-button');
+  const { version, supported, stage, availableVersion, method } = appUpdateInfo ?? {};
+  $('#installed-version').textContent = version ? `v${version}` : '';
+  button.disabled = updateBusy || !supported || stage === 'installing';
+  button.textContent = stage === 'installing' ? 'Installing…'
+    : stage === 'ready' ? (method === 'automatic' ? 'Install and restart' : 'Open installer')
+    : stage === 'available' || stage === 'downloading' ? 'Update' : 'Check for updates';
+  $('#app-update-status').textContent = message ?? (!supported
+    ? 'Updates are available in the installed macOS and Windows apps.'
+    : stage === 'installing' ? 'Starting the update…'
+    : stage === 'ready' ? `Version ${availableVersion} is ready to install.`
+    : stage === 'available' ? `Version ${availableVersion} is available on GitHub.`
+    : stage === 'current' ? 'Stillnote is up to date.' : 'Check GitHub for the latest stable release.');
+}
+async function loadAppVersion() {
+  try {
+    const info = await window.stillnote.updateInfo();
+    if (!updateBusy) { appUpdateInfo = info; renderAppVersion(); }
+  } catch (error) { if (!updateBusy) renderAppVersion(error.message); }
+}
+async function runAppUpdate() {
+  if (updateBusy || !appUpdateInfo?.supported) return;
+  updateBusy = true;
+  let message;
+  try {
+    if (appUpdateInfo.stage === 'ready') {
+      renderAppVersion('Saving your work…');
+      if (state.homeRun || state.assistantRun) throw new Error('Wait for the current AI request to finish or stop it before updating.');
+      if (meetingRecording || meetingStopPromise) await stopMeetingRecording();
+      if (meetingStarting) cancelMeetingRecording();
+      if (state.pendingStructuredRename) await state.pendingStructuredRename;
+      await saveActive();
+      if (state.dirty) throw new Error('Save the open file before installing the update.');
+      appUpdateInfo = await window.stillnote.installUpdate();
+      message = appUpdateInfo.method === 'automatic' ? undefined
+        : appUpdateInfo.platform === 'darwin' ? 'Quit Stillnote, then replace it in Applications using the disk image.'
+        : 'Follow the installer prompts and use your current Stillnote installation location.';
+    } else if (appUpdateInfo.stage === 'available') {
+      renderAppVersion('Downloading the update…');
+      appUpdateInfo = await window.stillnote.downloadUpdate();
+    } else {
+      renderAppVersion('Checking GitHub…');
+      appUpdateInfo = await window.stillnote.checkUpdate();
+    }
+  } catch (error) { message = error.message; }
+  finally { updateBusy = false; renderAppVersion(message); }
+}
+$('#app-update-button').addEventListener('click', runAppUpdate);
+window.stillnote.onUpdateProgress(percent => { if (updateBusy) renderAppVersion(`Downloading the update… ${percent}%`); });
+window.stillnote.onUpdateInstallError(message => {
+  if (appUpdateInfo) appUpdateInfo = { ...appUpdateInfo, stage: 'ready' };
+  renderAppVersion(message);
+});
+
 function selectSettingsTab(tab) {
   document.querySelectorAll('.settings-tab').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
   document.querySelectorAll('.settings-section').forEach((section) => {
     const active = section.dataset.section === tab;
     section.classList.toggle('active', active); section.hidden = !active;
   });
+  if (tab === 'version' && !updateBusy) void loadAppVersion();
   if (tab === 'dictionary') renderCustomDictionary();
   if (tab === 'tasks') void updateGoogleTasksStatus(true);
 }
@@ -4128,11 +4444,18 @@ function syncAiProviderSettings() {
   $('#ai-key').value = '';
   $('#ai-key').placeholder = `Paste your ${config.name} API key`;
   $('#ai-key-label').textContent = `${config.name} API key`;
-  $('#ai-provider-info').textContent = provider === 'groq'
+  $('#ai-provider-info').textContent = provider === 'cohere'
+    ? 'Cohere’s free evaluation key includes 1,000 API calls per month for personal evaluation. Production or commercial use requires a paid production key.'
+    : provider === 'mistral' ? 'Mistral Studio limits and model access depend on your organization. Check the Limits page for your monthly token cap and shorter rate limits.'
+    : provider === 'groq'
     ? 'Groq has a free API tier with daily and per-minute limits. Exact limits depend on your model and account. Stay on the Free plan for free usage; Stillnote does not upgrade your plan or switch providers automatically.'
     : provider === 'anthropic' ? 'Anthropic API usage is billed separately from Claude subscriptions.'
     : 'OpenAI API usage is billed separately from ChatGPT subscriptions.';
-  $('#ai-key-help').textContent = provider === 'groq'
+  $('#ai-key-help').textContent = provider === 'cohere'
+    ? 'Get an evaluation key at dashboard.cohere.com/api-keys, save it here, then choose a model. Cohere receives your prompts and relevant file content.'
+    : provider === 'mistral'
+    ? 'Create a key in Mistral Studio at console.mistral.ai, save it here, then choose a chat model. Mistral receives your prompts and relevant file content. Free mode may use that data for training unless you opt out in Studio.'
+    : provider === 'groq'
     ? 'Create a key at console.groq.com/keys, save it here, then choose a model. Your prompts and relevant file content are sent directly to Groq when you use the assistant. Existing FreeModel keys cannot be used with Groq.'
     : provider === 'anthropic' ? 'Create a key at platform.claude.com/settings/keys, save it here, then choose a Claude model. Your prompts and relevant file content are sent directly to Anthropic when you use the assistant.'
     : 'Create a key at platform.openai.com/api-keys. Your prompts and relevant file content are sent to OpenAI when you use the assistant.';
@@ -4334,7 +4657,7 @@ function activeDocumentText(){return state.structured?encodeStructured(state.str
 function updateAssistantModeCopy() {
   const editButton = document.querySelector('.assistant-mode[data-mode="edit"]');
   const taskSheet = state.structured?.type === 'tasks';
-  const structuredLabel = ({ geometry: 'geometry', calculator3d: '3D calculator', canvas: 'canvas', graph: 'graph', spreadsheet: 'spreadsheet' })[state.structured?.type] || '';
+  const structuredLabel = ({ geometry: 'geometry', calculator3d: '3D calculator', canvas: 'canvas', graph: 'graph', spreadsheet: 'spreadsheet', gantt: 'Gantt chart' })[state.structured?.type] || '';
   const pdf = state.active?.toLowerCase().endsWith('.pdf');
   if (editButton) { editButton.disabled = Boolean(pdf); editButton.title = pdf ? 'PDF files are read-only' : ''; }
   if (pdf && state.assistantMode === 'edit') { state.assistantMode = 'ask'; document.querySelectorAll('.assistant-mode').forEach((mode) => mode.classList.toggle('active', mode.dataset.mode === 'ask')); }
@@ -4397,9 +4720,27 @@ function appendAppliedEdit(container, text, notePath, originalDocument) {
   let updatedDocument=text;
   const structuredType=state.structured?.type||null;
   if(structuredType){
-    const parsed=decodeStructured(text);
+    const current=state.structured;
+    let parsed;
+    if (structuredType === 'gantt') {
+      let changes;
+      try { changes = JSON.parse(text); }
+      catch { appendChatBubble('assistant error', 'The assistant returned invalid Gantt task changes.'); return false; }
+      try { parsed = { type: 'gantt', data: applyGanttChanges(current.data, changes).data }; }
+      catch (error) { appendChatBubble('assistant error', error.message); return false; }
+      if (encodeStructured('gantt', current.title || prettyName(notePath), parsed.data) === originalDocument) {
+        appendChatBubble('assistant', 'The chart already matches the requested changes.');
+        return false;
+      }
+      clearTimeout(current.historyTimer);
+      current.historyPending = false;
+    } else parsed=decodeStructured(text);
     if(!parsed||parsed.type!==structuredType||!isValidStructuredPayload(structuredType,parsed.data)){appendChatBubble('assistant error',`The assistant returned invalid ${structuredType} data, so I did not apply the edit.`);return false;}
-    const current=state.structured;current.data=parsed.data;setStructuredDirty();
+    current.data=parsed.data;setStructuredDirty();
+    if (structuredType === 'gantt') {
+      clearTimeout(current.historyTimer);
+      current.historyPending = false;
+    }
     const history={undoStack:current.undoStack,redoStack:current.redoStack,historySnapshot:current.historySnapshot,historyPending:current.historyPending,historyTimer:current.historyTimer};
     renderStructured(structuredType,current.data,notePath,current.title||prettyName(notePath));Object.assign(state.structured,history);updateStructuredHistoryButtons();
     updatedDocument=activeDocumentText();
@@ -4411,11 +4752,17 @@ function appendAppliedEdit(container, text, notePath, originalDocument) {
   const message = document.createElement('p'); message.textContent = 'I updated the document.'; container.append(message);
   const toggle = document.createElement('button'); toggle.className = 'undo-ai-edit-button'; toggle.type = 'button'; toggle.textContent = 'Undo changes';
   let showingUpdated = true;
-  toggle.addEventListener('click', () => {
+  let undoneDocument = originalDocument;
+  toggle.addEventListener('click', async () => {
     if(state.active!==notePath){showToast('Open the edited document to undo or redo this change.');return;}
-    const expected=showingUpdated?updatedDocument:originalDocument;
+    const expected=showingUpdated?updatedDocument:undoneDocument;
     if(activeDocumentText()!==expected){showToast('The document has changed since the AI edit; undo was not applied.');return;}
-    if(structuredType)void applyStructuredHistory(showingUpdated?'undo':'redo');
+    if (structuredType === 'gantt') {
+      toggle.disabled = true;
+      await applyStructuredHistory(showingUpdated ? 'undo' : 'redo');
+      if (showingUpdated) undoneDocument = activeDocumentText();
+      toggle.disabled = false;
+    } else if(structuredType)void applyStructuredHistory(showingUpdated?'undo':'redo');
     else {if(!state.view){showToast('Open the edited document to undo or redo this change.');return;}state.view.dispatch({changes:{from:0,to:state.view.state.doc.length,insert:showingUpdated?originalDocument:updatedDocument}});state.view.focus();}
     showingUpdated = !showingUpdated;
     toggle.textContent = showingUpdated ? 'Undo changes' : 'Redo changes';
@@ -4461,7 +4808,7 @@ async function submitAssistantMessage(event) {
   if (state.assistantRun) { stopAssistantRun(); return; }
   if (!prompt) return;
   const notePath = state.active, vault = state.vault?.path, navigation = state.navigationId, isPdf = Boolean(notePath?.toLowerCase().endsWith('.pdf'));
-  if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open a note, code file, PDF, canvas, geometry, 3D calculator, spreadsheet, graph, or task sheet before using the assistant.'); return; }
+  if (!notePath || (!state.view && !state.structured && !isPdf)) { showToast('Open an editable file or PDF before using the assistant.'); return; }
   const provider = state.aiProvider, model = selectedAiModel(provider);
   const mode = isPdf ? 'ask' : state.assistantMode;
   const documentType = isPdf ? 'pdf' : state.structured?.type || (isEditableAsset(notePath) ? 'code' : 'markdown');

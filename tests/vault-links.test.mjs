@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import vm from 'node:vm';
 const require=createRequire(import.meta.url);
 const linkSource=await readFile(new URL('../src/vault-links.js',import.meta.url),'utf8');
-const {ganttTaskNumber,parseVaultLink,shouldRenderFileLink}=await import(`data:text/javascript;base64,${Buffer.from(linkSource).toString('base64')}`);
+const {ganttTaskNumber,ganttTaskReference,parseVaultLink,shouldRenderFileLink}=await import(`data:text/javascript;base64,${Buffer.from(linkSource).toString('base64')}`);
 const {linksIn,matchesPath,rewriteLinks}=require('../electron/file-links.cjs');
 const main=await readFile(new URL('../src/main.js',import.meta.url),'utf8');
 test('!!! suppresses each preview type without changing the target, fragment, or alias',()=>{
@@ -86,13 +86,13 @@ test('Gantt task links navigate to a numbered task, with or without the task pre
   const focused = [], opened = [], toasts = [];
   const state = { active: 'Note.md', view: {} };
   const context = vm.createContext({
-    state, parseVaultLink, ganttTaskNumber, prettyName: path => path,
+    state, parseVaultLink, ganttTaskReference, prettyName: path => path,
     resolveVaultFileTarget: path => path === 'Projects/Plan' ? 'Projects/Plan.md' : path,
     openNote: async file => {
       opened.push(file);
       state.active = file;
       state.view = null;
-      state.structured = { type: 'gantt', focusTask: number => { focused.push(number); return number < 9; } };
+      state.structured = { type: 'gantt', focusTask: (number, instance) => { focused.push([number, instance]); return number < 9; } };
     },
     showToast: message => toasts.push(message),
   });
@@ -100,8 +100,10 @@ test('Gantt task links navigate to a numbered task, with or without the task pre
   vm.runInContext(main.slice(start, main.indexOf('function slugForHeading(', start)), context);
   await context.navigateWikiTarget('Projects/Plan#3');
   await context.navigateWikiTarget('Projects/Plan.md#task-5');
+  await context.navigateWikiTarget('#task-3-instance-4');
   await context.navigateWikiTarget('#task-9');
   assert.deepEqual(opened, ['Projects/Plan.md']);
-  assert.deepEqual(focused, [3, 5, 9]);
+  assert.deepEqual(focused, [[3, null], [5, null], [3, 4], [9, null]]);
+  assert.equal(shouldRenderFileLink('Projects/Plan.md#task-3-instance-4', 'gantt', 'md'), false);
   assert.deepEqual(toasts, ['No task 9 found in Projects/Plan.md.']);
 });

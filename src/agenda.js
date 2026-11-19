@@ -1,5 +1,5 @@
 import { ganttTasks, hourValue, nowHour } from './gantt.js';
-import { ganttTaskNumber, parseVaultLink } from './vault-links.js';
+import { ganttTaskReference, parseVaultLink } from './vault-links.js';
 
 const normalize = value => String(value ?? '').trim().toLowerCase();
 const pathKey = value => normalize(value).replace(/\\/g, '/').replace(/^\.\//, '');
@@ -58,9 +58,10 @@ export function collectAgenda({ files, google }, decodeStructured) {
     const { file, structured, wiki, google: references, contents } = record;
     for (const { value, line } of wiki) {
       const link = resolve(value, file);
-      const number = ganttTaskNumber(link?.fragment);
-      if (link?.file && number !== null) {
-        append(wikiBacklinks, JSON.stringify([link.file, number]), fileLink(file, structured ? '' : `L${line}`));
+      const ref = ganttTaskReference(link?.fragment);
+      if (link?.file && ref) {
+        const id = ref.instanceNumber === null ? [link.file, ref.taskNumber] : [link.file, ref.taskNumber, ref.instanceNumber];
+        append(wikiBacklinks, JSON.stringify(id), fileLink(file, structured ? '' : `L${line}`));
       }
     }
     for (const { list, task, line } of references) {
@@ -98,29 +99,36 @@ export function collectAgenda({ files, google }, decodeStructured) {
 
   const entries = [];
   for (const chart of charts) {
-    for (const { row, start, end, number, children } of chart.tasks) {
-      const origin = fileLink(chart.file, `task-${number}`);
+    for (const { row, number, ranges } of chart.tasks) {
+      const taskOrigin = fileLink(chart.file, `task-${number}`);
       const linked = row.googleTask;
       const key = linked && googleKey(linked.listId, linked.taskId);
-      if (key) append(chartBacklinks, key, origin);
-      if (!Number.isFinite(start)) continue;
+      if (key) append(chartBacklinks, key, taskOrigin);
       const related = googleTasks.get(key);
       const milestone = Boolean(row.milestone);
-      const allDay = start % 24 === 0 && end % 24 === 0 && (children.some(child => Number.isFinite(child.start))
-        || (row.start?.length === 10 && (milestone || row.end?.length === 10)));
       const details = row.notes ?? row.description ?? related?.task.notes;
-      entries.push({
-        id: JSON.stringify([chart.file, number]), kind: 'gantt', title: row.title || 'Untitled task',
-        source: chart.source, origin, start, end, allDay: Boolean(allDay), milestone,
-        details: detailsLine(details),
-        links: [
-          ...(wikiBacklinks.get(JSON.stringify([chart.file, number])) || []),
-          ...fromNotes(details, chart.file),
-          ...(sheets.get(linked?.listId) || []).map(sheet => fileLink(sheet.file)),
-          ...fromNotes(related?.task.notes),
-          externalLink(related?.task.webViewLink, 'Google Tasks'),
-        ].filter(Boolean),
-      });
+      const taskId = JSON.stringify([chart.file, number]);
+      const links = [
+        ...(wikiBacklinks.get(taskId) || []),
+        ...fromNotes(details, chart.file),
+        ...(sheets.get(linked?.listId) || []).map(sheet => fileLink(sheet.file)),
+        ...fromNotes(related?.task.notes),
+        externalLink(related?.task.webViewLink, 'Google Tasks'),
+      ].filter(Boolean);
+      for (const { start, end, instance, number: occurrence } of ranges) {
+        const allDay = start % 24 === 0 && end % 24 === 0 && (!instance
+          || (instance.start?.length === 10 && (milestone || instance.end?.length === 10)));
+        const numbered = occurrence !== null && (ranges.length > 1 || occurrence > 1);
+        const instanceId = occurrence == null ? null : JSON.stringify([chart.file, number, occurrence]);
+        const name = row.title || 'Untitled task';
+        entries.push({
+          id: numbered ? instanceId : taskId, kind: 'gantt',
+          title: name, ...(numbered ? { instanceNumber: occurrence } : {}),
+          source: chart.source, origin: numbered ? fileLink(chart.file, `task-${number}-instance-${occurrence}`) : taskOrigin,
+          start, end, allDay: Boolean(allDay), milestone, details: detailsLine(details),
+          links: [...links, ...(wikiBacklinks.get(instanceId) || [])],
+        });
+      }
     }
   }
 

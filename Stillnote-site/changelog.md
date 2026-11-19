@@ -1,6 +1,56 @@
 # Stillnote log
 
+## 2026-11-19
+
+- Prepared version 1.5.1 for npm and GitHub release, including the pending app improvements and installer update support.
+
+## 2026-11-18
+
+- Hid canvas object options until Shift is tapped; Shift toggles color, shape, text size, and endpoint controls without affecting typing or Shift shortcuts.
+
+- Restricted canvas selection and text editing to the Select tool, cleared selections when switching tools, and let drawing tools work over existing objects.
+
+- Reproduced the Bambu Studio slicing error, removed a leftover microscopic object from a copy of the case project, and verified that all three intended parts slice successfully into 71 layers with the original settings.
+
+- Proposed a keyboard command to toggle Markdown task checkboxes on the current line or selected task lines.
+
+- Checked the millimetre STL case and button exports and verified that all three slice successfully in Bambu Studio at 0.20 mm; identified a separate floating-region warning on the case bottom.
+
+## 2026-11-17
+
+- Made canvases expand in every direction, added text size editing, and added grid and object snapping with center and edge alignment guides.
+
+- Added “Reveal in File Manager” to note options and file context menus, with disabled unsaved-note actions and a clear message for moved or deleted files.
+
+- Proposed an offline command to reveal the active Markdown file in the system file manager.
+
 ## 2026-11-16
+
+- Added high-resolution PNG export for the full Gantt chart, including every task row, milestone, and dependency.
+
+- Added Settings → Version to check GitHub and download updates for macOS and Windows, with verified installers for releases that need a manual update.
+
+- Numbered Gantt tasks by their order and subtasks by their hierarchy, such as 2.4, while preserving existing task and instance links.
+
+- Kept Gantt context menus open until dismissal, placed new instances at the clicked time, and added a compact editor for individual instances.
+
+- Gave Gantt charts six pastel hues with three saturation levels and lighter subtasks. Added numbered, linkable task instances with separate dates.
+
+- Added Cohere for personal AI evaluation with a free monthly API allowance and documented its setup and key limits.
+
+- Added Mistral Studio as the default AI provider for new setups and updated the website and README with its Free mode monthly token limits and setup steps.
+
+- Let Home Work create editable Stillnote documents and use the requested format for text and code files.
+
+- Fixed Home AI requests that Groq rejects when the model tries to call a tool directly.
+
+- Enabled AI task edits in Gantt charts from the chart sidebar and Home Work.
+
+- Retried the v1.5.0 release from its version tag, reusing the successful Windows build.
+
+- Restricted release publishing to version tags so manual runs on a branch only build installers.
+
+- Checked the v1.5.0 release during a GitHub Actions incident. The Windows build succeeded while the macOS job waited for a hosted runner.
 
 - Synced Markdown note titles and filenames in both directions, preserving YAML properties and note content.
 

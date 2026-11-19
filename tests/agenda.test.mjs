@@ -69,3 +69,17 @@ test('agenda context can page across both sections without splitting task record
   }
   assert.deepEqual(received.map(task => task.title), tasks.map(task => task.title));
 });
+
+test('Agenda links to the specific numbered instance of a repeated Gantt task', () => {
+  const files = [{ file: 'Plan.md', wiki: [], google: [], contents: encode('gantt', { rows: [
+    { title: 'Review', taskNumber: 3, start: '2026-11-16', end: '2026-11-16',
+      instances: [{ number: 4, start: '2026-11-20', end: '2026-11-20' }] },
+  ] }) }];
+  const data = collectAgenda({ files, google: { lists: [], status: 'synced' } }, decode);
+  const snapshot = agendaSnapshot(data, new Date(2026, 10, 18, 10));
+  assert.equal(snapshot.now.length, 0);
+  assert.deepEqual(snapshot.upcoming.map(entry => [entry.title, entry.instanceNumber, entry.origin.fragment]), [
+    ['Review', 4, 'task-3-instance-4'],
+  ]);
+  assert.equal(relevantAgenda(snapshot, { file: 'Other.md', prompt: 'When is Review?' }).upcoming.length, 1);
+});

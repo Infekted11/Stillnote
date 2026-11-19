@@ -40,9 +40,21 @@ test('provider settings clear an unsaved key and show the selected destination a
 });
 test('Anthropic selection persists, has its own model preference, and shows the correct destination',async()=>{
   const {context,$,stored}=setup();
-  assert.equal(context.resolveAiProvider('anthropic'),'anthropic');assert.equal(context.resolveAiProvider('openai'),'openai');assert.equal(context.resolveAiProvider('groq'),'groq');assert.equal(context.resolveAiProvider('freemodel'),'groq');assert.equal(context.resolveAiProvider('__proto__'),'groq');
+  assert.equal(context.resolveAiProvider('anthropic'),'anthropic');assert.equal(context.resolveAiProvider('openai'),'openai');assert.equal(context.resolveAiProvider('groq'),'groq');
   context.state.aiProvider='anthropic';context.syncAiProviderSettings();
   assert.equal($('#ai-provider').value,'anthropic');assert.equal($('#ai-key-label').textContent,'Anthropic API key');assert.match($('#ai-key-help').textContent,/platform.claude.com\/settings\/keys/);assert.match($('#ai-provider-info').textContent,/billed separately from Claude subscriptions/);assert.match($('.assistant-footnote').textContent,/Anthropic/);
   context.window.stillnote.listAiModels=async provider=>{assert.equal(provider,'anthropic');return ['claude-haiku-5-5','claude-sonnet-5-5'];};
   await context.loadAiModels();assert.equal($('#ai-model').value,'claude-sonnet-5-5');assert.equal(stored.get('stillnote-anthropic-model'),'claude-sonnet-5-5');assert.equal(stored.get('stillnote-groq-model'),'oss-saved');assert.equal(stored.get('stillnote-openai-model'),'gpt-saved');
+});
+
+test('Mistral is the new default and describes the monthly allowance and data destination', () => {
+  const { context, $ } = setup();
+  for (const value of [null, 'freemodel', '__proto__', 'mistral']) assert.equal(context.resolveAiProvider(value), 'mistral');
+  context.state.aiProvider = 'mistral';
+  context.syncAiProviderSettings();
+  assert.equal($('#ai-key-label').textContent, 'Mistral API key');
+  assert.match($('#ai-provider-info').textContent, /monthly token cap/);
+  assert.match($('#ai-key-help').textContent, /opt out/);
+  assert.match($('.assistant-footnote').textContent, /Mistral/);
+  assert.equal(context.selectedAiModel(), 'mistral-small-latest');
 });

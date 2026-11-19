@@ -8,6 +8,8 @@ Download the latest installer from [GitHub Releases](https://github.com/Infekted
 
 The installers are not code-signed or notarized, so macOS Gatekeeper or Windows SmartScreen may show a warning on first launch.
 
+To update an installed copy, open **Settings → Version → Check for updates**. Stillnote checks this repository’s latest stable GitHub release. Click **Update** to download it, then follow the install action. Windows can update through NSIS. Signed macOS builds can install and restart from Settings. For an unsigned macOS build, open the verified disk image, quit Stillnote, and choose **Replace** when copying the app into Applications. Your vault files stay in their existing folders.
+
 ### macOS
 
 To install with Homebrew, add the Stillnote tap and trust the Stillnote cask once:
@@ -73,7 +75,7 @@ npm start
 - Restore the last open vault and note on launch, and choose Light, Sepia, or Dark from the settings menu.
 - Use the right-side note assistant to ask questions about the open note or request a complete Markdown edit. AI edits are previewed and applied only when you choose **Apply to note**.
 - Sidebar AI also receives files linked directly from the current document, using the current unsaved links. Text and structured files contribute bounded excerpts, PDFs contribute selectable text, and other media contributes reference metadata. Linked files are read-only context; missing or truncated content is marked and links are not followed recursively.
-- Use Groq's free cloud API tier or choose OpenAI or Anthropic, with separate API keys encrypted using Electron's OS-backed secure storage.
+- Use Cohere’s free monthly evaluation allowance or connect Mistral, Groq, OpenAI, or Anthropic, with separate API keys encrypted using Electron's OS-backed secure storage.
 - Create task sheets linked to Google Tasks lists. Tasks sync when opened or when you press **Sync**.
 - Create Geometry files with the Desmos Geometry Tool and 3D Calculator files with the Desmos 3D Calculator. Their Desmos states are saved in the Markdown file; the API key must have Geometry Tool and 3D Calculator access enabled.
 - Search note titles with `⌘K` / `Ctrl+K`.
@@ -105,7 +107,23 @@ The **Update Homebrew Cask** workflow keeps the tap in sync with the latest stab
 
 Open a vault before saving credentials. Stillnote encrypts API keys and Google OAuth credentials in a hidden `.stillnote-credentials.enc` file in that vault, using Electron's operating-system-backed encryption. The file can only be decrypted on the same device and operating-system account. If Stillnote reports that it cannot decrypt the file, use **Settings → AI settings → Reset unreadable credentials**; it archives the unreadable file and lets you enter new credentials.
 
-### Groq API key (default)
+### Cohere API key
+
+Sign up for a personal Cohere account and get your evaluation key from [Cohere API Keys](https://dashboard.cohere.com/api-keys). In Stillnote, open **Settings → AI settings**, select **Cohere**, save the key, and choose a model. Stillnote prefers Command A when available. Cohere receives your prompt and relevant vault context when you send a request.
+
+Cohere calls the free evaluation credential a trial key. It includes 1,000 API calls per month for personal evaluation. Home Work can make several API calls per task. Cohere requires a paid production key for commercial or production use. [API limits](https://docs.cohere.com/docs/rate-limits) · [Pricing and key eligibility](https://cohere.com/pricing)
+
+### Mistral API key
+
+1. Open [Mistral Studio](https://console.mistral.ai/api-keys) in Free mode and create an API key.
+2. Open a vault in Stillnote and go to **Settings → AI settings**. Select **Mistral**, paste the key, and click **Save key**.
+3. Choose an available chat model. Stillnote prefers Mistral Small when its alias is available.
+
+Mistral Free mode applies a monthly token cap alongside requests-per-second and tokens-per-minute limits. Check the organization’s Limits page in Studio for current limits. Home Work can make several model requests for one task. [Mistral API limits](https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them)
+
+Stillnote sends prompts and relevant file context to Mistral’s Chat Completions API and validates JSON replies locally before applying edits. Mistral may use Free mode inputs and outputs for training. Manage that preference in Studio. [Mistral data controls](https://help.mistral.ai/en/articles/347617-do-you-use-my-user-data-to-train-your-artificial-intelligence-models)
+
+### Groq API key
 
 [Groq](https://console.groq.com/docs/billing-faqs) offers a Free API plan with recurring [daily and per-minute limits](https://console.groq.com/docs/rate-limits). Exact limits vary by model and organization; check your account's **Settings → Limits** rather than treating a published limit as guaranteed. Multi-step Work requests make multiple model calls and consume the allowance faster.
 
@@ -133,7 +151,7 @@ OpenAI requests use the Responses API at `https://api.openai.com/v1/responses`, 
 
 Home Ask/Work, note questions, edits, and task assistance use Anthropic's [Messages API](https://platform.claude.com/docs/en/api/messages/create) at `https://api.anthropic.com/v1/messages`, with JSON schema outputs validated locally before any actions are returned. Only final text is used; thinking blocks are not displayed or saved in the conversation. Your prompts and relevant file content are sent directly to Anthropic when selected. [API usage is billed separately from Claude subscriptions](https://support.claude.com/en/articles/9876003-why-is-claude-api-usage-billed-separately-from-my-paid-claude-plan).
 
-Each provider has separate encrypted credentials and model preferences. Existing OpenAI credentials are preserved; switching to Groq requires a Groq key. Existing FreeModel preferences switch to Groq, while stored FreeModel credentials remain unused. Keys from previous providers are never reused for a different service.
+Each provider has separate encrypted credentials and model preferences. Existing supported provider selections and credentials are preserved. To switch to Mistral, add a Mistral Studio key. Keys from previous providers are never reused for a different service.
 
 ### Desmos API key
 

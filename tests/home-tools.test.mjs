@@ -95,3 +95,93 @@ test('Google Tasks failures do not report success and invalid dates do not reach
   await assert.rejects(tool('create_task',{listId:'x',title:'Task',due:'2026-02-31'},'work'),/valid/);assert.equal(calls,0);
   await assert.rejects(tool('create_task',{listId:'x',title:'Task'},'work'),/Disconnected/);
 });
+
+test('Home edits Gantt tasks by their displayed numbers and preserves legacy data and links', async t => {
+  const { root, tool } = await fixture(t);
+  const file = 'Launch.md';
+  const googleTask = { listId: 'list', taskId: 'remote', status: 'needsAction' };
+  const original = {
+    version: 1, colorLegend: 'Keep',
+    rows: [
+      { title: 'Research', parentId: 'phase', id: 'research', googleTask, start: '2026-11-16', end: '2026-11-16' },
+      { title: 'Phase', id: 'phase' },
+      { title: 'Publish', taskNumber: 2, predecessors: ['research'] },
+    ],
+  };
+  const prefix = 'Launch\r\n<!-- stillnote:type=gantt -->\r\n\r\n\x60\x60\x60stillnote-gantt\r\n';
+  const suffix = '\r\n\x60\x60\x60\r\n\r\nKeep this Markdown.\r\n';
+  await fs.writeFile(path.join(root, file), prefix + JSON.stringify(original) + suffix);
+
+  const read = await tool('read_gantt', { path: file });
+  assert.deepEqual(read.tasks.map(task => [task.number, task.title, task.parentNumber]), [
+    [3, 'Phase', null], [4, 'Research', 3], [2, 'Publish', null],
+  ]);
+  const args = {
+    path: file, revision: read.revision, changes: [
+      { action: 'update', taskNumber: 4, start: '2026-11-17', end: '2026-11-18', progress: 50 },
+      { action: 'add', title: 'Review', parentNumber: 3, predecessorNumbers: [4], start: '2026-11-19T10:00', milestone: true },
+    ],
+  };
+  await assert.rejects(tool('edit_gantt', args), /Ask mode/);
+  await assert.rejects(tool('update_file', { path: file, revision: read.revision, content: 'Broken' }, 'work'), /edit_gantt/);
+  const edited = await tool('edit_gantt', args, 'work');
+  assert.deepEqual(edited.taskNumbers, [4, 5]);
+  await assert.rejects(tool('edit_gantt', args, 'work'), /changed/);
+  const saved = await fs.readFile(path.join(root, file), 'utf8');
+  assert.ok(saved.startsWith(prefix) && saved.endsWith(suffix));
+  assert.ok(!saved.replace(/\r\n/g, '').includes('\n'));
+  const data = JSON.parse(saved.slice(prefix.length, -suffix.length));
+  assert.equal(data.colorLegend, 'Keep');
+  assert.deepEqual(data.rows[0].googleTask, googleTask);
+  assert.equal(data.rows[0].id, 'research');
+  const updated = await tool('read_gantt', { path: file });
+  assert.equal(updated.revision, edited.revision);
+  const review = updated.tasks.find(task => task.number === 5);
+  assert.equal(review.title, 'Review');
+  assert.equal(review.end, review.start);
+  assert.deepEqual(review.predecessorNumbers, [4]);
+  assert.equal(updated.tasks.find(task => task.number === 4).progress, 50);
+
+  await assert.rejects(tool('edit_gantt', { path: file, revision: updated.revision, changes: [
+    { action: 'update', taskNumber: 2, title: 'Rename' },
+    { action: 'update', taskNumber: 4, predecessorNumbers: [5] },
+  ] }, 'work'), /dependency cycle/);
+  assert.equal(await fs.readFile(path.join(root, file), 'utf8'), saved);
+
+  await tool('edit_gantt', { path: file, revision: updated.revision, changes: [
+    { action: 'remove', taskNumber: 4 },
+    { action: 'remove', taskNumber: 3 },
+    { action: 'add', title: 'Follow up' },
+  ] }, 'work');
+  const afterRemoval = await tool('read_gantt', { path: file });
+  assert.deepEqual(afterRemoval.tasks.map(task => [task.number, task.parentNumber, task.predecessorNumbers]), [
+    [2, null, []], [5, null, []], [6, null, []],
+  ]);
+});
+
+test('Home creates native chart, sheet, canvas and graph files and preserves requested text extensions', async t => {
+  const { tool } = await fixture(t);
+  const create = (format, data) => tool('create_structured_file', {
+    path: 'Project/' + format + '.md', format, data: data == null ? null : JSON.stringify(data),
+  }, 'work');
+  const examples = [
+    ['gantt', {tasks:[{title:'Design',start:'2026-11-24',end:'2026-11-26'}]}, data => assert.equal(data.rows[0].taskNumber, 1)],
+    ['spreadsheet', {cells:{B2:42}}, data => assert.equal(data.cells.B2, '42')],
+    ['canvas', {elements:[{type:'text',x:10,y:10,w:100,h:50,text:'Idea'}]}, data => assert.equal(data.elements[0].text, 'Idea')],
+    ['graph', {expressions:['y=x^2']}, data => assert.deepEqual(data.expressions, ['y=x^2'])],
+    ['geometry', null, data => assert.equal(data.state, null)],
+    ['calculator3d', null, data => assert.equal(data.state, null)],
+  ];
+  for (const [format, data, verify] of examples) {
+    const result = await create(format, data);
+    assert.equal(result.format, format);
+    const saved = await tool('read_file', {path:result.path});
+    assert.ok(saved.text.includes('<!-- stillnote:type=' + format + ' -->'));
+    verify(JSON.parse(saved.text.split('\n').slice(4,-2).join('\n')));
+  }
+  await assert.rejects(create('gantt', null), /EEXIST/);
+  await assert.rejects(tool('create_structured_file', {path:'Ask.md',format:'canvas',data:null}), /Ask mode/);
+  await assert.rejects(tool('create_structured_file', {path:'Invalid.md',format:'spreadsheet',data:'{"rows":1,"cells":{"A2":"outside"}}'}, 'work'), /valid addresses/);
+  const csv = await tool('create_file', {path:'Project/Data.csv',content:'Name,Count\nDesign,42\n'}, 'work');
+  assert.equal((await tool('read_file', {path:csv.path})).text, 'Name,Count\nDesign,42\n');
+});

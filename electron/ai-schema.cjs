@@ -1,10 +1,19 @@
+const { formats } = require('./home-structured.cjs');
 const str = {type:'string'}, optionalString = {type:['string','null']}, optionalInteger = {type:['integer','null']};
 const object = properties => ({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const array = items => ({type:'array',items});
+const ganttChange = object({
+  action:{type:'string',enum:['add','update','remove']}, taskNumber:optionalInteger,
+  title:optionalString, notes:optionalString, start:optionalString, end:optionalString,
+  progress:optionalInteger, milestone:{type:['boolean','null']}, parentNumber:optionalInteger,
+  predecessorNumbers:{type:['array','null'],items:{type:'integer'}}, color:optionalString,
+});
 const HOME_TOOLS = {
   list_files:{}, search_files:{query:str}, read_file:{path:str,offset:optionalInteger,length:optionalInteger},
+  read_gantt:{path:str,offset:optionalInteger}, edit_gantt:{path:str,revision:str,changes:array(ganttChange)},
   file_relations:{path:str}, analyze_data:{path:str}, list_task_lists:{}, list_tasks:{listId:str}, read_agenda:{offset:optionalInteger},
   create_file:{path:str,content:str}, update_file:{path:str,revision:str,content:str}, link_files:{path:str,target:str},
+  create_structured_file:{path:str,format:{type:'string',enum:formats},data:optionalString},
   create_task_list:{title:str}, create_task:{listId:str,title:str,notes:optionalString,due:optionalString,parentId:optionalString},
   link_task:{path:str,listId:str,taskId:str},
 };

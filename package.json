@@ -2,6 +2,11 @@
   "build": {
     "appId": "com.stillnote.app",
     "productName": "Stillnote",
+    "publish": {
+      "provider": "github",
+      "owner": "Infekted11",
+      "repo": "Stillnote"
+    },
     "protocols": [
       {
         "name": "Stillnote links",
@@ -52,7 +57,7 @@
     }
   },
   "name": "@infekted11/stillnote",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/Infekted11/Stillnote"
@@ -101,8 +106,8 @@
     "@huggingface/transformers": "^4.3.1",
     "@lezer/highlight": "^1.2.1",
     "animejs": "^4.5.0",
-    "electron": "^44.9.1",
     "concurrently": "^9.1.2",
+    "electron": "^44.9.1",
     "electron-builder": "^26.18.0",
     "occt-import-js": "^0.0.23",
     "pdfjs-dist": "^6.4.299",
@@ -111,6 +116,7 @@
     "wait-on": "^8.0.2"
   },
   "dependencies": {
-    "@lezer/markdown": "^1.8.1"
+    "@lezer/markdown": "^1.8.1",
+    "electron-updater": "^6.8.12"
   }
 }

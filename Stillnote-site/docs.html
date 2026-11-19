@@ -418,7 +418,7 @@ $/alpha + /theta$</code>
 </p>
 <h2 id="ai-keys-title">AI providers &amp; API keys
 </h2>
-<p>In Settings, choose Groq, OpenAI, or Anthropic, enter that provider’s own API key, and select a supported model. Keys and model preferences are separate for each provider. Use the app’s model discovery rather than assuming that every provider model supports the required structured output.
+<p>In Settings, choose Cohere, Mistral, Groq, OpenAI, or Anthropic, enter that provider’s own API key, and select a supported model. Keys and model preferences are separate for each provider. Use the app’s model picker to see the models available to your key.
 </p>
 <div class="table-scroll">
 <table>
@@ -427,7 +427,9 @@ $/alpha + /theta$</code>
 </tr>
 </thead>
 <tbody>
-<tr><td>Groq</td><td>Create an API key in the <a href="https://console.groq.com/keys">Groq console</a>, select Groq in Stillnote, and save the key.</td><td>The app’s default provider. Free-plan usage is subject to the account’s current model, rate, and daily limits.</td>
+<tr><td>Cohere</td><td>Sign up for a personal account, copy your evaluation key from <a href="https://dashboard.cohere.com/api-keys">Cohere API Keys</a>, and save it under Cohere.</td><td><a href="https://docs.cohere.com/docs/rate-limits">1,000 API calls per month</a> for personal evaluation, with shorter per-model limits. <a href="https://cohere.com/pricing">Commercial and production use</a> requires a paid production key.</td></tr>
+<tr><td>Mistral</td><td>Create an API key in <a href="https://console.mistral.ai/api-keys">Mistral Studio</a>, select Mistral in Stillnote, and save the key.</td><td>Check your organization’s Limits page for model access, its monthly token cap, and shorter rate limits.</td></tr>
+<tr><td>Groq</td><td>Create an API key in the <a href="https://console.groq.com/keys">Groq console</a>, select Groq in Stillnote, and save the key.</td><td>Free-plan usage is subject to the account’s current model, rate, and daily limits.</td>
 </tr>
 <tr><td>OpenAI</td><td>Create an API key in the <a href="https://platform.openai.com/api-keys">OpenAI API platform</a>, configure API billing if required, then save it under OpenAI.</td><td>API access and billing are separate from a ChatGPT subscription.</td>
 </tr>
@@ -436,6 +438,7 @@ $/alpha + /theta$</code>
 </tbody>
 </table>
 </div>
+<p>Mistral receives the prompt and relevant file context when you use Home or the file assistant. Mistral may use inputs and outputs from Free mode for training. Manage that preference in Studio. See <a href="https://help.mistral.ai/en/articles/347617-do-you-use-my-user-data-to-train-your-artificial-intelligence-models">Mistral’s data controls</a> and <a href="https://help.mistral.ai/en/articles/698531-why-am-i-hitting-api-rate-limits-and-how-do-i-increase-them">API limits</a>.</p>
 <p>The app does not switch providers or buy more usage when a quota is exhausted. Groq requests may retry a short rate limit once; a daily or account limit needs time or an account change. Check the provider’s console for current availability, quotas, billing, and errors. No provider’s allowance is guaranteed by Stillnote.
 </p>
 <p>Never paste keys into notes or AI prompts. Keys saved through Settings are encrypted with operating-system protection. AI is optional: local writing and local workspace tools do not require a key.
@@ -528,6 +531,7 @@ $/alpha + /theta$</code>
 </p>
 <p>Notes and structured content live in your chosen folder. Encrypted credential and dictionary files are stored per vault and hidden from the explorer. Operating-system protection can bind them to the current device/account. If encrypted credentials become unreadable, reset them in Settings and re-enter your keys; this does not delete your notes.
 </p>
+<p>To update an installed copy, open <strong>Settings → Version → Check for updates</strong>. Download the latest stable GitHub release with <strong>Update</strong>. Windows uses the NSIS installer. Signed Mac builds can install and restart directly. On unsigned Mac builds, open the verified disk image, quit Stillnote, then copy the app to Applications and choose <strong>Replace</strong>.</p>
 <p>Local-first does not mean every feature stays offline. AI sends relevant context to the chosen AI provider, Google Tasks syncs with Google, Desmos loads online tools, and remote image URLs contact their hosts. The first transcription-model download also requires internet. Back up your own files and avoid publishing credential files with a shared vault.
 </p><a class="section-top" href="#docs-top">Back to top ↑</a>
 </section>

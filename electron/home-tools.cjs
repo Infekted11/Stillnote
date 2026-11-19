@@ -3,7 +3,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { linksIn, matchesPath } = require('./file-links.cjs');
 const { writeLinkedTables } = require('./ai-tables.cjs');
-const READ_TOOLS = new Set(['list_files','search_files','read_file','file_relations','analyze_data','list_task_lists','list_tasks']);
+const { structuredContent } = require('./home-structured.cjs');
+const { applyGanttChanges, ganttTaskPage, parseGanttDocument } = require('./gantt-ai.mjs');
+const READ_TOOLS = new Set(['list_files','search_files','read_file','read_gantt','file_relations','analyze_data','list_task_lists','list_tasks']);
+const ganttWrites = new Set();
 const TEXT = new Set(['.md','.txt','.csv','.tsv','.json','.js','.cjs','.mjs','.jsx','.ts','.tsx','.py','.html','.css','.java','.c','.h','.cpp','.hpp','.rs','.go','.sql','.sh','.xml','.yaml','.yml','.toml','.swift','.kt','.rb','.php']);
 const revision = text => crypto.createHash('sha256').update(text).digest('hex');
 function parseCsv(text, delimiter = ',') {
@@ -39,7 +42,7 @@ function profileData(rows) {
   }
   return {rows:rows.length-1,columns,correlations:correlations.sort((a,b)=>Math.abs(b.pearson)-Math.abs(a.pearson)).slice(0,30),note:'First row is treated as headers. Non-numeric values and formulas are excluded from numeric statistics. Correlation does not establish causation.'};
 }
-function createHomeTools({root,taskApi,isSupportedFile}) {
+function createHomeTools({root,taskApi,isSupportedFile,checkCurrent=()=>{}}) {
   async function target(relative) {
     if(typeof relative!=='string'||!relative||path.isAbsolute(relative)||relative.includes('\\')||relative.split('/').some(s=>!s||s==='.'||s==='..'||s.startsWith('.')))throw new Error('Use a vault-relative path without hidden folders or traversal.');
     const base=await fs.realpath(root),parts=relative.split('/');let current=base;
@@ -53,6 +56,35 @@ function createHomeTools({root,taskApi,isSupportedFile}) {
     if(mode!=='work'&&!READ_TOOLS.has(name))throw new Error('Ask mode cannot modify files or tasks.');
     if(name==='list_files'){const all=await files();return {files:all.slice(0,2000),total:all.length,truncated:all.length>2000};}
     if(name==='read_file'){if(!TEXT.has(path.extname(args.path||'').toLowerCase())){const info=await fs.stat(await target(args.path));return {path:args.path,kind:/\.pdf$/i.test(args.path)?'pdf':'binary',bytes:info.size,note:'Metadata only; file content has not been analyzed.'};}const text=await read(args.path),offset=Math.max(0,Number(args.offset)||0),length=Math.min(50000,Math.max(1,Number(args.length)||30000));return {path:args.path,text:text.slice(offset,offset+length),revision:revision(text),totalCharacters:text.length,offset,truncated:offset+length<text.length};}
+    if (name === 'read_gantt') {
+      const original = await read(args.path);
+      const { data } = parseGanttDocument(original);
+      return { path: args.path, revision: revision(original), ...ganttTaskPage(data, args.offset ?? 0) };
+    }
+    if (name === 'edit_gantt') {
+      const file = await target(args.path);
+      if (ganttWrites.has(file)) throw new Error('The chart is being edited. Read it again before making another change.');
+      ganttWrites.add(file);
+      const temporary = path.join(path.dirname(file), '.stillnote-gantt-' + crypto.randomUUID() + '.tmp');
+      try {
+        const original = await read(args.path);
+        if (args.revision !== revision(original)) throw new Error('The chart changed. Read it again before editing.');
+        const { data, start, end } = parseGanttDocument(original);
+        const { data: updated, taskNumbers } = applyGanttChanges(data, args.changes);
+        const newline = original.slice(end, end + 2) === '\r\n' ? '\r\n' : '\n';
+        const content = original.slice(0, start) + JSON.stringify(updated, null, 2).replace(/\n/g, newline) + original.slice(end);
+        if (Buffer.byteLength(content) > 1_000_000) throw new Error('The updated chart exceeds the 1 MB Home text-reading limit.');
+        const { mode: permissions } = await fs.stat(file);
+        await fs.writeFile(temporary, content, { encoding: 'utf8', flag: 'wx', mode: permissions & 0o777 });
+        if (await read(args.path) !== original) throw new Error('The chart changed. Read it again before editing.');
+        checkCurrent();
+        await fs.rename(temporary, file);
+        return { path: args.path, revision: revision(content), taskNumbers, summary: 'Updated Gantt chart' };
+      } finally {
+        ganttWrites.delete(file);
+        await fs.rm(temporary, { force: true }).catch(() => {});
+      }
+    }
     if(name==='search_files'){
       const terms=String(args.query||'').toLowerCase().split(/\s+/).filter(Boolean);if(!terms.length)throw new Error('Enter search words.');
       const results=[];for(const file of await files()){let text='';if(TEXT.has(path.extname(file).toLowerCase()))try{text=await read(file);}catch{}const lower=(file+'\n'+text).toLowerCase(),score=terms.reduce((n,term)=>n+(lower.includes(term)?1:0),0);if(score){const first=text.toLowerCase().indexOf(terms.find(term=>text.toLowerCase().includes(term))||'');results.push({path:file,score,excerpt:text.slice(Math.max(0,first-150),Math.max(0,first-150)+2000)});}}return {matches:results.sort((a,b)=>b.score-a.score).slice(0,12)};
@@ -68,8 +100,17 @@ function createHomeTools({root,taskApi,isSupportedFile}) {
       else{const match=text.match(/```stillnote-spreadsheet\s*\n([\s\S]*?)\n```/);if(!match)throw new Error('Choose a spreadsheet, CSV, or TSV file.');const data=JSON.parse(match[1]);if(data.rows*data.columns>50000)throw new Error('Spreadsheet is too large to analyze.');const label=i=>{let s='';for(let n=i+1;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};rows=Array.from({length:data.rows},(_,r)=>Array.from({length:data.columns},(_,c)=>data.cells?.[label(c)+(r+1)]??''));while(rows.length&&rows.at(-1).every(v=>!String(v).trim()))rows.pop();}
       if(rows.length>10000||Math.max(0,...rows.map(row=>row.length))>60)throw new Error('Analyze at most 10,000 rows and 60 columns per file.');return {path:args.path,...profileData(rows)};
     }
+    if (name === 'create_structured_file') {
+      const file = await target(args.path);
+      const content = structuredContent(args.format, args.path, args.data);
+      checkCurrent();
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      checkCurrent();
+      await fs.writeFile(await target(args.path), content, { encoding: 'utf8', flag: 'wx' });
+      return { path: args.path, format: args.format, revision: revision(content), summary: 'Created Stillnote ' + args.format };
+    }
     if(name==='create_file'){
-      if(!TEXT.has(path.extname(args.path||'').toLowerCase()))throw new Error('Choose a supported text file extension.');const file=await target(args.path);if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide text up to 150,000 characters.');await fs.mkdir(path.dirname(file),{recursive:true});
+      if(!TEXT.has(path.extname(args.path||'').toLowerCase()) || !isSupportedFile(args.path))throw new Error('Choose a supported text file extension.');const file=await target(args.path);if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide text up to 150,000 characters.');await fs.mkdir(path.dirname(file),{recursive:true});
       const { content, sheets } = await writeLinkedTables({ relative:args.path, content:args.content, target,
         commit: text => fs.writeFile(file,text,{encoding:'utf8',flag:'wx'}),
       });
@@ -77,6 +118,7 @@ function createHomeTools({root,taskApi,isSupportedFile}) {
     }
     if(name==='update_file'){
       const original=await read(args.path);if(args.revision!==revision(original))throw new Error('The file changed. Read it again before editing.');if(typeof args.content!=='string'||args.content.length>150000)throw new Error('Provide the complete updated text, up to 150,000 characters.');
+      if (/<!--\s*stillnote:type=gantt\s*-->/.test(original)) throw new Error('Use read_gantt and edit_gantt to change a Gantt chart.');
       const { content, sheets } = await writeLinkedTables({ relative:args.path, content:args.content, original, target,
         commit: async text => {
           if(await read(args.path)!==original)throw new Error('The file changed. Read it again before editing.');
